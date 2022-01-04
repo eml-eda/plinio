@@ -5,13 +5,20 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Test: GSC Loader",
+            "name": "GSC Training",
             "type": "python",
             "request": "launch",
             "python": "/usr/bin/python3",
-            "program": "${workspaceFolder}/test/test_gsc_data_loader.py",
+            "program": "${workspaceFolder}/trainers/gsc_trainer.py",
             "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}"
+            "args": [
+                "-c",
+                "data/gsc/config.json",
+                "-i",
+                "data/gsc/",
+                "-o",
+                "results/gsc/",
+            ]
         }
     ]
 }

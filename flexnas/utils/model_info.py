@@ -16,3 +16,11 @@
 #*                                                                            *
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
+
+import numpy as np
+import torch.nn as nn
+
+def count_trainable_parameters(net : nn.Module) -> float:
+    model_parameters = filter(lambda p: p.requires_grad, net.parameters())
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    return params

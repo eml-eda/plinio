@@ -40,7 +40,6 @@
 # "background_noise" folder. Here we split these background noise into 1 second
 # clips, and also keep one of the files for the validation set.
 
-
 import torch
 from . import BaseDataLoader
 from torch.utils.data import Dataset
@@ -55,13 +54,13 @@ class GSCDataLoader(BaseDataLoader):
     def __init__(self, data_dir, batch_size, shuffle=True, set_='train', validation_split=0.0, num_workers=0):
         
         self.data_dir = data_dir
-        self.dataset = GoogleSpeechCommandsDataset(data_dir, set_)
+        self.dataset = GCSDataset(data_dir, set_)
         if set_ == 'test':
             super(GSCDataLoader, self).__init__(self.dataset, self.dataset.__len__(), shuffle, validation_split, num_workers)
         else:
             super(GSCDataLoader, self).__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
     
-class GoogleSpeechCommandsDataset(Dataset):
+class GCSDataset(Dataset):
     """
     GoogleSpeechCommands dataset. The data are extracted from the 'train.pkl' 
     or 'valid.pkl' or 'test.pkl' file present in the path passed as data_dir argument.
@@ -70,7 +69,7 @@ class GoogleSpeechCommandsDataset(Dataset):
     :param set_: specific dataset to be loaded. Could be 'train', 'eval' or 'test'
     """
     def __init__(self, data_dir, set_='train'):
-        super(GoogleSpeechCommandsDataset, self).__init__()
+        super(GCSDataset, self).__init__()
 
         self.data_dir = Path(data_dir)
 
