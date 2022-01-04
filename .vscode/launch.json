@@ -8,7 +8,7 @@
             "name": "GSC Training",
             "type": "python",
             "request": "launch",
-            "python": "/usr/bin/python3",
+            "python": "${workspaceFolder}/venv/bin/python",
             "program": "${workspaceFolder}/trainers/gsc_trainer.py",
             "console": "integratedTerminal",
             "args": [
