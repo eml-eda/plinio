@@ -76,7 +76,7 @@ def run(config_file, in_dir, out_dir):
     #     patience=config['training']['lr_patience'], verbose=True)
 
     # training loop
-    wandb.watch(net, criterion, log="all", log_freq=10)
+    # wandb.watch(net, criterion, log="all", log_freq=10)
     for epoch in range(config['training']['n_epochs']):
       metrics = train_one_epoch(epoch, net, criterion, optimizer, train, val, device)
       # scheduler.step(metrics['val_loss'])
@@ -86,10 +86,13 @@ def run(config_file, in_dir, out_dir):
 
     # eval and save
     checkpoint.load_best()
-    checkpoint.save('final_best.ckp')
-    _, test_acc = evaluate(net, criterion, test, device)
-    print("Test Set Accuracy:", test_acc.get())
-    wandb.save('final_best.ckp')
+    checkpoint.save(os.path.join(out_dir, 'final_best.ckp'))
+    test_loss, test_acc = evaluate(net, criterion, test, device)
+    test_loss, test_acc = test_loss.get(), test_acc.get()
+    print("Test Set Loss:", test_loss)
+    print("Test Set Accuracy:", test_acc)
+    wandb.log({'test_loss': test_loss, 'test_acc': test_acc})
+    wandb.save(os.path.join(out_dir, 'final_best.ckp'))
     wandb.finish()
 
 
