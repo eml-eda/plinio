@@ -17,7 +17,7 @@
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
 
-from typing import Iterable, List
+from typing import Iterable, Tuple
 import torch
 import torch.nn as nn
 from abc import abstractmethod
@@ -27,18 +27,23 @@ class DNAS:
     @abstractmethod
     def __init__(self, config = None):
         self.config = config
-        return
 
     def prepare(self, net : nn.Module, exclude_names: Iterable[str] = [], exclude_types: Iterable[nn.Module] = []) -> nn.Module:
         rep_layers = self.optimizable_layers()
-        for name, child in net.named_children():
-            print(name, child)
+        exclude_types = tuple(exclude_types)
+        for name, child in net.named_modules():
+            if isinstance(child, rep_layers):
+                if (name not in exclude_names) and (not isinstance(child, exclude_types)):
+                    print("Found replaceable layer:", name, child)
+                    new_layer = self._replacement_layer(name, child, net)
+                    print("Replacement layer:", new_layer)
+                    print("Custom parameter:", new_layer.custom_param)
 
-    def optimizable_layers(self) -> List[nn.Module]:
+    def optimizable_layers(self) -> Tuple[nn.Module]:
         return None
 
     @abstractmethod
-    def _replacement_layer(self, layer: nn.Module, net: nn.Module) -> nn.Module:
+    def _replacement_layer(self, name: str, layer: nn.Module, net: nn.Module) -> nn.Module:
         raise NotImplementedError
 
     @abstractmethod

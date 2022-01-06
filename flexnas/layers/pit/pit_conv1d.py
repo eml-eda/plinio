@@ -17,22 +17,25 @@
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
 
-import torch
 import torch.nn as nn
-from torch.nn import Conv1d
-import torch.nn.functional as F
-from torch.nn.parameter import Parameter
-import math
-import numpy as np
-import copy
 
 ### NOTE: made dummy for now, to be replaced with Matteo's implementation later
 
-class PITConv1d(Conv1d):
+class PITConv1d(nn.Conv1d):
 
-    def __init__(self, custom_param, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros'):
-        super(PITConv1d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, padding_mode)
-        
+    def __init__(self, conv: nn.Conv1d, custom_param: str):
+        super(PITConv1d, self).__init__(
+            conv.in_channels,
+            conv.out_channels,
+            conv.kernel_size,
+            conv.stride,
+            conv.padding,
+            conv.dilation,
+            conv.groups,
+            conv.bias is not None,
+            conv.padding_mode)
+        self.weight = conv.weight
+        self.bias = conv.bias
         self.custom_param = custom_param
    
     def forward(self, x):

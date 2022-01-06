@@ -17,7 +17,7 @@
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
 
-from typing import Iterable, List
+from typing import Iterable, Tuple
 import torch
 import torch.nn as nn
 from flexnas.methods import DNAS
@@ -32,11 +32,14 @@ class PIT(DNAS):
     def __init__(self, config = None):
         super(PIT, self).__init__(config)
         
-    def optimizable_layers(self) -> List[nn.Module]:
-        return list(PIT.replacement_dict.keys())
+    def optimizable_layers(self) -> Tuple[nn.Module]:
+        return tuple(PIT.replacement_dict.keys())
 
-    def _replacement_layer(self, layer: nn.Module, net: nn.Module) -> nn.Module:
-        raise NotImplementedError
+    def _replacement_layer(self, name: str, layer: nn.Module, net: nn.Module) -> nn.Module:
+        for OldClass, NewClass in PIT.replacement_dict.items():
+            if isinstance(layer, OldClass):
+                return NewClass(layer, name)
+        return None
 
     def get_regularization_loss(self, net: nn.Module) -> torch.Tensor:
         raise NotImplementedError
