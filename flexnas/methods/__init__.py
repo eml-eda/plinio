@@ -16,5 +16,5 @@
 #*                                                                            *
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .dnas import *
+from .dnas_base import *
 from .pit import *

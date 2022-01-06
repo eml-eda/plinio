@@ -16,4 +16,4 @@
 #*                                                                            *
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .pit_conv1d import *
+from .dnas_net import *

@@ -19,33 +19,15 @@
 import unittest
 import torch.nn as nn
 import torch.nn.functional as F
-from flexnas.methods import PIT
+from flexnas.methods import PITNet
+from flexnas.methods.dnas_base.dnas_net import DNASNet
 from models import TCResNet14
+from typing import Iterable
+from .utils import MySimpleNN
 
 class TestPITPrepare(unittest.TestCase):
     
     def test_simple_model(self):
-
-        class MySimpleNN(nn.Module):
-            def __init__(self, input_shape=(3, 40), num_classes=3):
-                super(MySimpleNN, self).__init__()
-                self.conv0 = nn.Conv1d(16, 32, 3, padding='same')
-                self.bn0 = nn.BatchNorm1d(32)
-                self.pool0 = nn.AvgPool1d(2)
-                self.conv1 = nn.Conv1d(32, 57, 5, padding='same')
-                self.bn1 = nn.BatchNorm1d(57)
-                self.pool1 = nn.AvgPool1d(2)
-                self.dpout = nn.Dropout(0.5)
-                self.fc = nn.Linear(input_shape[-1]//2, num_classes)
-                self.foo = "non-nn.Module attribute"
-                
-            def forward(self, x):
-                x = F.relu6(self.pool0(self.bn0(self.conv0(x))))
-                x = F.relu6(self.pool1(self.bn1(self.conv1(x))))
-                x = self.dpout(x)
-                res = self.fc(x)
-                return res
-
         nn_ut = MySimpleNN()
         self._execute_prepare(nn_ut)
 
@@ -63,9 +45,24 @@ class TestPITPrepare(unittest.TestCase):
         nn_ut = TCResNet14(config)
         self._execute_prepare(nn_ut)
 
-    def _execute_prepare(self, nn_ut):
-        pit = PIT()
-        nn_ut = pit.prepare(nn_ut)
+    def _execute_prepare(self, nn_ut: nn.Module, exclude_names: Iterable[str] = (), exclude_types: Iterable[nn.Module] = ()):
+        new_nn = PITNet(nn_ut)
+        inner = new_nn._inner_model
+        self._compare_prepared(nn_ut, inner, nn_ut, new_nn, exclude_names, exclude_types)
+    
+    def _compare_prepared(self,
+        old_mod: nn.Module, new_mod: nn.Module, 
+        old_top: nn.Module, new_top: DNASNet,
+        exclude_names: Iterable[str], exclude_types: Iterable[nn.Module]):
+        for name, child in old_mod.named_children():
+            new_child = new_mod._modules[name]
+            self._compare_prepared(child, new_child, old_top, new_top, exclude_names, exclude_types)
+            if isinstance(child, new_top.optimizable_layers()):
+                if (name not in exclude_names) and (not isinstance(child, exclude_types)):
+                    repl = new_top.replacement_layer(name, child, old_top)
+                    print(type(new_child))
+                    print(type(repl))
+                    assert isinstance(new_child, type(repl))
 
 if __name__ == '__main__':
     unittest.main()

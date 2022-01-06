@@ -18,34 +18,46 @@
 #*----------------------------------------------------------------------------*
 
 from typing import Iterable, Tuple
+import copy
 import torch
 import torch.nn as nn
 from abc import abstractmethod
 
-class DNAS:
+class DNASNet(nn.Module):
 
     @abstractmethod
-    def __init__(self, config = None):
+    def __init__(self, model: nn.Module, config = None, exclude_names: Iterable[str] = (), exclude_types: Iterable[nn.Module] = ()):
+        super(DNASNet, self).__init__()
         self.config = config
-
-    def prepare(self, net : nn.Module, exclude_names: Iterable[str] = [], exclude_types: Iterable[nn.Module] = []) -> nn.Module:
-        rep_layers = self.optimizable_layers()
-        exclude_types = tuple(exclude_types)
-        for name, child in net.named_modules():
-            if isinstance(child, rep_layers):
-                if (name not in exclude_names) and (not isinstance(child, exclude_types)):
-                    print("Found replaceable layer:", name, child)
-                    new_layer = self._replacement_layer(name, child, net)
-                    print("Replacement layer:", new_layer)
-                    print("Custom parameter:", new_layer.custom_param)
+        self.exclude_names = exclude_names
+        self.exclude_types = tuple(exclude_types)
+        self._inner_model = self._prepare(model)
+    
+    def forward(self, *args):
+        return self._inner_model.forward(*args)
 
     def optimizable_layers(self) -> Tuple[nn.Module]:
         return None
 
     @abstractmethod
-    def _replacement_layer(self, name: str, layer: nn.Module, net: nn.Module) -> nn.Module:
+    def replacement_layer(self, name: str, layer: nn.Module, model: nn.Module) -> nn.Module:
         raise NotImplementedError
 
     @abstractmethod
-    def get_regularization_loss(self, net: nn.Module) -> torch.Tensor:
+    def get_regularization_loss(self) -> torch.Tensor:
         raise NotImplementedError
+
+    def _prepare(self, model: nn.Module):
+        model = copy.deepcopy(model)
+        self._convert_layers(model, model)
+        return model
+
+    def _convert_layers(self, mod: nn.Module, top_level: nn.Module):
+        reassign = {}
+        for name, child in mod.named_children():
+            self._convert_layers(child, top_level)
+            if isinstance(child, self.optimizable_layers()):
+                if (name not in self.exclude_names) and (not isinstance(child, self.exclude_types)):
+                    reassign[name] = self.replacement_layer(name, child, top_level)
+        for k, v in reassign.items():
+            mod._modules[k] = v

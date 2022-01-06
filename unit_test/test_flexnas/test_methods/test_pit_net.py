@@ -1,5 +1,5 @@
 #*----------------------------------------------------------------------------*
-#* Copyright (C) 2021 Politecnico di Torino, Italy                            *
+#* Copyright (C) 2022 Politecnico di Torino, Italy                            *
 #* SPDX-License-Identifier: Apache-2.0                                        *
 #*                                                                            *
 #* Licensed under the Apache License, Version 2.0 (the "License");            *
@@ -16,29 +16,23 @@
 #*                                                                            *
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
+import unittest
+import torch
+from flexnas.methods import PITNet
+from .utils import MySimpleNN
 
-import torch.nn as nn
-
-### NOTE: made dummy for now, to be replaced with Matteo's implementation later
-
-class PITConv1d(nn.Conv1d):
-
-    def __init__(self, conv: nn.Conv1d, custom_param: str):
-        super(PITConv1d, self).__init__(
-            conv.in_channels,
-            conv.out_channels,
-            conv.kernel_size,
-            conv.stride,
-            conv.padding,
-            conv.dilation,
-            conv.groups,
-            conv.bias is not None,
-            conv.padding_mode)
-        self.weight = conv.weight
-        self.bias = conv.bias
-        self.custom_param = custom_param
-   
-    def forward(self, x):
-        # ...PIT CODE...
-        return super(PITConv1d, self).forward(x)
+class TestPITNet(unittest.TestCase):
     
+    def test_simple_model(self):
+        net = MySimpleNN()
+        x = torch.rand((32,) + tuple(net.input_shape))
+        pit_net = PITNet(net)
+        net.eval()
+        pit_net.eval()
+        y = net(x)
+        pit_y = pit_net(x)
+        assert torch.all(torch.eq(y, pit_y))
+
+if __name__ == '__main__':
+    unittest.main()
+

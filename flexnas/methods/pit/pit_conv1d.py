@@ -1,5 +1,5 @@
 #*----------------------------------------------------------------------------*
-#* Copyright (C) 2022 Politecnico di Torino, Italy                            *
+#* Copyright (C) 2021 Politecnico di Torino, Italy                            *
 #* SPDX-License-Identifier: Apache-2.0                                        *
 #*                                                                            *
 #* Licensed under the Apache License, Version 2.0 (the "License");            *
@@ -17,29 +17,29 @@
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
 
-from typing import Iterable, Tuple
-import torch
 import torch.nn as nn
-from flexnas.methods import DNAS
-from flexnas.layers.pit import *
 
-class PIT(DNAS):
+### NOTE: made dummy for now, to be replaced with Matteo's implementation later
 
-    replacement_dict = {
-        nn.Conv1d : PITConv1d,
-    }
+class PITConv1d(nn.Conv1d):
 
-    def __init__(self, config = None):
-        super(PIT, self).__init__(config)
-        
-    def optimizable_layers(self) -> Tuple[nn.Module]:
-        return tuple(PIT.replacement_dict.keys())
-
-    def _replacement_layer(self, name: str, layer: nn.Module, net: nn.Module) -> nn.Module:
-        for OldClass, NewClass in PIT.replacement_dict.items():
-            if isinstance(layer, OldClass):
-                return NewClass(layer, name)
-        return None
-
-    def get_regularization_loss(self, net: nn.Module) -> torch.Tensor:
-        raise NotImplementedError
+    def __init__(self, conv: nn.Conv1d, config: str):
+        super(PITConv1d, self).__init__(
+            conv.in_channels,
+            conv.out_channels,
+            conv.kernel_size,
+            conv.stride,
+            conv.padding,
+            conv.dilation,
+            conv.groups,
+            conv.bias is not None,
+            conv.padding_mode)
+        self.weight = conv.weight
+        self.bias = conv.bias
+        self.config = config
+   
+    def forward(self, x):
+        # ...PIT CODE...
+        # return self._conv_forward(x, self.weight, self.bias)
+        return super(PITConv1d, self).forward(x)
+    
