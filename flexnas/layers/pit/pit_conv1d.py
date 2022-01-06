@@ -1,5 +1,5 @@
 #*----------------------------------------------------------------------------*
-#* Copyright (C) 2022 Politecnico di Torino, Italy                            *
+#* Copyright (C) 2021 Politecnico di Torino, Italy                            *
 #* SPDX-License-Identifier: Apache-2.0                                        *
 #*                                                                            *
 #* Licensed under the Apache License, Version 2.0 (the "License");            *
@@ -14,7 +14,28 @@
 #* See the License for the specific language governing permissions and        *
 #* limitations under the License.                                             *
 #*                                                                            *
-#* Author:  Matteo Risso <matteo.risso@polito.it>                             *
+#* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .test_trainers import *
-from .test_flexnas import *
+
+import torch
+import torch.nn as nn
+from torch.nn import Conv1d
+import torch.nn.functional as F
+from torch.nn.parameter import Parameter
+import math
+import numpy as np
+import copy
+
+### NOTE: made dummy for now, to be replaced with Matteo's implementation later
+
+class PITConv1d(Conv1d):
+
+    def __init__(self, custom_param, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros'):
+        super(PITConv1d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias, padding_mode)
+        
+        self.custom_param = custom_param
+   
+    def forward(self, x):
+        # ...PIT CODE...
+        return super(PITConv1d, self).forward(x)
+    

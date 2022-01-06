@@ -16,5 +16,4 @@
 #*                                                                            *
 #* Author:  Matteo Risso <matteo.risso@polito.it>                             *
 #*----------------------------------------------------------------------------*
-from .test_trainers import *
-from .test_flexnas import *
+from .test_gsc_data_loader import *

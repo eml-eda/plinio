@@ -1,0 +1,23 @@
+{
+    "data": {
+        "batch_size": 32,
+        "num_workers": 2,
+        "val_split": 0.2
+    },
+    "model": {
+        "input_size": 40,
+        "output_size": 12,
+        "num_channels": [24, 36, 36, 48, 48, 72, 72],
+        "kernel_size": 9,
+        "dropout": 0.5,
+        "grad_clip": -1,
+        "use_bias": true,
+        "avg_pool": true
+    },
+    "training": {
+        "n_epochs": 500,
+        "es_patience": 15,
+        "lr": 0.001,
+        "weight_decay": 0.001
+    }
+}

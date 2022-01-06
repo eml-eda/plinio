@@ -14,7 +14,33 @@
 #* See the License for the specific language governing permissions and        *
 #* limitations under the License.                                             *
 #*                                                                            *
-#* Author:  Matteo Risso <matteo.risso@polito.it>                             *
+#* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .test_trainers import *
-from .test_flexnas import *
+
+from typing import Iterable, List
+import torch
+import torch.nn as nn
+from abc import abstractmethod
+
+class DNAS:
+
+    @abstractmethod
+    def __init__(self, config = None):
+        self.config = config
+        return
+
+    def prepare(self, net : nn.Module, exclude_names: Iterable[str] = [], exclude_types: Iterable[nn.Module] = []) -> nn.Module:
+        rep_layers = self.optimizable_layers()
+        for name, child in net.named_children():
+            print(name, child)
+
+    def optimizable_layers(self) -> List[nn.Module]:
+        return None
+
+    @abstractmethod
+    def _replacement_layer(self, layer: nn.Module, net: nn.Module) -> nn.Module:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_regularization_loss(self, net: nn.Module) -> torch.Tensor:
+        raise NotImplementedError

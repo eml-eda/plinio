@@ -14,7 +14,29 @@
 #* See the License for the specific language governing permissions and        *
 #* limitations under the License.                                             *
 #*                                                                            *
-#* Author:  Matteo Risso <matteo.risso@polito.it>                             *
+#* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .test_trainers import *
-from .test_flexnas import *
+
+from typing import Iterable, List
+import torch
+import torch.nn as nn
+from flexnas.methods import DNAS
+from flexnas.layers.pit import *
+
+class PIT(DNAS):
+
+    replacement_dict = {
+        nn.Conv1d : PITConv1d,
+    }
+
+    def __init__(self, config = None):
+        super(PIT, self).__init__(config)
+        
+    def optimizable_layers(self) -> List[nn.Module]:
+        return list(PIT.replacement_dict.keys())
+
+    def _replacement_layer(self, layer: nn.Module, net: nn.Module) -> nn.Module:
+        raise NotImplementedError
+
+    def get_regularization_loss(self, net: nn.Module) -> torch.Tensor:
+        raise NotImplementedError

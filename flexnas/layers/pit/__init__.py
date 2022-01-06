@@ -14,7 +14,6 @@
 #* See the License for the specific language governing permissions and        *
 #* limitations under the License.                                             *
 #*                                                                            *
-#* Author:  Matteo Risso <matteo.risso@polito.it>                             *
+#* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .test_trainers import *
-from .test_flexnas import *
+from .pit_conv1d import *
