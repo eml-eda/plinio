@@ -1,38 +1,44 @@
-#*----------------------------------------------------------------------------*
-#* Copyright (C) 2022 Politecnico di Torino, Italy                            *
-#* SPDX-License-Identifier: Apache-2.0                                        *
-#*                                                                            *
-#* Licensed under the Apache License, Version 2.0 (the "License");            *
-#* you may not use this file except in compliance with the License.           *
-#* You may obtain a copy of the License at                                    *
-#*                                                                            *
-#* http://www.apache.org/licenses/LICENSE-2.0                                 *
-#*                                                                            *
-#* Unless required by applicable law or agreed to in writing, software        *
-#* distributed under the License is distributed on an "AS IS" BASIS,          *
-#* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
-#* See the License for the specific language governing permissions and        *
-#* limitations under the License.                                             *
-#*                                                                            *
-#* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
-#*----------------------------------------------------------------------------*
+# *----------------------------------------------------------------------------*
+# * Copyright (C) 2022 Politecnico di Torino, Italy                            *
+# * SPDX-License-Identifier: Apache-2.0                                        *
+# *                                                                            *
+# * Licensed under the Apache License, Version 2.0 (the "License");            *
+# * you may not use this file except in compliance with the License.           *
+# * You may obtain a copy of the License at                                    *
+# *                                                                            *
+# * http://www.apache.org/licenses/LICENSE-2.0                                 *
+# *                                                                            *
+# * Unless required by applicable law or agreed to in writing, software        *
+# * distributed under the License is distributed on an "AS IS" BASIS,          *
+# * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+# * See the License for the specific language governing permissions and        *
+# * limitations under the License.                                             *
+# *                                                                            *
+# * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
+# *----------------------------------------------------------------------------*
 
+from abc import abstractmethod
 from typing import Any, Iterable, Tuple, Type
 import copy
 import torch
 import torch.nn as nn
-from abc import abstractmethod
+
 
 class DNASModel(nn.Module):
 
     @abstractmethod
-    def __init__(self, model: nn.Module, config: Any = None, exclude_names: Iterable[str] = (), exclude_types: Iterable[Type[nn.Module]] = ()):
+    def __init__(
+            self,
+            model: nn.Module,
+            config: Any = None,
+            exclude_names: Iterable[str] = (),
+            exclude_types: Iterable[Type[nn.Module]] = ()):
         super(DNASModel, self).__init__()
         self.config = config
         self.exclude_names = exclude_names
         self.exclude_types = tuple(exclude_types)
         self._inner_model = self._prepare(model)
-    
+
     def forward(self, *args: Any):
         return self._inner_model.forward(*args)
 
@@ -59,6 +65,7 @@ class DNASModel(nn.Module):
             self._convert_layers(child, top_level)
             if isinstance(child, self.optimizable_layers()):
                 if (name not in self.exclude_names) and (not isinstance(child, self.exclude_types)):
-                    reassign[name] = self.replacement_layer(name, child, top_level)
-        for k, v in reassign.items():
-            mod._modules[k] = v
+                    reassign[name] = self.replacement_layer(
+                        name, child, top_level)
+        for k, new_layer in reassign.items():
+            mod._modules[k] = new_layer

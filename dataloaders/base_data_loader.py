@@ -1,21 +1,21 @@
-#*----------------------------------------------------------------------------*
-#* Copyright (C) 2022 Politecnico di Torino, Italy                            *
-#* SPDX-License-Identifier: Apache-2.0                                        *
-#*                                                                            *
-#* Licensed under the Apache License, Version 2.0 (the "License");            *
-#* you may not use this file except in compliance with the License.           *
-#* You may obtain a copy of the License at                                    *
-#*                                                                            *
-#* http://www.apache.org/licenses/LICENSE-2.0                                 *
-#*                                                                            *
-#* Unless required by applicable law or agreed to in writing, software        *
-#* distributed under the License is distributed on an "AS IS" BASIS,          *
-#* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
-#* See the License for the specific language governing permissions and        *
-#* limitations under the License.                                             *
-#*                                                                            *
-#* Author:  Matteo Risso <matteo.risso@polito.it>                             *
-#*----------------------------------------------------------------------------*
+# *----------------------------------------------------------------------------*
+# * Copyright (C) 2022 Politecnico di Torino, Italy                            *
+# * SPDX-License-Identifier: Apache-2.0                                        *
+# *                                                                            *
+# * Licensed under the Apache License, Version 2.0 (the "License");            *
+# * you may not use this file except in compliance with the License.           *
+# * You may obtain a copy of the License at                                    *
+# *                                                                            *
+# * http://www.apache.org/licenses/LICENSE-2.0                                 *
+# *                                                                            *
+# * Unless required by applicable law or agreed to in writing, software        *
+# * distributed under the License is distributed on an "AS IS" BASIS,          *
+# * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+# * See the License for the specific language governing permissions and        *
+# * limitations under the License.                                             *
+# *                                                                            *
+# * Author:  Matteo Risso <matteo.risso@polito.it>                             *
+# *----------------------------------------------------------------------------*
 
 import numpy as np
 from torch.utils.data import DataLoader
@@ -27,7 +27,9 @@ class BaseDataLoader(DataLoader):
     """
     Base class for all data loaders
     """
-    def __init__(self, dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=default_collate, sampler=None):
+
+    def __init__(self, dataset, batch_size, shuffle, validation_split, num_workers, collate_fn=default_collate,
+                 sampler=None):
         self.validation_split = validation_split
         self.shuffle = shuffle
 
@@ -41,13 +43,13 @@ class BaseDataLoader(DataLoader):
             self.shuffle = False
 
         self.init_kwargs = {
-                'dataset': dataset,
-                'batch_size': batch_size,
-                'shuffle': self.shuffle,
-                'collate_fn': collate_fn,
-                'num_workers': num_workers,
-                'pin_memory': True
-                }
+            'dataset': dataset,
+            'batch_size': batch_size,
+            'shuffle': self.shuffle,
+            'collate_fn': collate_fn,
+            'num_workers': num_workers,
+            'pin_memory': True
+        }
         super().__init__(sampler=self.sampler, **self.init_kwargs)
 
     def _split_sampler(self, split):

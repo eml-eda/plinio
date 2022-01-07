@@ -1,21 +1,21 @@
-#*----------------------------------------------------------------------------*
-#* Copyright (C) 2022 Politecnico di Torino, Italy                            *
-#* SPDX-License-Identifier: Apache-2.0                                        *
-#*                                                                            *
-#* Licensed under the Apache License, Version 2.0 (the "License");            *
-#* you may not use this file except in compliance with the License.           *
-#* You may obtain a copy of the License at                                    *
-#*                                                                            *
-#* http://www.apache.org/licenses/LICENSE-2.0                                 *
-#*                                                                            *
-#* Unless required by applicable law or agreed to in writing, software        *
-#* distributed under the License is distributed on an "AS IS" BASIS,          *
-#* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
-#* See the License for the specific language governing permissions and        *
-#* limitations under the License.                                             *
-#*                                                                            *
-#* Author:  Matteo Risso <matteo.risso@polito.it>                             *
-#*----------------------------------------------------------------------------*
+# *----------------------------------------------------------------------------*
+# * Copyright (C) 2022 Politecnico di Torino, Italy                            *
+# * SPDX-License-Identifier: Apache-2.0                                        *
+# *                                                                            *
+# * Licensed under the Apache License, Version 2.0 (the "License");            *
+# * you may not use this file except in compliance with the License.           *
+# * You may obtain a copy of the License at                                    *
+# *                                                                            *
+# * http://www.apache.org/licenses/LICENSE-2.0                                 *
+# *                                                                            *
+# * Unless required by applicable law or agreed to in writing, software        *
+# * distributed under the License is distributed on an "AS IS" BASIS,          *
+# * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.   *
+# * See the License for the specific language governing permissions and        *
+# * limitations under the License.                                             *
+# *                                                                            *
+# * Author:  Matteo Risso <matteo.risso@polito.it>                             *
+# *----------------------------------------------------------------------------*
 
 # ## Google Speech Commands
 
@@ -45,21 +45,24 @@ from . import BaseDataLoader
 from torch.utils.data import Dataset
 from pathlib import Path
 import pickle
-from scipy.io import loadmat
+
 
 class GSCDataLoader(BaseDataLoader):
     """
     GoogleSpeechCommands dataset loading and pre-processing
     """
+
     def __init__(self, data_dir, batch_size, shuffle=True, set_='train', validation_split=0.0, num_workers=0):
-        
+
         self.data_dir = data_dir
         self.dataset = GCSDataset(data_dir, set_)
         if set_ == 'test':
-            super(GSCDataLoader, self).__init__(self.dataset, self.dataset.__len__(), shuffle, validation_split, num_workers)
+            super(GSCDataLoader, self).__init__(self.dataset, self.dataset.__len__(), shuffle, validation_split,
+                                                num_workers)
         else:
             super(GSCDataLoader, self).__init__(self.dataset, batch_size, shuffle, validation_split, num_workers)
-    
+
+
 class GCSDataset(Dataset):
     """
     GoogleSpeechCommands dataset. The data are extracted from the 'train.pkl' 
@@ -68,6 +71,7 @@ class GCSDataset(Dataset):
     :param data_dir: absolute path of the directory containing the dataset
     :param set_: specific dataset to be loaded. Could be 'train', 'eval' or 'test'
     """
+
     def __init__(self, data_dir, set_='train'):
         super(GCSDataset, self).__init__()
 
@@ -108,8 +112,8 @@ class GCSDataset(Dataset):
             idx = idx.tolist()
 
         sample = {
-                'data': self.X[idx],
-                'target': self.y[idx]
-                }
+            'data': self.X[idx],
+            'target': self.y[idx]
+        }
 
         return sample
