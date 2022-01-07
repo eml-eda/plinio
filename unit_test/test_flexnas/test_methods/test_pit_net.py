@@ -18,7 +18,7 @@
 #*----------------------------------------------------------------------------*
 import unittest
 import torch
-from flexnas.methods import PITNet
+from flexnas.methods import PITModel
 from .utils import MySimpleNN
 
 class TestPITNet(unittest.TestCase):
@@ -26,7 +26,7 @@ class TestPITNet(unittest.TestCase):
     def test_simple_model(self):
         net = MySimpleNN()
         x = torch.rand((32,) + tuple(net.input_shape))
-        pit_net = PITNet(net)
+        pit_net = PITModel(net)
         net.eval()
         pit_net.eval()
         y = net(x)

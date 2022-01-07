@@ -16,4 +16,4 @@
 #*                                                                            *
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .pit_net import *
+from .pit_model import *

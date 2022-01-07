@@ -18,12 +18,13 @@
 #*----------------------------------------------------------------------------*
 
 import torch.nn as nn
+from typing import Any
 
 ### NOTE: made dummy for now, to be replaced with Matteo's implementation later
 
 class PITConv1d(nn.Conv1d):
 
-    def __init__(self, conv: nn.Conv1d, config: str):
+    def __init__(self, conv: nn.Conv1d, config: Any):
         super(PITConv1d, self).__init__(
             conv.in_channels,
             conv.out_channels,

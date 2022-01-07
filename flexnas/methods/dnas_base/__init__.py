@@ -16,4 +16,4 @@
 #*                                                                            *
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
-from .dnas_net import *
+from .dnas_model import DNASModel

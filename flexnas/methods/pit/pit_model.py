@@ -17,29 +17,29 @@
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
 
-from typing import Tuple, Dict, Iterable, Any
+from typing import Any, Tuple, Iterable, Type, TypeVar, Optional
 import torch
 import torch.nn as nn
-from flexnas.methods.dnas_base import DNASNet
+from flexnas.methods.dnas_base import DNASModel
 from .pit_conv1d import PITConv1d
 
-class PITNet(DNASNet):
+class PITModel(DNASModel):
 
     replacement_dict = {
         nn.Conv1d : PITConv1d,
     }
 
-    def __init__(self, model: nn.Module, config = None, exclude_names: Iterable[str] = (), exclude_types: Iterable[nn.Module] = ()):
-        super(PITNet, self).__init__(model, config, exclude_names, exclude_types)
+    def __init__(self, model: nn.Module, config: Any = None, exclude_names: Iterable[str] = (), exclude_types: Iterable[Type[nn.Module]] = ()):
+        super(PITModel, self).__init__(model, config, exclude_names, exclude_types)
         
-    def optimizable_layers(self) -> Tuple[nn.Module]:
-        return tuple(PITNet.replacement_dict.keys())
+    def optimizable_layers(self) -> Tuple[Type[nn.Module]]:
+        return tuple(PITModel.replacement_dict.keys())
 
     def replacement_layer(self, name: str, layer: nn.Module, model: nn.Module) -> nn.Module:
-        for OldClass, NewClass in PITNet.replacement_dict.items():
+        for OldClass, NewClass in PITModel.replacement_dict.items():
             if isinstance(layer, OldClass):
                 return NewClass(layer, self.config)
-        return None
+        raise ValueError("Replacement Layer not found")
 
-    def get_regularization_loss(self, net: nn.Module) -> torch.Tensor:
+    def get_regularization_loss(self) -> torch.Tensor:
         raise NotImplementedError

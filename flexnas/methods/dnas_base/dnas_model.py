@@ -17,27 +17,28 @@
 #* Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 #*----------------------------------------------------------------------------*
 
-from typing import Iterable, Tuple
+from typing import Any, Iterable, Tuple, Type
 import copy
 import torch
 import torch.nn as nn
 from abc import abstractmethod
 
-class DNASNet(nn.Module):
+class DNASModel(nn.Module):
 
     @abstractmethod
-    def __init__(self, model: nn.Module, config = None, exclude_names: Iterable[str] = (), exclude_types: Iterable[nn.Module] = ()):
-        super(DNASNet, self).__init__()
+    def __init__(self, model: nn.Module, config: Any = None, exclude_names: Iterable[str] = (), exclude_types: Iterable[Type[nn.Module]] = ()):
+        super(DNASModel, self).__init__()
         self.config = config
         self.exclude_names = exclude_names
         self.exclude_types = tuple(exclude_types)
         self._inner_model = self._prepare(model)
     
-    def forward(self, *args):
+    def forward(self, *args: Any):
         return self._inner_model.forward(*args)
 
-    def optimizable_layers(self) -> Tuple[nn.Module]:
-        return None
+    @abstractmethod
+    def optimizable_layers(self) -> Tuple[Type[nn.Module]]:
+        raise NotImplementedError
 
     @abstractmethod
     def replacement_layer(self, name: str, layer: nn.Module, model: nn.Module) -> nn.Module:

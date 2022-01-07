@@ -19,8 +19,8 @@
 import unittest
 import torch.nn as nn
 import torch.nn.functional as F
-from flexnas.methods import PITNet
-from flexnas.methods.dnas_base.dnas_net import DNASNet
+from flexnas.methods import PITModel
+from flexnas.methods.dnas_base.dnas_model import DNASModel
 from models import TCResNet14
 from typing import Iterable
 from .utils import MySimpleNN
@@ -46,13 +46,13 @@ class TestPITPrepare(unittest.TestCase):
         self._execute_prepare(nn_ut)
 
     def _execute_prepare(self, nn_ut: nn.Module, exclude_names: Iterable[str] = (), exclude_types: Iterable[nn.Module] = ()):
-        new_nn = PITNet(nn_ut)
+        new_nn = PITModel(nn_ut)
         inner = new_nn._inner_model
         self._compare_prepared(nn_ut, inner, nn_ut, new_nn, exclude_names, exclude_types)
     
     def _compare_prepared(self,
         old_mod: nn.Module, new_mod: nn.Module, 
-        old_top: nn.Module, new_top: DNASNet,
+        old_top: nn.Module, new_top: DNASModel,
         exclude_names: Iterable[str], exclude_types: Iterable[nn.Module]):
         for name, child in old_mod.named_children():
             new_child = new_mod._modules[name]
