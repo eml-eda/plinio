@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Iterable, Tuple, Type
+from typing import Iterable, Tuple, Type, Any
 import unittest
 import torch.nn as nn
 from flexnas.methods import PITModel
@@ -29,7 +29,12 @@ class TestPITPrepare(unittest.TestCase):
 
     def test_simple_model(self):
         nn_ut = MySimpleNN()
-        self._execute_prepare(nn_ut)
+        new_nn = self._execute_prepare(nn_ut)
+        self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
+        n_tgt = len(new_nn._target_layers)
+        exp_tgt = 2
+        self.assertEqual(exp_tgt, n_tgt, "SimpleNN has {} conv layers, but found {} target layers".format(
+            exp_tgt, n_tgt))
 
     def test_tc_resnet_14(self):
         config = {
@@ -43,21 +48,28 @@ class TestPITPrepare(unittest.TestCase):
             "avg_pool": True,
         }
         nn_ut = TCResNet14(config)
-        self._execute_prepare(nn_ut)
+        new_nn = self._execute_prepare(nn_ut)
+        self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
+        n_tgt = len(new_nn._target_layers)
+        exp_tgt = 3 * len(config['num_channels'][1:]) + 1
+        self.assertEqual(exp_tgt, n_tgt, "TCResNet14 has {} conv layers, but found {} target layers".format(
+            exp_tgt, n_tgt))
 
+
+    @staticmethod
     def _execute_prepare(
-            self,
             nn_ut: nn.Module,
+            config: Any = None,
             exclude_names: Iterable[str] = (),
             exclude_types: Tuple[Type[nn.Module], ...] = ()):
-        new_nn = PITModel(nn_ut)
-        inner = new_nn._inner_model
-        self._compare_prepared(nn_ut, inner, nn_ut, new_nn, exclude_names, exclude_types)
+        new_nn = PITModel(nn_ut, config, exclude_names, exclude_types)
+        return new_nn
 
     def _compare_prepared(self,
                           old_mod: nn.Module, new_mod: nn.Module,
                           old_top: nn.Module, new_top: DNASModel,
-                          exclude_names: Iterable[str], exclude_types: Tuple[Type[nn.Module]]):
+                          exclude_names: Iterable[str] = (),
+                          exclude_types: Tuple[Type[nn.Module]] = ()):
         for name, child in old_mod.named_children():
             new_child = new_mod._modules[name]
             self._compare_prepared(child, new_child, old_top, new_top, exclude_names, exclude_types)

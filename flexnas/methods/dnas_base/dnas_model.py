@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Any, Iterable, Tuple, Type
+from typing import Any, Iterable, Tuple, Type, List
 import copy
 import torch
 import torch.nn as nn
@@ -38,6 +38,7 @@ class DNASModel(nn.Module):
         self.exclude_names = exclude_names
         self.exclude_types = tuple(exclude_types)
         self._inner_model = self._prepare(model)
+        self._target_layers = self._annotate_target_layers(self._inner_model)
 
     def forward(self, *args: Any):
         return self._inner_model.forward(*args)
@@ -54,7 +55,7 @@ class DNASModel(nn.Module):
     def get_regularization_loss(self) -> torch.Tensor:
         raise NotImplementedError
 
-    def _prepare(self, model: nn.Module):
+    def _prepare(self, model: nn.Module) -> nn.Module:
         model = copy.deepcopy(model)
         self._convert_layers(model, model)
         return model
@@ -69,3 +70,14 @@ class DNASModel(nn.Module):
                         name, child, top_level)
         for k, new_layer in reassign.items():
             mod._modules[k] = new_layer
+
+    def _annotate_target_layers(self, mod: nn.Module) -> List[nn.Module]:
+        # this could have been done within _convert_layers, but separating the two avoids some corner case errors, e.g.
+        # if a method first replaces children layers and then an entire hierarchical layer (making the children no
+        # longer part of the model)
+        tgt = []
+        for name, child in mod.named_children():
+            tgt += self._annotate_target_layers(child)
+            if isinstance(child, self.optimizable_layers()):
+                tgt.append(child)
+        return tgt
