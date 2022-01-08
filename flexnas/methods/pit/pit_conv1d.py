@@ -17,7 +17,6 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Any
 import torch
 import torch.nn as nn
 
@@ -26,7 +25,7 @@ import torch.nn as nn
 
 class PITConv1d(nn.Conv1d):
 
-    def __init__(self, conv: nn.Conv1d, config: Any):
+    def __init__(self, conv: nn.Conv1d):
         super(PITConv1d, self).__init__(
             conv.in_channels,
             conv.out_channels,
@@ -39,7 +38,6 @@ class PITConv1d(nn.Conv1d):
             conv.padding_mode)
         self.weight = conv.weight
         self.bias = conv.bias
-        self.config = config
 
     def forward(self, input: torch.Tensor):
         # ...PIT CODE...

@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Any, Iterable, Tuple, Type, List
+from typing import Any, Optional, Iterable, Tuple, Type, List
 import copy
 import torch
 import torch.nn as nn
@@ -30,11 +30,13 @@ class DNASModel(nn.Module):
     def __init__(
             self,
             model: nn.Module,
-            config: Any = None,
+            regularizer: Optional[str] = None,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
         super(DNASModel, self).__init__()
-        self.config = config
+        if regularizer not in self.supported_regularizers():
+            raise ValueError("Unsupported regularizer {}".format(regularizer))
+        self.regularizer = regularizer
         self.exclude_names = exclude_names
         self.exclude_types = tuple(exclude_types)
         self._inner_model = self._prepare(model)
@@ -44,11 +46,15 @@ class DNASModel(nn.Module):
         return self._inner_model.forward(*args)
 
     @abstractmethod
-    def optimizable_layers(self) -> Tuple[Type[nn.Module]]:
+    def optimizable_layers(self) -> Tuple[Type[nn.Module], ...]:
         raise NotImplementedError
 
     @abstractmethod
     def replacement_layer(self, name: str, layer: nn.Module, model: nn.Module) -> nn.Module:
+        raise NotImplementedError
+
+    @abstractmethod
+    def supported_regularizers(self) -> Tuple[str, ...]:
         raise NotImplementedError
 
     @abstractmethod

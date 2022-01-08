@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Iterable, Tuple, Type, Any
+from typing import Iterable, Tuple, Type
 import unittest
 import torch.nn as nn
 from flexnas.methods import PITModel
@@ -55,14 +55,13 @@ class TestPITPrepare(unittest.TestCase):
         self.assertEqual(exp_tgt, n_tgt, "TCResNet14 has {} conv layers, but found {} target layers".format(
             exp_tgt, n_tgt))
 
-
     @staticmethod
     def _execute_prepare(
             nn_ut: nn.Module,
-            config: Any = None,
+            regularizer: str = 'size',
             exclude_names: Iterable[str] = (),
             exclude_types: Tuple[Type[nn.Module], ...] = ()):
-        new_nn = PITModel(nn_ut, config, exclude_names, exclude_types)
+        new_nn = PITModel(nn_ut, regularizer, exclude_names, exclude_types)
         return new_nn
 
     def _compare_prepared(self,
