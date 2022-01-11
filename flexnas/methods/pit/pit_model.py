@@ -57,3 +57,33 @@ class PITModel(DNASModel):
 
     def get_regularization_loss(self) -> torch.Tensor:
         raise NotImplementedError
+
+    @property
+    def train_channels(self):
+        return self._train_channels
+
+    @train_channels.setter
+    def train_channels(self, value: bool):
+        for layer in self._target_layers:
+            layer.train_channels = value
+        self._train_channels = value
+
+    @property
+    def train_rf(self):
+        return self._train_rf
+
+    @train_rf.setter
+    def train_rf(self, value: bool):
+        for layer in self._target_layers:
+            layer.train_rf = value
+        self._train_rf = value
+
+    @property
+    def train_dilation(self):
+        return self._train_dilation
+
+    @train_dilation.setter
+    def train_dilation(self, value: bool):
+        for layer in self._target_layers:
+            layer.train_dilation = value
+        self._train_dilation = value
