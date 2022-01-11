@@ -27,17 +27,6 @@ from models import TCResNet14
 
 class TestPITNet(unittest.TestCase):
 
-    def test_initial_inference(self):
-        """ check that a PITModel just created returns the same output as its inner model"""
-        net = MySimpleNN()
-        x = torch.rand((32,) + tuple(net.input_shape))
-        pit_net = PITModel(net)
-        net.eval()
-        pit_net.eval()
-        y = net(x)
-        pit_y = pit_net(x)
-        assert torch.all(torch.eq(y, pit_y))
-
     def test_prepare_simple_model(self):
         nn_ut = MySimpleNN()
         new_nn = self._execute_prepare(nn_ut)
@@ -65,6 +54,56 @@ class TestPITNet(unittest.TestCase):
         exp_tgt = 3 * len(config['num_channels'][1:]) + 1
         self.assertEqual(exp_tgt, n_tgt, "TCResNet14 has {} conv layers, but found {} target layers".format(
             exp_tgt, n_tgt))
+
+    def test_keep_alive_masks_simple(self):
+        # TODO: should generate more layers with random RF and Cout
+        net = MySimpleNN()
+        pit_net = PITModel(net)
+        # conv1 has a filter size of 5 and 57 output channels
+        ka_alpha = pit_net._inner_model.conv1._ka_alpha
+        exp_ka_alpha = torch.tensor([1.0] + [0.0] * 56, dtype=torch.float32)
+        self.assertTrue(torch.equal(ka_alpha, exp_ka_alpha), "Wrong keep-alive mask for channels")
+        ka_beta = pit_net._inner_model.conv1._ka_beta
+        exp_ka_beta = torch.tensor([1.0] + [0.0] * 4, dtype=torch.float32)
+        self.assertTrue(torch.equal(ka_beta, exp_ka_beta), "Wrong keep-alive mask for rf")
+        ka_gamma = pit_net._inner_model.conv1._ka_gamma
+        exp_ka_gamma = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
+        self.assertTrue(torch.equal(ka_gamma, exp_ka_gamma), "Wrong keep-alive mask for dilation")
+
+    def test_c_matrices_simple(self):
+        # TODO: should generate more layers with random RF and Cout
+        net = MySimpleNN()
+        pit_net = PITModel(net)
+        # conv1 has a filter size of 5 and 57 output channels
+        c_beta = pit_net._inner_model.conv1._c_beta
+        exp_c_beta = torch.tensor([
+            [1, 1, 1, 1, 1],
+            [0, 1, 1, 1, 1],
+            [0, 0, 1, 1, 1],
+            [0, 0, 0, 1, 1],
+            [0, 0, 0, 0, 1],
+        ], dtype=torch.float32)
+        self.assertTrue(torch.equal(c_beta, exp_c_beta), "Wrong C beta matrix")
+        c_gamma = pit_net._inner_model.conv1._c_gamma
+        exp_c_gamma = torch.tensor([
+            [1, 1, 1],
+            [0, 0, 1],
+            [0, 1, 1],
+            [0, 0, 1],
+            [1, 1, 1],
+        ], dtype=torch.float32)
+        self.assertTrue(torch.equal(c_gamma, exp_c_gamma), "Wrong C gamma matrix")
+
+    def test_initial_inference(self):
+        """ check that a PITModel just created returns the same output as its inner model"""
+        net = MySimpleNN()
+        x = torch.rand((32,) + tuple(net.input_shape))
+        pit_net = PITModel(net)
+        net.eval()
+        pit_net.eval()
+        y = net(x)
+        pit_y = pit_net(x)
+        assert torch.all(torch.eq(y, pit_y))
 
     @staticmethod
     def _execute_prepare(
