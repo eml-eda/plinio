@@ -18,16 +18,27 @@
 # *----------------------------------------------------------------------------*
 from typing import Iterable, Tuple, Type
 import unittest
+import torch
 import torch.nn as nn
-from flexnas.methods import PITModel
-from flexnas.methods.dnas_base.dnas_model import DNASModel
+from flexnas.methods import DNASModel, PITModel
+from models import MySimpleNN
 from models import TCResNet14
-from .utils import MySimpleNN
 
 
-class TestPITPrepare(unittest.TestCase):
+class TestPITNet(unittest.TestCase):
 
-    def test_simple_model(self):
+    def test_initial_inference(self):
+        """ check that a PITModel just created returns the same output as its inner model"""
+        net = MySimpleNN()
+        x = torch.rand((32,) + tuple(net.input_shape))
+        pit_net = PITModel(net)
+        net.eval()
+        pit_net.eval()
+        y = net(x)
+        pit_y = pit_net(x)
+        assert torch.all(torch.eq(y, pit_y))
+
+    def test_prepare_simple_model(self):
         nn_ut = MySimpleNN()
         new_nn = self._execute_prepare(nn_ut)
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
@@ -36,7 +47,7 @@ class TestPITPrepare(unittest.TestCase):
         self.assertEqual(exp_tgt, n_tgt, "SimpleNN has {} conv layers, but found {} target layers".format(
             exp_tgt, n_tgt))
 
-    def test_tc_resnet_14(self):
+    def test_prepare_tc_resnet_14(self):
         config = {
             "input_size": 40,
             "output_size": 12,

@@ -61,7 +61,6 @@ class PITConv1d(nn.Conv1d):
         self.train_dilation = train_dilation
         self._ka_alpha, self._ka_beta, self._ka_gamma = self._generate_keep_alive_masks(keep_alive_channels)
         self._c_beta, self._c_gamma = self._generate_c_matrices()
-        self._dil_fact_max = 2 ** self._dil_n_max
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # same order as in old version. probably more natural to do ch -> rf -> dil ?
@@ -121,7 +120,7 @@ class PITConv1d(nn.Conv1d):
 
     @property
     def _gamma_len(self):
-        return math.ceil(math.log(self.rf, 2))
+        return max(math.ceil(math.log(self.rf, 2)), 1)
 
     @property
     def train_channels(self):

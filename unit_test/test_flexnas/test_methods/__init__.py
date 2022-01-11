@@ -16,5 +16,4 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .test_pit_prepare import *
-from .test_pit_inference import *
+from .test_pit import *
