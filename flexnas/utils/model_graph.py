@@ -1,10 +1,9 @@
-import torch.nn as nn
+import torch.fx as fx
 import networkx as nx
 from torch.fx import symbolic_trace
 
 
-def model_to_nx_graph(model: nn.Module) -> nx.Graph:
-    fx_graph = symbolic_trace(model).graph
+def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.Graph:
     nx_graph = nx.DiGraph()
     for n in fx_graph.nodes:
         for i in n.all_input_nodes:

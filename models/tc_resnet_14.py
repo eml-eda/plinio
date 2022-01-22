@@ -205,7 +205,6 @@ class TempBlock1(nn.Module):
         self.batchnorm1 = nn.BatchNorm1d(
             num_features=self.ch_out1
         )
-        self.relu1 = nn.ReLU()
 
         self.reluadd = nn.ReLU()
 
@@ -300,7 +299,6 @@ class TempBlock2(nn.Module):
         self.batchnorm1 = nn.BatchNorm1d(
             num_features=self.ch_out1
         )
-        self.relu1 = nn.ReLU()
 
         self.reluadd = nn.ReLU()
 

@@ -39,8 +39,7 @@ class PITModel(DNASModel):
             train_channels=True,
             train_rf=True,
             train_dilation=True):
-        super(PITModel, self).__init__(model, regularizer, exclude_names, exclude_types)
-        self._model_graph = self._create_model_graph()
+        super(PITModel, self).__init__(symbolic_trace(model), regularizer, exclude_names, exclude_types)
         self._convert_layers(self._inner_model)
         self._target_layers = self._annotate_target_layers(self._inner_model)
         self.train_channels = train_channels
@@ -82,9 +81,6 @@ class PITModel(DNASModel):
         for layer in self._target_layers:
             layer.train_dilation = value
         self._train_dilation = value
-
-    def _create_model_graph(self) -> torch.fx.Graph:
-        return symbolic_trace(self._inner_model).graph
 
     def _convert_layers(self, mod: nn.Module):
         reassign = {}

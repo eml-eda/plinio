@@ -17,8 +17,8 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 import unittest
-import networkx as nx
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
+import torch.fx as fx
 from models import MySimpleNN
 from models import TCResNet14
 from flexnas.utils.model_graph import *
@@ -28,9 +28,11 @@ class TestGraph(unittest.TestCase):
 
     def test_graph_from_simple_model(self):
         nn_ut = MySimpleNN()
-        g = model_to_nx_graph(nn_ut)
+        fx_graph = symbolic_trace(nn_ut).graph
+        g = fx_to_nx_graph(fx_graph)
         self.assertEqual(len(g.nodes), 12)
 
+    @unittest.skip("Missing ground truth number of nodes")
     def test_graph_from_tc_resnet_14(self):
         config = {
             "input_size": 40,
@@ -43,11 +45,13 @@ class TestGraph(unittest.TestCase):
             "avg_pool": True,
         }
         nn_ut = TCResNet14(config)
-        g = model_to_nx_graph(nn_ut)
-        f = plt.figure()
-        nx.draw(g, with_labels=True, ax=f.add_subplot(111))
-        f.savefig("tcresnet14.png")
+        fx_graph = symbolic_trace(nn_ut).graph
+        g = fx_to_nx_graph(fx_graph)
+        # f = plt.figure()
+        # nx.draw(g, with_labels=True, ax=f.add_subplot(111))
+        # f.savefig("tcresnet14.png")
         # self.assertEqual(len(g.nodes), 12)
+
 
 if __name__ == '__main__':
     unittest.main()
