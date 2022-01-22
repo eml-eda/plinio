@@ -25,7 +25,7 @@ from models import MySimpleNN
 from models import TCResNet14
 
 
-class TestPITNet(unittest.TestCase):
+class TestPIT(unittest.TestCase):
 
     def test_prepare_simple_model(self):
         nn_ut = MySimpleNN()
@@ -60,13 +60,13 @@ class TestPITNet(unittest.TestCase):
         net = MySimpleNN()
         pit_net = PITModel(net)
         # conv1 has a filter size of 5 and 57 output channels
-        ka_alpha = pit_net._inner_model.conv1._ka_alpha
+        ka_alpha = pit_net._inner_model.conv1._keep_alpha
         exp_ka_alpha = torch.tensor([1.0] + [0.0] * 56, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_alpha, exp_ka_alpha), "Wrong keep-alive mask for channels")
-        ka_beta = pit_net._inner_model.conv1._ka_beta
+        ka_beta = pit_net._inner_model.conv1._keep_beta
         exp_ka_beta = torch.tensor([1.0] + [0.0] * 4, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_beta, exp_ka_beta), "Wrong keep-alive mask for rf")
-        ka_gamma = pit_net._inner_model.conv1._ka_gamma
+        ka_gamma = pit_net._inner_model.conv1._keep_gamma
         exp_ka_gamma = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_gamma, exp_ka_gamma), "Wrong keep-alive mask for dilation")
 
@@ -122,9 +122,9 @@ class TestPITNet(unittest.TestCase):
         for name, child in old_mod.named_children():
             new_child = new_mod._modules[name]
             self._compare_prepared(child, new_child, old_top, new_top, exclude_names, exclude_types)
-            if isinstance(child, new_top.optimizable_layers()):
+            if isinstance(child, new_top._optimizable_layers()):
                 if (name not in exclude_names) and (not isinstance(child, exclude_types)):
-                    repl = new_top.replacement_layer(name, child, old_top)
+                    repl = new_top._replacement_layer(name, child)
                     print(type(new_child))
                     print(type(repl))
                     assert isinstance(new_child, type(repl))

@@ -17,9 +17,10 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Tuple, Type, Iterable, Optional
+from typing import Tuple, Type, Iterable, Optional, List
 import torch
 import torch.nn as nn
+from torch.fx import symbolic_trace
 from flexnas.methods.dnas_base import DNASModel
 from .pit_conv1d import PITConv1d
 
@@ -39,21 +40,15 @@ class PITModel(DNASModel):
             train_rf=True,
             train_dilation=True):
         super(PITModel, self).__init__(model, regularizer, exclude_names, exclude_types)
+        self._model_graph = self._create_model_graph()
+        self._convert_layers(self._inner_model)
+        self._target_layers = self._annotate_target_layers(self._inner_model)
         self.train_channels = train_channels
         self.train_rf = train_rf
         self.train_dilation = train_dilation
 
     def supported_regularizers(self) -> Tuple[str, ...]:
         return PITModel.regularizers
-
-    def optimizable_layers(self) -> Tuple[Type[nn.Module], ...]:
-        return tuple(PITModel.replacement_dict.keys())
-
-    def replacement_layer(self, name: str, layer: nn.Module, model: nn.Module) -> nn.Module:
-        for OldClass, NewClass in PITModel.replacement_dict.items():
-            if isinstance(layer, OldClass):
-                return NewClass(layer)
-        raise ValueError("Replacement Layer not found")
 
     def get_regularization_loss(self) -> torch.Tensor:
         raise NotImplementedError
@@ -87,3 +82,37 @@ class PITModel(DNASModel):
         for layer in self._target_layers:
             layer.train_dilation = value
         self._train_dilation = value
+
+    def _create_model_graph(self) -> torch.fx.Graph:
+        return symbolic_trace(self._inner_model).graph
+
+    def _convert_layers(self, mod: nn.Module):
+        reassign = {}
+        for name, child in mod.named_children():
+            self._convert_layers(child)
+            if isinstance(child, self._optimizable_layers()):
+                if (name not in self.exclude_names) and (not isinstance(child, self.exclude_types)):
+                    reassign[name] = self._replacement_layer(name, child)
+        for k, new_layer in reassign.items():
+            mod._modules[k] = new_layer
+
+    def _annotate_target_layers(self, mod: nn.Module) -> List[nn.Module]:
+        # this could have been done within _convert_layers, but separating the two avoids some corner case errors, e.g.
+        # if a method first replaces children layers and then an entire hierarchical layer (making the children no
+        # longer part of the model)
+        tgt = []
+        for name, child in mod.named_children():
+            tgt += self._annotate_target_layers(child)
+            if isinstance(child, PITModel._optimizable_layers()):
+                tgt.append(child)
+        return tgt
+
+    def _replacement_layer(self, name: str, layer: nn.Module) -> nn.Module:
+        for OldClass, NewClass in PITModel.replacement_dict.items():
+            if isinstance(layer, OldClass):
+                return NewClass(layer, self.regularizer)
+        raise ValueError("Replacement Layer not found")
+
+    @staticmethod
+    def _optimizable_layers() -> Tuple[Type[nn.Module], ...]:
+        return tuple(PITModel.replacement_dict.keys())

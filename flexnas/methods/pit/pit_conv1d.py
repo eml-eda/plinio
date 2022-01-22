@@ -29,8 +29,11 @@ from .pit_binarizer import PITBinarizer
 
 class PITConv1d(nn.Conv1d):
 
+    regularizers = ('size', 'flops')
+
     def __init__(self,
                  conv: nn.Conv1d,
+                 regularizer: str,
                  train_channels: bool = True,
                  train_rf: bool = True,
                  train_dilation: bool = True,
@@ -48,7 +51,9 @@ class PITConv1d(nn.Conv1d):
             conv.padding_mode)
         self.weight = conv.weight
         self.bias = conv.bias
-        self._binarization_threshold = binarization_threshold
+        if regularizer not in PITConv1d.regularizers:
+            raise ValueError("Unsupported regularizer {}".format(regularizer))
+        self.regularizer = regularizer
         self.alpha = Parameter(
             torch.empty(self.out_channels, dtype=torch.float32).fill_(1.0), requires_grad=True)
         self.beta = Parameter(
@@ -59,36 +64,46 @@ class PITConv1d(nn.Conv1d):
         self.train_channels = train_channels
         self.train_rf = train_rf
         self.train_dilation = train_dilation
-        self._ka_alpha, self._ka_beta, self._ka_gamma = self._generate_keep_alive_masks(keep_alive_channels)
+        self._binarization_threshold = binarization_threshold
+        self._keep_alpha, self._keep_beta, self._keep_gamma = self._generate_keep_alive_masks(keep_alive_channels)
         self._c_beta, self._c_gamma = self._generate_c_matrices()
+        self._beta_norm, self._gamma_norm = self._generate_norm_constants()
+        self.register_buffer('out_channels_eff', torch.tensor(0, dtype=torch.float32))
+        self.register_buffer('k_eff', torch.tensor(0, dtype=torch.float32))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # same order as in old version. probably more natural to do ch -> rf -> dil ?
-        pruned_weight = self._channel_mask(self.weight, self.alpha)
-        pruned_weight = self._dilation_mask(pruned_weight, self.gamma)
-        pruned_weight = self._filter_mask(pruned_weight, self.beta)
-        return self._conv_forward(input, pruned_weight, self.bias)
 
-    def _channel_mask(self, w: torch.Tensor, alpha: torch.Tensor) -> torch.Tensor:
-        # Weight format in Conv1d is [out_channels, in_channels, kernel]
-        # TODO: doing both the multiplication and the abs() is probably redundant (same for filter & dilation)
-        keep_alive_alpha = torch.abs(alpha) * (1 - self._ka_alpha) + self._ka_alpha
+        # keep alive
+        # TODO: doing both the multiplication and the abs() is probably redundant
+        keep_alive_alpha = torch.abs(self.alpha) * (1 - self._keep_alpha) + self._keep_alpha
+        keep_alive_beta = torch.abs(self.beta) * (1 - self._keep_beta) + self._keep_beta
+        keep_alive_gamma = torch.abs(self.gamma) * (1 - self._keep_gamma) + self._keep_gamma
+
+        # channels mask
         bin_alpha = PITBinarizer.apply(keep_alive_alpha, self._binarization_threshold)
         # TODO: can we skip the two transposes? what's the overhead?
-        masked_channels = torch.mul(w.transpose(0, 2), bin_alpha)
-        return masked_channels.transpose(0, 2)
+        masked_channels = torch.mul(self.weight.transpose(0, 2), bin_alpha)
+        pruned_weight = masked_channels.transpose(0, 2)
 
-    def _filter_mask(self, w: torch.Tensor, beta: torch.Tensor) -> torch.Tensor:
-        keep_alive_beta = torch.abs(beta) * (1 - self._ka_beta) + self._ka_beta
-        big_beta = torch.matmul(self._c_beta, keep_alive_beta)
-        big_beta = PITBinarizer.apply(big_beta, self._binarization_threshold)
-        return torch.mul(big_beta, w)
+        # dilation mask
+        theta_gamma = torch.matmul(self._c_gamma, keep_alive_gamma)
+        theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+        pruned_weight = torch.mul(theta_gamma, pruned_weight)
 
-    def _dilation_mask(self, w: torch.Tensor, gamma: torch.Tensor) -> torch.Tensor:
-        keep_alive_gamma = torch.abs(gamma) * (1 - self._ka_gamma) + self._ka_gamma
-        big_gamma = torch.matmul(self._c_gamma, keep_alive_gamma)
-        big_gamma = PITBinarizer.apply(big_gamma, self._binarization_threshold)
-        return torch.mul(big_gamma, w)
+        # filter mask
+        theta_beta = torch.matmul(self._c_beta, keep_alive_beta)
+        theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
+        pruned_weight = torch.mul(theta_beta, pruned_weight)
+
+        # save info for regularization
+        norm_theta_beta = torch.mul(theta_beta, self._beta_norm)
+        norm_theta_gamma = torch.mul(theta_gamma, self._gamma_norm)
+        print(theta_beta, norm_theta_beta, self.rf)
+        self.k_eff.copy_(torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma)))
+        self.out_channels_eff.copy_(torch.sum(bin_alpha))
+
+        return self._conv_forward(input, pruned_weight, self.bias)
 
     def _generate_keep_alive_masks(self, keep_alive_channels: int) -> Tuple[torch.Tensor, ...]:
         ka_alpha = torch.tensor([1.0] * keep_alive_channels + [0.0] * (self.out_channels - keep_alive_channels),
@@ -113,6 +128,17 @@ class PITConv1d(nn.Conv1d):
         c_gamma = torch.transpose(c_gamma, 0, 1)
         c_gamma = torch.fliplr(c_gamma)
         return c_beta, c_gamma
+
+    def _generate_norm_constants(self) -> Tuple[torch.Tensor, ...]:
+        beta_norm = torch.tensor([1.0/(self.rf - i) for i in range(self.rf)], dtype=torch.float32)
+        gamma_norm = []
+        for i in range(self.rf):
+            k_i = 0
+            for p in range(self._gamma_len):
+                k_i += 0 if i % 2**p == 0 else 1
+            gamma_norm.append(1.0/(self._gamma_len - k_i))
+        gamma_norm = torch.tensor(gamma_norm, dtype=torch.float32)
+        return beta_norm, gamma_norm
 
     @property
     def rf(self):

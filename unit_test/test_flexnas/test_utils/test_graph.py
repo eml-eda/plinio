@@ -16,38 +16,38 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
+import unittest
+import networkx as nx
+import matplotlib.pyplot as plt
+from models import MySimpleNN
+from models import TCResNet14
+from flexnas.utils.model_graph import *
 
-from abc import abstractmethod
-from typing import Any, Optional, Iterable, Tuple, Type
-import copy
-import torch
-import torch.nn as nn
 
+class TestGraph(unittest.TestCase):
 
-class DNASModel(nn.Module):
+    def test_graph_from_simple_model(self):
+        nn_ut = MySimpleNN()
+        g = model_to_nx_graph(nn_ut)
+        self.assertEqual(len(g.nodes), 12)
 
-    @abstractmethod
-    def __init__(
-            self,
-            model: nn.Module,
-            regularizer: Optional[str] = None,
-            exclude_names: Iterable[str] = (),
-            exclude_types: Iterable[Type[nn.Module]] = ()):
-        super(DNASModel, self).__init__()
-        if regularizer not in self.supported_regularizers():
-            raise ValueError("Unsupported regularizer {}".format(regularizer))
-        self.regularizer = regularizer
-        self.exclude_names = exclude_names
-        self.exclude_types = tuple(exclude_types)
-        self._inner_model = copy.deepcopy(model)
+    def test_graph_from_tc_resnet_14(self):
+        config = {
+            "input_size": 40,
+            "output_size": 12,
+            "num_channels": [24, 36, 36, 48, 48, 72, 72],
+            "kernel_size": 9,
+            "dropout": 0.5,
+            "grad_clip": -1,
+            "use_bias": True,
+            "avg_pool": True,
+        }
+        nn_ut = TCResNet14(config)
+        g = model_to_nx_graph(nn_ut)
+        f = plt.figure()
+        nx.draw(g, with_labels=True, ax=f.add_subplot(111))
+        f.savefig("tcresnet14.png")
+        # self.assertEqual(len(g.nodes), 12)
 
-    def forward(self, *args: Any):
-        return self._inner_model.forward(*args)
-
-    @abstractmethod
-    def supported_regularizers(self) -> Tuple[str, ...]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_regularization_loss(self) -> torch.Tensor:
-        raise NotImplementedError
+if __name__ == '__main__':
+    unittest.main()

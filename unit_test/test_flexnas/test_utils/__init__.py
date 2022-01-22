@@ -16,38 +16,4 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-
-from abc import abstractmethod
-from typing import Any, Optional, Iterable, Tuple, Type
-import copy
-import torch
-import torch.nn as nn
-
-
-class DNASModel(nn.Module):
-
-    @abstractmethod
-    def __init__(
-            self,
-            model: nn.Module,
-            regularizer: Optional[str] = None,
-            exclude_names: Iterable[str] = (),
-            exclude_types: Iterable[Type[nn.Module]] = ()):
-        super(DNASModel, self).__init__()
-        if regularizer not in self.supported_regularizers():
-            raise ValueError("Unsupported regularizer {}".format(regularizer))
-        self.regularizer = regularizer
-        self.exclude_names = exclude_names
-        self.exclude_types = tuple(exclude_types)
-        self._inner_model = copy.deepcopy(model)
-
-    def forward(self, *args: Any):
-        return self._inner_model.forward(*args)
-
-    @abstractmethod
-    def supported_regularizers(self) -> Tuple[str, ...]:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_regularization_loss(self) -> torch.Tensor:
-        raise NotImplementedError
+from .test_graph import *
