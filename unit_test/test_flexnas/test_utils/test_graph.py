@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 import unittest
 # import matplotlib.pyplot as plt
-import torch.fx as fx
+from torch.fx import symbolic_trace
 from models import MySimpleNN
 from models import TCResNet14
 from flexnas.utils.model_graph import *
@@ -47,6 +47,7 @@ class TestGraph(unittest.TestCase):
         nn_ut = TCResNet14(config)
         fx_graph = symbolic_trace(nn_ut).graph
         g = fx_to_nx_graph(fx_graph)
+        print(g)
         # f = plt.figure()
         # nx.draw(g, with_labels=True, ax=f.add_subplot(111))
         # f.savefig("tcresnet14.png")

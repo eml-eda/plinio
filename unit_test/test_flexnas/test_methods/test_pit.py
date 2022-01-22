@@ -122,9 +122,9 @@ class TestPIT(unittest.TestCase):
         for name, child in old_mod.named_children():
             new_child = new_mod._modules[name]
             self._compare_prepared(child, new_child, old_top, new_top, exclude_names, exclude_types)
-            if isinstance(child, new_top._optimizable_layers()):
+            if isinstance(child, new_top._opt_modules()):
                 if (name not in exclude_names) and (not isinstance(child, exclude_types)):
-                    repl = new_top._replacement_layer(name, child)
+                    repl = new_top._replacement_module(child)
                     print(type(new_child))
                     print(type(repl))
                     assert isinstance(new_child, type(repl))
