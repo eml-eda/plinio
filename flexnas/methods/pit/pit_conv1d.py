@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Tuple
+from typing import Tuple, Optional, Callable
 import math
 import torch
 import torch.nn as nn
@@ -34,6 +34,8 @@ class PITConv1d(nn.Conv1d):
     def __init__(self,
                  conv: nn.Conv1d,
                  regularizer: str,
+                 c_in_setter: Optional[nn.Module],
+                 c_in_funct: Callable,
                  train_channels: bool = True,
                  train_rf: bool = True,
                  train_dilation: bool = True,
@@ -54,6 +56,8 @@ class PITConv1d(nn.Conv1d):
         if regularizer not in PITConv1d.regularizers:
             raise ValueError("Unsupported regularizer {}".format(regularizer))
         self.regularizer = regularizer
+        self.c_in_setter = c_in_setter
+        self.c_in_funct = c_in_funct
         self.alpha = Parameter(
             torch.empty(self.out_channels, dtype=torch.float32).fill_(1.0), requires_grad=True)
         self.beta = Parameter(
@@ -70,6 +74,7 @@ class PITConv1d(nn.Conv1d):
         self._beta_norm, self._gamma_norm = self._generate_norm_constants()
         self.register_buffer('out_channels_eff', torch.tensor(0, dtype=torch.float32))
         self.register_buffer('k_eff', torch.tensor(0, dtype=torch.float32))
+        self.register_buffer('out_l', torch.tensor(0, dtype=torch.float32))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # same order as in old version. probably more natural to do ch -> rf -> dil ?
@@ -96,14 +101,23 @@ class PITConv1d(nn.Conv1d):
         theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
         pruned_weight = torch.mul(theta_beta, pruned_weight)
 
+        # conv operation
+        y = self._conv_forward(input, pruned_weight, self.bias)
+
         # save info for regularization
         norm_theta_beta = torch.mul(theta_beta, self._beta_norm)
         norm_theta_gamma = torch.mul(theta_gamma, self._gamma_norm)
-        print(theta_beta, norm_theta_beta, self.rf)
         self.k_eff.copy_(torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma)))
         self.out_channels_eff.copy_(torch.sum(bin_alpha))
+        self.out_l.copy_(torch.tensor(y.size()[-1]))
+        return y
 
-        return self._conv_forward(input, pruned_weight, self.bias)
+    def get_regularization_loss(self):
+        c_in = self.c_in_funct(self.c_in_setter)
+        cost = c_in * self.out_channels_eff * self.k_eff
+        if self.regularizer == 'flops':
+            cost = cost * self.out_l
+        return cost
 
     def _generate_keep_alive_masks(self, keep_alive_channels: int) -> Tuple[torch.Tensor, ...]:
         ka_alpha = torch.tensor([1.0] * keep_alive_channels + [0.0] * (self.out_channels - keep_alive_channels),

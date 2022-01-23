@@ -17,25 +17,34 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Tuple, Type, Iterable, Optional
-
-import networkx as nx
+from typing import Tuple, Type, Iterable, Optional, Callable
 import torch
 import torch.nn as nn
 import torch.fx as fx
 from flexnas.methods.dnas_base import DNASModel
-from flexnas.utils.model_graph import fx_to_nx_graph
 from .pit_conv1d import PITConv1d
 
 
 class PITModel(DNASModel):
 
-    # dictionary of patterns and corresponding replacements
-    module_rules = {
+    # dictionary of nn.module classes and corresponding replacements
+    replacement_module_rules = {
         nn.Conv1d: PITConv1d,
-        # set([operator.add, torch.add, "add"]): PITAdd,
     }
-    regularizers = ('size', 'flops')
+
+    # list of NN modules that determine the number of input channels of subsequent layers, and corresponding
+    # way to get then. Importantly, subclasses should be before superclasses.
+    c_in_setter_module_rules = {
+        PITConv1d: lambda x: x.out_channels_eff,
+        nn.Conv1d: lambda x: x.out_channels,
+        nn.Linear: lambda x: x.out_features,
+    }
+
+    # supported regularizers
+    regularizers = (
+        'size',
+        'flops'
+    )
 
     def __init__(
             self,
@@ -57,7 +66,10 @@ class PITModel(DNASModel):
         return PITModel.regularizers
 
     def get_regularization_loss(self) -> torch.Tensor:
-        raise NotImplementedError
+        reg_loss = torch.tensor(0)
+        for layer, in self._target_layers:
+            reg_loss += layer.get_regularization_loss()
+        return reg_loss
 
     @property
     def train_channels(self):
@@ -91,34 +103,71 @@ class PITModel(DNASModel):
 
     def _convert(self):
         mod = fx.symbolic_trace(self._inner_model)
-        grf = fx_to_nx_graph(mod.graph).reverse()
-        self._convert_layers(mod, grf)
+        self._convert_layers(mod)
         mod.recompile()
         self._inner_model = mod
 
-    def _convert_layers(self, mod: fx.GraphModule, g: nx.DiGraph):
+    def _convert_layers(self, mod: fx.GraphModule):
         for n in mod.graph.nodes:
             if n.name not in self.exclude_names:
                 if n.op == 'call_module':
-                    mod = self._replace_module(n, mod, g)
+                    mod = self._replace_module(n, mod)
                 if n.op == 'call_function':
-                    pass  # TODO: add
+                    pass  # TODO: add (if needed)
 
-    def _replace_module(self, n: fx.Node, mod: fx.GraphModule, g: nx.DiGraph):
+    def _replace_module(self, n: fx.Node, mod: fx.GraphModule) -> fx.GraphModule:
         old_submodule = mod.get_submodule(n.target)
-        if isinstance(old_submodule, PITModel._opt_modules()):
+        if isinstance(old_submodule, tuple(PITModel.replacement_module_rules.keys())):
             if not isinstance(old_submodule, self.exclude_types):
-                new_submodule = self._replacement_module(old_submodule)
+                c_in_setter, c_in_func = PITModel._find_c_in_setter(n, mod)
+                new_submodule = self._replacement_module(old_submodule, c_in_setter, c_in_func)
                 mod.add_submodule(n.target, new_submodule)
                 self._target_layers.append(new_submodule)
         return mod
 
     @staticmethod
-    def _opt_modules() -> Tuple[Type[nn.Module], ...]:
-        return tuple(PITModel.module_rules.keys())
+    def _find_c_in_setter(n: fx.Node, mod: fx.GraphModule) -> Tuple[nn.Module, Callable]:
+        r = PITModel._find_c_in_setter_recursive(n, mod)
+        # this means that there's nothing before this layer in the graph that determines the number of output channels
+        # so we simply use the number of input channels of this layer
+        if r[1] is None:
+            sub_mod = mod.get_submodule(n.target)
+            return sub_mod, lambda x: x.in_channels
+        return r
 
-    def _replacement_module(self, layer: nn.Module) -> nn.Module:
-        for OldClass, NewClass in PITModel.module_rules.items():
+    @staticmethod
+    def _find_c_in_setter_recursive(n: fx.Node, mod: fx.GraphModule) -> Tuple[Optional[nn.Module], Optional[Callable]]:
+        if len(n.all_input_nodes) > 1:
+            raise ValueError("More than one input node determines the number of input channels for a PIT layer." +
+                             " This is not currently supported!")
+        n = n.all_input_nodes[0]
+        # input tensor
+        if n.op == 'placeholder':
+            return None, None
+        # nn.Module
+        elif n.op == 'call_module':
+            sub_mod = mod.get_submodule(n.target)
+            if isinstance(sub_mod, tuple(PITModel.c_in_setter_module_rules.keys())):
+                return sub_mod, PITModel._passthrough_function(sub_mod)
+            else:
+                return PITModel._find_c_in_setter_recursive(n, mod)
+        # torch method or builtin function
+        elif n.op == 'call_function' or n.op == 'call_method':
+            # TODO: add (if needed)
+            return PITModel._find_c_in_setter_recursive(n, mod)
+        # all other cases
+        return PITModel._find_c_in_setter_recursive(n, mod)
+
+    @staticmethod
+    def _passthrough_function(layer: nn.Module) -> Callable:
+        for ModuleClass, funct in PITModel.c_in_setter_module_rules.items():
+            if isinstance(layer, ModuleClass):
+                return funct
+        raise ValueError("Passthrough function not found")
+
+    def _replacement_module(
+            self, layer: nn.Module, c_in_setter: Optional[nn.Module], c_in_funct: Callable) -> nn.Module:
+        for OldClass, NewClass in PITModel.replacement_module_rules.items():
             if isinstance(layer, OldClass):
-                return NewClass(layer, self.regularizer)
+                return NewClass(layer, self.regularizer, c_in_setter, c_in_funct)
         raise ValueError("Replacement Layer not found")
