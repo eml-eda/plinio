@@ -17,28 +17,20 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Tuple, Type, Iterable, Optional, Callable
+from typing import Tuple, Type, Iterable, Optional, Dict
 import torch
-import torch.nn as nn
-import torch.fx as fx
+import torch.nn.functional as F
+from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.dnas_base import DNASModel
 from .pit_conv1d import PITConv1d
+from .pit_channel_masker import PITChannelMasker
+from .pit_timestep_masker import PITTimestepMasker
+from .pit_dilation_masker import PITDilationMasker
+from flexnas.utils.model_graph import *
+from flexnas.utils.features_calculator import *
 
 
 class PITModel(DNASModel):
-
-    # dictionary of nn.module classes and corresponding replacements
-    replacement_module_rules = {
-        nn.Conv1d: PITConv1d,
-    }
-
-    # list of NN modules that determine the number of input channels of subsequent layers, and corresponding
-    # way to get then. Importantly, subclasses should be before superclasses.
-    c_in_setter_module_rules = {
-        PITConv1d: lambda x: x.out_channels_eff,
-        nn.Conv1d: lambda x: x.out_channels,
-        nn.Linear: lambda x: x.out_features,
-    }
 
     # supported regularizers
     regularizers = (
@@ -49,6 +41,7 @@ class PITModel(DNASModel):
     def __init__(
             self,
             model: nn.Module,
+            input_example: torch.Tensor,
             regularizer: Optional[str] = 'size',
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
@@ -56,6 +49,7 @@ class PITModel(DNASModel):
             train_rf=True,
             train_dilation=True):
         super(PITModel, self).__init__(model, regularizer, exclude_names, exclude_types)
+        self._input_example = input_example
         self._target_layers = []
         self._convert()
         self.train_channels = train_channels
@@ -103,71 +97,152 @@ class PITModel(DNASModel):
 
     def _convert(self):
         mod = fx.symbolic_trace(self._inner_model)
+        ShapeProp(mod).propagate(self._input_example)
         self._convert_layers(mod)
+        self._set_input_sizes(mod)
         mod.recompile()
         self._inner_model = mod
 
     def _convert_layers(self, mod: fx.GraphModule):
-        for n in mod.graph.nodes:
-            if n.name not in self.exclude_names:
-                if n.op == 'call_module':
-                    mod = self._replace_module(n, mod)
-                if n.op == 'call_function':
-                    pass  # TODO: add (if needed)
+        # reverse bfs on the graph
+        g = mod.graph
+        queue = get_output_nodes(g)
+        shared_masker_queue = [None] * len(queue)
+        visited = []
+        while queue:
+            n = queue.pop(0)
+            shared_masker = shared_masker_queue.pop(0)
+            visited.append(n)
+            shared_masker = self._rewrite_node(n, mod, shared_masker)
+            for pred in n.all_input_nodes:
+                queue.append(pred)
+                shared_masker_queue.append(shared_masker)
 
-    def _replace_module(self, n: fx.Node, mod: fx.GraphModule) -> fx.GraphModule:
-        old_submodule = mod.get_submodule(n.target)
-        if isinstance(old_submodule, tuple(PITModel.replacement_module_rules.keys())):
-            if not isinstance(old_submodule, self.exclude_types):
-                c_in_setter, c_in_func = PITModel._find_c_in_setter(n, mod)
-                new_submodule = self._replacement_module(old_submodule, c_in_setter, c_in_func)
-                mod.add_submodule(n.target, new_submodule)
-                self._target_layers.append(new_submodule)
-        return mod
+    def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
+                      ) -> Optional[PITChannelMasker]:
 
-    @staticmethod
-    def _find_c_in_setter(n: fx.Node, mod: fx.GraphModule) -> Tuple[nn.Module, Callable]:
-        r = PITModel._find_c_in_setter_recursive(n, mod)
-        # this means that there's nothing before this layer in the graph that determines the number of output channels
-        # so we simply use the number of input channels of this layer
-        if r[1] is None:
-            sub_mod = mod.get_submodule(n.target)
-            return sub_mod, lambda x: x.in_channels
-        return r
+        same_input_size_functions = (
+            torch.add, torch.sub,
+        )
 
-    @staticmethod
-    def _find_c_in_setter_recursive(n: fx.Node, mod: fx.GraphModule) -> Tuple[Optional[nn.Module], Optional[Callable]]:
-        if len(n.all_input_nodes) > 1:
-            raise ValueError("More than one input node determines the number of input channels for a PIT layer." +
-                             " This is not currently supported!")
-        n = n.all_input_nodes[0]
-        # input tensor
-        if n.op == 'placeholder':
-            return None, None
-        # nn.Module
-        elif n.op == 'call_module':
-            sub_mod = mod.get_submodule(n.target)
-            if isinstance(sub_mod, tuple(PITModel.c_in_setter_module_rules.keys())):
-                return sub_mod, PITModel._passthrough_function(sub_mod)
+        same_input_size_modules = (
+            # TODO: fill
+        )
+
+        if n.op == 'call_module':
+            submodule = mod.get_submodule(n.target)
+            # add other NAS-able layers here as needed
+            if isinstance(submodule, nn.Conv1d):
+                if not isinstance(submodule, self.exclude_types) and n.name not in self.exclude_names:
+                    if shared_masker is not None:
+                        chan_masker = shared_masker
+                    else:
+                        chan_masker = PITChannelMasker(submodule.out_channels)
+                    new_submodule = PITConv1d(
+                        submodule,
+                        n.meta['tensor_meta'].shape[1],
+                        self.regularizer,
+                        chan_masker,
+                        PITTimestepMasker(submodule.kernel_size[0]),
+                        PITDilationMasker(submodule.kernel_size[0]),
+                    )
+                    mod.add_submodule(n.target, new_submodule)
+                    self._target_layers.append(new_submodule)
+                    return None
+            # other single-input modules, nothing to do and no sharing
+            elif len(n.all_input_nodes) == 1:
+                return None
+            # other modules that require multiple inputs all of the same size
+            elif isinstance(submodule, same_input_size_modules):
+                # create a new shared masker with the common n. of input channels, (possibly) used by predecessors
+                input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
+                shared_masker = PITChannelMasker(input_size)
+                return shared_masker
             else:
-                return PITModel._find_c_in_setter_recursive(n, mod)
-        # torch method or builtin function
-        elif n.op == 'call_function' or n.op == 'call_method':
-            # TODO: add (if needed)
-            return PITModel._find_c_in_setter_recursive(n, mod)
-        # all other cases
-        return PITModel._find_c_in_setter_recursive(n, mod)
+                raise ValueError("Unsupported module node {}".format(n))
+
+        elif n.op == 'call_function':
+            # single input functions, nothing to do and no sharing
+            if len(n.all_input_nodes) == 1:
+                return None
+            # functions that require multiple inputs all of the same size
+            elif n.target in same_input_size_functions:
+                # create a new shared masker with the common n. of input channels, (possibly) used by predecessors
+                input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
+                shared_masker = PITChannelMasker(input_size)
+                return shared_masker
+            else:
+                raise ValueError("Unsupported function node {}".format(n))
+        return None
+
+    def _set_input_sizes(self, mod: fx.GraphModule):
+        # forward bfs on the graph
+        g = mod.graph
+        # convert to networkx graph to have successors information
+        nx_graph = fx_to_nx_graph(g)
+        queue = get_input_nodes(g)
+        calc_dict = {}
+        visited = []
+        while queue:
+            n = queue.pop(0)
+            visited.append(n)
+            self._update_input_size_calculator(n, mod, calc_dict)
+            for succ in nx_graph.successors(n):
+                queue.append(succ)
 
     @staticmethod
-    def _passthrough_function(layer: nn.Module) -> Callable:
-        for ModuleClass, funct in PITModel.c_in_setter_module_rules.items():
-            if isinstance(layer, ModuleClass):
-                return funct
-        raise ValueError("Passthrough function not found")
+    def _update_input_size_calculator(n: fx.Node, mod: fx.GraphModule,
+                                      calc_dict: Dict[fx.Node, Optional[FeaturesCalculator]]):
 
-    def _replacement_module(
-            self, layer: nn.Module, c_in_setter: Optional[nn.Module], c_in_funct: Callable) -> nn.Module:
-        for OldClass, NewClass in PITModel.replacement_module_rules.items():
-            if isinstance(layer, OldClass):
-                return NewClass(layer, self.regularizer, c_in_setter, c_in_funct)
-        raise ValueError("Replacement Layer not found")
+        channel_defining_modules = (
+            nn.Conv1d, nn.Conv2d, nn.Linear
+        )
+
+        channel_propagating_modules = (
+            nn.BatchNorm1d, nn.BatchNorm2d, nn.AvgPool1d, nn.AvgPool2d, nn.MaxPool1d, nn.BatchNorm2d, nn.Dropout,
+            nn.ReLU, nn.ReLU6
+        )
+
+        channel_propagating_functions = (
+            F.relu, F.relu6
+        )
+
+        if n.op == 'placeholder':
+            calc_dict[n] = None
+
+        if n.op == 'call_module':
+            sub_mod = mod.get_submodule(n.target)
+            if isinstance(sub_mod, channel_defining_modules):
+                calc_dict[n] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
+            elif isinstance(sub_mod, channel_propagating_modules):
+                calc_dict[n] = calc_dict[n.all_input_nodes[0]]  # they all have a single input
+            elif isinstance(sub_mod, PITConv1d):
+                prev = n.all_input_nodes[0]
+                if calc_dict[prev] is None:  # it means this is the first layer after an input node
+                    ifc = ModAttrFeaturesCalculator(sub_mod, 'in_channels')
+                else:
+                    # flatten nodes change features number
+                    ifc = calc_dict[prev]
+                # special case of PIT layers. here we also have to set the input_size_calculator attribute
+                sub_mod.input_size_calculator = ifc
+                calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_channels_eff')
+            else:
+                raise ValueError("Unsupported module node {}".format(n))
+
+        if n.op == 'call_function':
+            if n.target == torch.add:
+                # assumes all inputs to add have the same number of features (as expected)
+                calc_dict[n] = calc_dict[n.all_input_nodes[0]]
+                # alternative
+                # ifc = ListReduceFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes], max)
+                # calc_dict[n] = ifc
+            elif n.target == torch.cat:
+                # TODO: this assumes that concatenation is always on the features axis. Not always true. Fix.
+                ifc = ListReduceFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes], sum)
+                calc_dict[n] = ifc
+            elif n.target in channel_propagating_functions:
+                calc_dict[n] = calc_dict[n.all_input_nodes[0]]
+            else:
+                raise ValueError("Unsupported function node {}".format(n))
+
+        return

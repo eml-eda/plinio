@@ -38,7 +38,7 @@ class TCResNet14(nn.Module):
             value=0
         )
         self.conv0 = nn.Conv1d(
-            in_channels=self.config['input_size'],
+            in_channels=self.config['input_channels'],
             out_channels=self.config['num_channels'][0],
             kernel_size=(3,),
             bias=self.config['use_bias']

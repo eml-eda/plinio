@@ -29,7 +29,7 @@ class TestPIT(unittest.TestCase):
 
     def test_prepare_simple_model(self):
         nn_ut = MySimpleNN()
-        new_nn = self._execute_prepare(nn_ut)
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)))
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 2
@@ -38,7 +38,7 @@ class TestPIT(unittest.TestCase):
 
     def test_prepare_tc_resnet_14(self):
         config = {
-            "input_size": 40,
+            "input_channels": 6,
             "output_size": 12,
             "num_channels": [24, 36, 36, 48, 48, 72, 72],
             "kernel_size": 9,
@@ -48,7 +48,7 @@ class TestPIT(unittest.TestCase):
             "avg_pool": True,
         }
         nn_ut = TCResNet14(config)
-        new_nn = self._execute_prepare(nn_ut)
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 6, 50)))
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 3 * len(config['num_channels'][1:]) + 1
@@ -58,7 +58,7 @@ class TestPIT(unittest.TestCase):
     def test_keep_alive_masks_simple(self):
         # TODO: should generate more layers with random RF and Cout
         net = MySimpleNN()
-        pit_net = PITModel(net)
+        pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
         ka_alpha = pit_net._inner_model.conv1._keep_alpha
         exp_ka_alpha = torch.tensor([1.0] + [0.0] * 56, dtype=torch.float32)
@@ -66,14 +66,14 @@ class TestPIT(unittest.TestCase):
         ka_beta = pit_net._inner_model.conv1._keep_beta
         exp_ka_beta = torch.tensor([1.0] + [0.0] * 4, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_beta, exp_ka_beta), "Wrong keep-alive mask for rf")
-        ka_gamma = pit_net._inner_model.conv1._keep_gamma
+        ka_gamma = pit_net._inner_model.conv1._keep_alive
         exp_ka_gamma = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_gamma, exp_ka_gamma), "Wrong keep-alive mask for dilation")
 
     def test_c_matrices_simple(self):
         # TODO: should generate more layers with random RF and Cout
         net = MySimpleNN()
-        pit_net = PITModel(net)
+        pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
         c_beta = pit_net._inner_model.conv1._c_beta
         exp_c_beta = torch.tensor([
@@ -98,7 +98,7 @@ class TestPIT(unittest.TestCase):
         """ check that a PITModel just created returns the same output as its inner model"""
         net = MySimpleNN()
         x = torch.rand((32,) + tuple(net.input_shape))
-        pit_net = PITModel(net)
+        pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
         net.eval()
         pit_net.eval()
         y = net(x)
@@ -108,10 +108,11 @@ class TestPIT(unittest.TestCase):
     @staticmethod
     def _execute_prepare(
             nn_ut: nn.Module,
+            input_example: torch.Tensor,
             regularizer: str = 'size',
             exclude_names: Iterable[str] = (),
             exclude_types: Tuple[Type[nn.Module], ...] = ()):
-        new_nn = PITModel(nn_ut, regularizer, exclude_names, exclude_types)
+        new_nn = PITModel(nn_ut, input_example, regularizer, exclude_names, exclude_types)
         return new_nn
 
     def _compare_prepared(self,
