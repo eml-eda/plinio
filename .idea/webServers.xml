@@ -3,7 +3,7 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="4c17a4d7-441a-4d53-8963-c300bcda818d" name="billie">
-        <fileTransfer accessType="SFTP" host="billie.polito.it" port="22" sshConfigId="27d96a82-b230-4b12-a524-bb360d54a6f1" sshConfig="daniele@billie.polito.it">
+        <fileTransfer accessType="SFTP" host="billie.polito.it" port="22" sshConfigId="27d96a82-b230-4b12-a524-bb360d54a6f1" sshConfig="daniele@billie.polito.it:22 password">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>
