@@ -19,8 +19,6 @@
 
 from typing import Tuple, Type, Iterable, Optional, Dict
 import math
-import operator
-import torch
 import torch.nn.functional as F
 from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.dnas_base import DNASModel
@@ -123,59 +121,44 @@ class PITModel(DNASModel):
     def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
                       ) -> Optional[PITChannelMasker]:
 
-        same_input_size_functions = (
-            torch.add, torch.sub, operator.add
+        # TODO: add other NAS-able layers here as needed
+        if is_layer(n, mod, nn.Conv1d) and not self._exclude_mod(n, mod):
+            return self._rewrite_Conv1d(n, mod, shared_masker)
+        # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
+        #     return _rewrite_Conv2d()
+        elif zero_or_one_input_op(n):
+            # nothing do do and no channel sharing
+            return None
+        elif shared_input_size_op(n, mod):
+            # modules that require multiple inputs all of the same size
+            # create a new shared masker with the common n. of input channels, possibly used by predecessors
+            input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
+            shared_masker = PITChannelMasker(input_size)
+            return shared_masker
+        else:
+            raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
+
+    def _rewrite_Conv1d(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
+                        ) -> Optional[PITChannelMasker]:
+        submodule = mod.get_submodule(n.target)
+        if shared_masker is not None:
+            chan_masker = shared_masker
+        else:
+            chan_masker = PITChannelMasker(submodule.out_channels)
+        new_submodule = PITConv1d(
+            submodule,
+            n.meta['tensor_meta'].shape[1],
+            self.regularizer,
+            chan_masker,
+            PITTimestepMasker(submodule.kernel_size[0]),
+            PITDilationMasker(submodule.kernel_size[0]),
         )
-
-        same_input_size_modules = (
-            # TODO: fill
-        )
-
-        if n.op == 'call_module':
-            submodule = mod.get_submodule(n.target)
-            # add other NAS-able layers here as needed
-            if type(submodule) is nn.Conv1d:
-                if type(submodule) not in self.exclude_types and n.name not in self.exclude_names:
-                    if shared_masker is not None:
-                        chan_masker = shared_masker
-                    else:
-                        chan_masker = PITChannelMasker(submodule.out_channels)
-                    new_submodule = PITConv1d(
-                        submodule,
-                        n.meta['tensor_meta'].shape[1],
-                        self.regularizer,
-                        chan_masker,
-                        PITTimestepMasker(submodule.kernel_size[0]),
-                        PITDilationMasker(submodule.kernel_size[0]),
-                    )
-                    mod.add_submodule(n.target, new_submodule)
-                    self._target_layers.append(new_submodule)
-                    return None
-            # other single-input modules, nothing to do and no sharing
-            elif len(n.all_input_nodes) == 1:
-                return None
-            # other modules that require multiple inputs all of the same size
-            elif type(submodule) in same_input_size_modules:
-                # create a new shared masker with the common n. of input channels, (possibly) used by predecessors
-                input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
-                shared_masker = PITChannelMasker(input_size)
-                return shared_masker
-            else:
-                raise ValueError("Unsupported module node {}".format(n))
-
-        elif n.op == 'call_function':
-            # single input functions, nothing to do and no sharing
-            if len(n.all_input_nodes) == 1:
-                return None
-            # functions that require multiple inputs all of the same size
-            elif n.target in same_input_size_functions:
-                # create a new shared masker with the common n. of input channels, (possibly) used by predecessors
-                input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
-                shared_masker = PITChannelMasker(input_size)
-                return shared_masker
-            else:
-                raise ValueError("Unsupported function node {}".format(n))
+        mod.add_submodule(n.target, new_submodule)
+        self._target_layers.append(new_submodule)
         return None
+
+    def _exclude_mod(self, n: fx.Node, mod: fx.GraphModule) -> bool:
+        return (type(mod) in self.exclude_types) or (n.name in self.exclude_names)
 
     def _set_input_sizes(self, mod: fx.GraphModule):
         # forward bfs on the graph

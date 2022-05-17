@@ -16,7 +16,10 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List
+from typing import List, Type
+import operator
+import torch
+import torch.nn as nn
 import torch.fx as fx
 import networkx as nx
 
@@ -43,3 +46,26 @@ def get_output_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
         if n.op == 'output':
             ret.append(n)
     return ret
+
+def zero_or_one_input_op(n: fx.Node) -> bool:
+    return len(n.all_input_nodes) <= 1
+
+def is_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
+    if n.op != 'call_module':
+        return False
+    return type(parent.get_submodule(n.target)) == layer
+
+
+def shared_input_size_op(n: fx.Node, parent: fx.GraphModule) -> bool:
+    if zero_or_one_input_op(n):
+        return False
+    if n.op == 'call_function':
+        if n.target == torch.add: return True
+        if n.target == operator.add: return True
+        if n.target == torch.sub: return True
+        if n.target == operator.sub: return True
+        # TODO: add others here
+    # are there any modules that require same input size? if so, add them below. Same for methods
+    # if n.op == 'call_module':
+    # if n.op == 'call_method':
+    return False
