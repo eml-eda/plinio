@@ -47,8 +47,10 @@ def get_output_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
             ret.append(n)
     return ret
 
+
 def zero_or_one_input_op(n: fx.Node) -> bool:
     return len(n.all_input_nodes) <= 1
+
 
 def is_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
     if n.op != 'call_module':
