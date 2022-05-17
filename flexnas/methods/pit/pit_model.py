@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Tuple, Type, Iterable, Optional, Dict
+from typing import cast, Tuple, Type, Iterable, Optional, Dict
 import math
 import torch.nn.functional as F
 from torch.fx.passes.shape_prop import ShapeProp
@@ -45,9 +45,9 @@ class PITModel(DNASModel):
             regularizer: Optional[str] = 'size',
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
-            train_channels=True,
-            train_rf=True,
-            train_dilation=True):
+            train_channels: bool = True,
+            train_rf: bool = True,
+            train_dilation: bool = True):
         super(PITModel, self).__init__(model, regularizer, exclude_names, exclude_types)
         self._input_example = input_example
         self._target_layers = []
@@ -146,7 +146,7 @@ class PITModel(DNASModel):
         else:
             chan_masker = PITChannelMasker(submodule.out_channels)
         new_submodule = PITConv1d(
-            submodule,
+            cast(submodule, nn.Conv1d),
             n.meta['tensor_meta'].shape[1],
             self.regularizer,
             chan_masker,
