@@ -123,7 +123,7 @@ class PITModel(DNASModel):
 
         # TODO: add other NAS-able layers here as needed
         if is_layer(n, mod, nn.Conv1d) and not self._exclude_mod(n, mod):
-            return self._rewrite_Conv1d(n, mod, shared_masker)
+            return self._rewrite_conv1d(n, mod, shared_masker)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
         elif zero_or_one_input_op(n):
@@ -138,7 +138,7 @@ class PITModel(DNASModel):
         else:
             raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
-    def _rewrite_Conv1d(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
+    def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
                         ) -> Optional[PITChannelMasker]:
         submodule = mod.get_submodule(n.target)
         if shared_masker is not None:
