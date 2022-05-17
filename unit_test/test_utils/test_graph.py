@@ -16,4 +16,42 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .test_methods import *
+import unittest
+from torch.fx import symbolic_trace
+from unit_test.models import SimpleNN
+from unit_test.models import TCResNet14
+from flexnas.utils.model_graph import *
+
+
+class TestGraph(unittest.TestCase):
+
+    def test_graph_from_simple_model(self):
+        nn_ut = SimpleNN()
+        fx_graph = symbolic_trace(nn_ut).graph
+        g = fx_to_nx_graph(fx_graph)
+        self.assertEqual(len(g.nodes), 13)
+
+    @unittest.skip("Missing ground truth number of nodes")
+    def test_graph_from_tc_resnet_14(self):
+        config = {
+            "input_size": 40,
+            "output_size": 12,
+            "num_channels": [24, 36, 36, 48, 48, 72, 72],
+            "kernel_size": 9,
+            "dropout": 0.5,
+            "grad_clip": -1,
+            "use_bias": True,
+            "avg_pool": True,
+        }
+        nn_ut = TCResNet14(config)
+        fx_graph = symbolic_trace(nn_ut).graph
+        g = fx_to_nx_graph(fx_graph)
+        print(g)
+        # f = plt.figure()
+        # nx.draw(g, with_labels=True, ax=f.add_subplot(111))
+        # f.savefig("tcresnet14.png")
+        # self.assertEqual(len(g.nodes), 12)
+
+
+if __name__ == '__main__':
+    unittest.main()

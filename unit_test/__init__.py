@@ -16,5 +16,3 @@
 # *                                                                            *
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from .test_dataloaders import *
-from .test_flexnas import *

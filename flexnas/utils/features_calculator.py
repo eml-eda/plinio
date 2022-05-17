@@ -26,7 +26,7 @@ class FeaturesCalculator:
 
     @abstractmethod
     def __init__(self):
-        raise NotImplementedError
+        pass
 
     @property
     @abstractmethod

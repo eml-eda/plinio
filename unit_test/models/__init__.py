@@ -16,4 +16,6 @@
 # *                                                                            *
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from .test_gsc_data_loader import *
+
+from .tc_resnet_14 import *
+from .simple_nn import *

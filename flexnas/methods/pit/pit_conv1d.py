@@ -34,8 +34,8 @@ class PITConv1d(nn.Conv1d):
                  conv: nn.Conv1d,
                  out_length: int,
                  regularizer: str,
-                 out_channels_masker: PITChannelMasker,
-                 timesteps_masker: PITTimestepMasker,
+                 out_channel_masker: PITChannelMasker,
+                 timestep_masker: PITTimestepMasker,
                  dilation_masker: PITDilationMasker,
                  ):
         super(PITConv1d, self).__init__(
@@ -54,9 +54,9 @@ class PITConv1d(nn.Conv1d):
         if regularizer not in PITConv1d.regularizers:
             raise ValueError("Unsupported regularizer {}".format(regularizer))
         self.regularizer = regularizer
-        self.input_size_calculator = None
-        self.out_channels_masker = out_channels_masker
-        self.timesteps_masker = timesteps_masker
+        self._input_size_calculator = None
+        self.out_channel_masker = out_channel_masker
+        self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
         self._beta_norm, self._gamma_norm = self._generate_norm_constants()
         self.register_buffer('out_channels_eff', torch.tensor(0, dtype=torch.float32))
@@ -65,12 +65,12 @@ class PITConv1d(nn.Conv1d):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # for now we keep the same order of the old version (ch --> dil --> rf)
         # but it's probably more natural to do ch --> rf --> dil
-        bin_alpha = self.out_channels_masker()
+        bin_alpha = self.out_channel_masker()
         # TODO: check that the result is correct after removing the two transposes
         pruned_weight = torch.mul(self.weight, bin_alpha.unsqueeze(1).unsqueeze(1))
         theta_gamma = self.dilation_masker()
         pruned_weight = torch.mul(theta_gamma, pruned_weight)
-        theta_beta = self.timesteps_masker()
+        theta_beta = self.timestep_masker()
         pruned_weight = torch.mul(theta_beta, pruned_weight)
 
         # conv operation
@@ -96,19 +96,19 @@ class PITConv1d(nn.Conv1d):
         gamma_norm = []
         for i in range(self.rf):
             k_i = 0
-            for p in range(self._gamma_len):
+            for p in range(self.dilation_masker._gamma_len):
                 k_i += 0 if i % 2**p == 0 else 1
-            gamma_norm.append(1.0/(self._gamma_len - k_i))
+            gamma_norm.append(1.0/(self.dilation_masker._gamma_len - k_i))
         gamma_norm = torch.tensor(gamma_norm, dtype=torch.float32)
         return beta_norm, gamma_norm
 
     @property
     def input_size_calculator(self) -> Optional[FeaturesCalculator]:
-        return self.input_size_calculator
+        return self._input_size_calculator
 
     @input_size_calculator.setter
     def input_size_calculator(self, calc: FeaturesCalculator):
-        self.input_size_calculator = calc
+        self._input_size_calculator = calc
 
     @property
     def rf(self):
@@ -116,19 +116,19 @@ class PITConv1d(nn.Conv1d):
 
     @property
     def train_channels(self):
-        return self.out_channels_masker.trainable
+        return self.out_channel_masker.trainable
 
     @train_channels.setter
     def train_channels(self, value: bool):
-        self.out_channels_masker.trainable = value
+        self.out_channel_masker.trainable = value
 
     @property
     def train_rf(self):
-        return self.timesteps_masker.trainable
+        return self.timestep_masker.trainable
 
     @train_rf.setter
     def train_rf(self, value: bool):
-        self.timesteps_masker.trainable = value
+        self.timestep_masker.trainable = value
 
     @property
     def train_dilation(self):

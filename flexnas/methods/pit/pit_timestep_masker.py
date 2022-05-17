@@ -41,7 +41,7 @@ class PITTimestepMasker(nn.Module):
         self._c_beta = self._generate_c_matrix()
 
     def forward(self) -> torch.Tensor:
-        keep_alive_beta = torch.abs(self.beta) * (1 - self._keep_beta) + self._keep_beta
+        keep_alive_beta = torch.abs(self.beta) * (1 - self._keep_alive) + self._keep_alive
         theta_beta = torch.matmul(self._c_beta, keep_alive_beta)
         theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
         return theta_beta

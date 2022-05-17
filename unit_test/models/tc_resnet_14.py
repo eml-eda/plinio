@@ -55,9 +55,9 @@ class TCResNet14(nn.Module):
             self.avgpool = nn.AvgPool1d(
                 kernel_size=2
             )
-            self.ft_in = floor(13 / 2)
+            self.ft_in = 3
         else:
-            self.ft_in = 13
+            self.ft_in = 6
 
         self.dpout = nn.Dropout(
             p=self.config['dropout']
@@ -70,7 +70,6 @@ class TCResNet14(nn.Module):
         )
 
     def forward(self, x):
-        x = torch.transpose(x, 1, 2)
         x = self.pad0(x)
         x = self.conv0(x)
         y1 = self.tcn(x)

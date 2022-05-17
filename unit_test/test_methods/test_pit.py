@@ -21,14 +21,15 @@ import unittest
 import torch
 import torch.nn as nn
 from flexnas.methods import DNASModel, PITModel
-from models import MySimpleNN
-from models import TCResNet14
+from flexnas.methods.pit import PITConv1d
+from unit_test.models import SimpleNN
+from unit_test.models import TCResNet14
 
 
 class TestPIT(unittest.TestCase):
 
     def test_prepare_simple_model(self):
-        nn_ut = MySimpleNN()
+        nn_ut = SimpleNN()
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)))
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
         n_tgt = len(new_nn._target_layers)
@@ -57,25 +58,25 @@ class TestPIT(unittest.TestCase):
 
     def test_keep_alive_masks_simple(self):
         # TODO: should generate more layers with random RF and Cout
-        net = MySimpleNN()
+        net = SimpleNN()
         pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
-        ka_alpha = pit_net._inner_model.conv1._keep_alpha
+        ka_alpha = pit_net._inner_model.conv1.out_channel_masker._keep_alive
         exp_ka_alpha = torch.tensor([1.0] + [0.0] * 56, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_alpha, exp_ka_alpha), "Wrong keep-alive mask for channels")
-        ka_beta = pit_net._inner_model.conv1._keep_beta
+        ka_beta = pit_net._inner_model.conv1.timestep_masker._keep_alive
         exp_ka_beta = torch.tensor([1.0] + [0.0] * 4, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_beta, exp_ka_beta), "Wrong keep-alive mask for rf")
-        ka_gamma = pit_net._inner_model.conv1._keep_alive
+        ka_gamma = pit_net._inner_model.conv1.dilation_masker._keep_alive
         exp_ka_gamma = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_gamma, exp_ka_gamma), "Wrong keep-alive mask for dilation")
 
     def test_c_matrices_simple(self):
         # TODO: should generate more layers with random RF and Cout
-        net = MySimpleNN()
+        net = SimpleNN()
         pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
-        c_beta = pit_net._inner_model.conv1._c_beta
+        c_beta = pit_net._inner_model.conv1.timestep_masker._c_beta
         exp_c_beta = torch.tensor([
             [1, 1, 1, 1, 1],
             [0, 1, 1, 1, 1],
@@ -84,7 +85,7 @@ class TestPIT(unittest.TestCase):
             [0, 0, 0, 0, 1],
         ], dtype=torch.float32)
         self.assertTrue(torch.equal(c_beta, exp_c_beta), "Wrong C beta matrix")
-        c_gamma = pit_net._inner_model.conv1._c_gamma
+        c_gamma = pit_net._inner_model.conv1.dilation_masker._c_gamma
         exp_c_gamma = torch.tensor([
             [1, 1, 1],
             [0, 0, 1],
@@ -96,9 +97,9 @@ class TestPIT(unittest.TestCase):
 
     def test_initial_inference(self):
         """ check that a PITModel just created returns the same output as its inner model"""
-        net = MySimpleNN()
-        x = torch.rand((32,) + tuple(net.input_shape))
-        pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
+        net = SimpleNN()
+        x = torch.rand((32,) + tuple(net.input_shape[1:]))
+        pit_net = PITModel(net, input_example=x[0:1])
         net.eval()
         pit_net.eval()
         y = net(x)
@@ -123,7 +124,7 @@ class TestPIT(unittest.TestCase):
         for name, child in old_mod.named_children():
             new_child = new_mod._modules[name]
             self._compare_prepared(child, new_child, old_top, new_top, exclude_names, exclude_types)
-            if isinstance(child, tuple(PITModel.replacement_module_rules.keys())):
+            if isinstance(child, PITConv1d):
                 if (name not in exclude_names) and (not isinstance(child, exclude_types)):
                     repl = new_top._replacement_module(child, None, lambda x: x)
                     print(type(new_child))
