@@ -48,6 +48,25 @@ class PITModel(DNASModel):
             train_channels: bool = True,
             train_rf: bool = True,
             train_dilation: bool = True):
+        """PITModel NAS constructor.
+
+        :param model: the inner nn.Module instance optimized by the NAS
+        :type model: nn.Module
+        :param input_example: an example of input tensor, required for symbolic tracing
+        :type input_example: torch.Tensor`
+        :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
+        :type regularizer: Optional[str], optional
+        :param exclude_names: the names of `model` submodules that should be ignored by the NAS, defaults to ()
+        :type exclude_names: Iterable[str], optional
+        :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS, defaults to ()
+        :type exclude_types: Iterable[Type[nn.Module]], optional
+        :param train_channels: flag to control whether output channels are optimized by PIT or not, defaults to True
+        :type train_channels: bool, optional
+        :param train_rf: flag to control whether receptive field is optimized by PIT or not, defaults to True
+        :type train_rf: bool, optional
+        :param train_dilation: flag to control whether dilation is optimized by PIT or not, defaults to True
+        :type train_dilation: bool, optional
+        """
         super(PITModel, self).__init__(model, regularizer, exclude_names, exclude_types)
         self._input_example = input_example
         self._target_layers = []
