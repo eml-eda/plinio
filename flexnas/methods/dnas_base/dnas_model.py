@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Any, Optional, Iterable, Tuple, Type
+from typing import Any, Iterable, Tuple, Type
 import torch
 import torch.nn as nn
 
@@ -29,7 +29,7 @@ class DNASModel(nn.Module):
     def __init__(
             self,
             model: nn.Module,
-            regularizer: Optional[str] = None,
+            regularizer: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
         """Abstract DNAS model constructor

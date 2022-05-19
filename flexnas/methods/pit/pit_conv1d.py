@@ -17,10 +17,10 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Optional, Tuple
+from typing import Tuple
 import torch
 import torch.nn as nn
-from flexnas.utils.features_calculator import FeaturesCalculator
+from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
 from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
 from .pit_dilation_masker import PITDilationMasker
@@ -54,7 +54,7 @@ class PITConv1d(nn.Conv1d):
         if regularizer not in PITConv1d.regularizers:
             raise ValueError("Unsupported regularizer {}".format(regularizer))
         self.regularizer = regularizer
-        self._input_size_calculator = None
+        self._input_size_calculator = ConstFeaturesCalculator(conv.in_channels)
         self.out_channel_masker = out_channel_masker
         self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
@@ -79,8 +79,11 @@ class PITConv1d(nn.Conv1d):
         # save info for regularization
         norm_theta_beta = torch.mul(theta_beta, self._beta_norm)
         norm_theta_gamma = torch.mul(theta_gamma, self._gamma_norm)
-        self.out_channels_eff.copy_(torch.sum(bin_alpha))
-        self.k_eff.copy_(torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma)))
+        # TODO: check if the two following lines are equivalent to the commented ones
+        # self.out_channels_eff.copy_(torch.sum(bin_alpha))
+        # self.k_eff.copy_(torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma)))
+        self.out_channels_eff = torch.sum(bin_alpha)
+        self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
 
         return y
 
@@ -103,7 +106,7 @@ class PITConv1d(nn.Conv1d):
         return beta_norm, gamma_norm
 
     @property
-    def input_size_calculator(self) -> Optional[FeaturesCalculator]:
+    def input_size_calculator(self) -> FeaturesCalculator:
         return self._input_size_calculator
 
     @input_size_calculator.setter

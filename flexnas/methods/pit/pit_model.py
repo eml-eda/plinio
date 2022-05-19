@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import cast, Tuple, Type, Iterable, Optional, Dict
+from typing import cast, List, Tuple, Type, Iterable, Optional, Dict
 import operator
 import math
 import torch
@@ -47,7 +47,7 @@ class PITModel(DNASModel):
             self,
             model: nn.Module,
             input_example: torch.Tensor,
-            regularizer: Optional[str] = 'size',
+            regularizer: str = 'size',
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             train_channels: bool = True,
@@ -170,7 +170,7 @@ class PITModel(DNASModel):
         """
         g = mod.graph
         queue = model_graph.get_output_nodes(g)
-        shared_masker_queue = [None] * len(queue)
+        shared_masker_queue: List[Optional[PITChannelMasker]] = [None] * len(queue)
         while queue:
             n = queue.pop(0)
             shared_masker = shared_masker_queue.pop(0)
@@ -206,20 +206,20 @@ class PITModel(DNASModel):
         :param shared_masker: an optional shared channels mask derived from subsequent layers
         :type shared_masker: Optional[PITChannelMasker]
         """
-        submodule = mod.get_submodule(n.target)
+        submodule = cast(nn.Conv1d, mod.get_submodule(str(n.target)))
         if shared_masker is not None:
             chan_masker = shared_masker
         else:
             chan_masker = PITChannelMasker(submodule.out_channels)
         new_submodule = PITConv1d(
-            cast(submodule, nn.Conv1d),
+            submodule,
             n.meta['tensor_meta'].shape[1],
             self.regularizer,
             chan_masker,
             PITTimestepMasker(submodule.kernel_size[0]),
             PITDilationMasker(submodule.kernel_size[0]),
         )
-        mod.add_submodule(n.target, new_submodule)
+        mod.add_submodule(str(n.target), new_submodule)
         self._target_layers.append(new_submodule)
         return
 
@@ -233,7 +233,7 @@ class PITModel(DNASModel):
         :return: True if the node should be excluded
         :rtype: bool
         """
-        return (type(mod.get_submodule(n.target)) in self.exclude_types) or (n.name in self.exclude_names)
+        return (type(mod.get_submodule(str(n.target))) in self.exclude_types) or (n.name in self.exclude_names)
 
     def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:
         """Determines if the currently processed node requires that its predecessor share a common channels mask.
@@ -282,7 +282,7 @@ class PITModel(DNASModel):
 
     @staticmethod
     def _update_input_size_calculator(n: fx.Node, mod: fx.GraphModule,
-                                      calc_dict: Dict[fx.Node, Optional[FeaturesCalculator]]):
+                                      calc_dict: Dict[fx.Node, FeaturesCalculator]):
 
         channel_defining_modules = (
             nn.Conv1d, nn.Conv2d, nn.Linear
@@ -303,11 +303,8 @@ class PITModel(DNASModel):
                 if i not in calc_dict:
                     return
 
-        if n.op == 'placeholder':
-            calc_dict[n] = None
-
         if n.op == 'call_module':
-            sub_mod = mod.get_submodule(n.target)
+            sub_mod = mod.get_submodule(str(n.target))
             if type(sub_mod) in channel_defining_modules:
                 calc_dict[n] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
             elif type(sub_mod) in channel_propagating_modules:
