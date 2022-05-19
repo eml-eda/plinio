@@ -85,36 +85,68 @@ class PITModel(DNASModel):
         return reg_loss
 
     @property
-    def train_channels(self):
+    def train_channels(self) -> bool:
+        """Returns True if PIT is training the output channels masks
+
+        :return: True if PIT is training the output channels masks
+        :rtype: bool
+        """
         return self._train_channels
 
     @train_channels.setter
     def train_channels(self, value: bool):
+        """Set to True to let PIT train the output channels masks
+
+        :param value: set to True to let PIT train the output channels masks
+        :type value: bool
+        """
         for layer in self._target_layers:
             layer.train_channels = value
         self._train_channels = value
 
     @property
-    def train_rf(self):
+    def train_rf(self) -> bool:
+        """Returns True if PIT is training the filters receptive fields masks
+
+        :return: True if PIT is training the filters receptive fields masks
+        :rtype: bool
+        """
         return self._train_rf
 
     @train_rf.setter
     def train_rf(self, value: bool):
+        """Set to True to let PIT train the filters receptive fields masks
+
+        :param value: set to True to let PIT train the filters receptive fields masks
+        :type value: bool
+        """
         for layer in self._target_layers:
             layer.train_rf = value
         self._train_rf = value
 
     @property
     def train_dilation(self):
+        """Returns True if PIT is training the filters dilation masks
+
+        :return: True if PIT is training the filters dilation masks
+        :rtype: bool
+        """
         return self._train_dilation
 
     @train_dilation.setter
     def train_dilation(self, value: bool):
+        """Set to True to let PIT train the filters dilation masks
+
+        :param value: set to True to let PIT train the filters dilation masks
+        :type value: bool
+        """
         for layer in self._target_layers:
             layer.train_dilation = value
         self._train_dilation = value
 
     def _convert(self):
+        """Converts the inner model, making it "NAS-able" by PIT
+        """
         mod = fx.symbolic_trace(self._inner_model)
         ShapeProp(mod).propagate(self._input_example)
         self._convert_layers(mod)
@@ -123,42 +155,52 @@ class PITModel(DNASModel):
         self._inner_model = mod
 
     def _convert_layers(self, mod: fx.GraphModule):
-        # reverse bfs on the graph
+        """Replaces target layers (currently, only Conv1D) with their NAS-able version, while also recording the list of NAS-able
+        layers for speeding up later regularization loss computations.
+
+        Layer conversion is implemented as a reverse BFS on the model graph (starting from the output and reversing all edges).
+
+        :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to determine the sizes of PIT masks.
+        :type mod: fx.GraphModule
+        """
         g = mod.graph
         queue = get_output_nodes(g)
         shared_masker_queue = [None] * len(queue)
-        visited = []
         while queue:
             n = queue.pop(0)
             shared_masker = shared_masker_queue.pop(0)
-            visited.append(n)
-            shared_masker = self._rewrite_node(n, mod, shared_masker)
+            self._rewrite_node(n, mod, shared_masker)
+            shared_masker = self._update_shared_masker(n, mod, shared_masker)
             for pred in n.all_input_nodes:
                 queue.append(pred)
                 shared_masker_queue.append(shared_masker)
 
-    def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
-                      ) -> Optional[PITChannelMasker]:
+    def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]):
+        """Optionally rewrites a fx.GraphModule node replacing a sub-module instance with its corresponding NAS-able version
 
-        # TODO: add other NAS-able layers here as needed
+        :param n: the node to be rewritten
+        :type n: fx.Node
+        :param mod: the parent module, where the new node has to be otpionally inserted
+        :type mod: fx.GraphModule
+        :param shared_masker: an optional shared channels mask derived from subsequent layers
+        :type shared_masker: Optional[PITChannelMasker]
+        """
+        # TODO: add other NAS-able layers here
         if is_layer(n, mod, nn.Conv1d) and not self._exclude_mod(n, mod):
-            return self._rewrite_conv1d(n, mod, shared_masker)
+            self._rewrite_conv1d(n, mod, shared_masker)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
-        elif zero_or_one_input_op(n):
-            # nothing do do and no channel sharing
-            return None
-        elif shared_input_size_op(n, mod):
-            # modules that require multiple inputs all of the same size
-            # create a new shared masker with the common n. of input channels, possibly used by predecessors
-            input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
-            shared_masker = PITChannelMasker(input_size)
-            return shared_masker
-        else:
-            raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
-    def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
-                        ) -> Optional[PITChannelMasker]:
+    def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]):
+        """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a PITConv1D layer
+
+        :param n: the node to be rewritten, corresponds to a Conv1D layer
+        :type n: fx.Node
+        :param mod: the parent module, where the new node has to be inserted
+        :type mod: fx.GraphModule
+        :param shared_masker: an optional shared channels mask derived from subsequent layers
+        :type shared_masker: Optional[PITChannelMasker]
+        """
         submodule = mod.get_submodule(n.target)
         if shared_masker is not None:
             chan_masker = shared_masker
@@ -174,22 +216,62 @@ class PITModel(DNASModel):
         )
         mod.add_submodule(n.target, new_submodule)
         self._target_layers.append(new_submodule)
-        return None
+        return
 
     def _exclude_mod(self, n: fx.Node, mod: fx.GraphModule) -> bool:
-        return (type(mod) in self.exclude_types) or (n.name in self.exclude_names)
+        """Returns True if a submodule should be excluded from the NAS optimization, based on the names and types blacklists.
+
+        :param n: the target node
+        :type n: fx.Node
+        :param mod: the parent module
+        :type mod: fx.GraphModule
+        :return: True if the node should be excluded
+        :rtype: bool
+        """
+        return (type(mod.get_submodule(n.target)) in self.exclude_types) or (n.name in self.exclude_names)
+
+    def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
+                      ) -> Optional[PITChannelMasker]:
+        """Determines if the currently processed node requires that its predecessor share a common channels mask.
+
+        :param n: the target node
+        :type n: fx.Node
+        :param mod: the parent module
+        :type mod: fx.GraphModule
+        :param shared_masker: the current shared_masker
+        :type shared_masker: Optional[PITChannelMasker]
+        :raises ValueError: for unsupported nodes, to avoid unexpected behaviors
+        :return: the updated shared_masker
+        :rtype: Optional[PITChannelMasker]
+        """
+        if zero_or_one_input_op(n):
+            # definitely no channel sharing
+            return None
+        elif shared_input_size_op(n, mod):
+            # modules that require multiple inputs all of the same size
+            # create a new shared masker with the common n. of input channels, to be used by predecessors
+            input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
+            shared_masker = PITChannelMasker(input_size)
+            return shared_masker
+        else:
+            raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
     def _set_input_sizes(self, mod: fx.GraphModule):
-        # forward bfs on the graph
+        """Determines, for each layer in the network, which preceding layer dictates its input shape.
+
+        This is needed to correctly evaluate the cost loss function during NAS optimization.
+        This pass is implemented as a forward BFS on the network graph.
+
+        :param mod: a torch.fx.GraphModule with tensor shapes annotations.
+        :type mod: fx.GraphModule
+        """
         g = mod.graph
-        # convert to networkx graph to have successors information
+        # convert to networkx graph to have successors information, fx only gives predecessors unfortunately
         nx_graph = fx_to_nx_graph(g)
         queue = get_input_nodes(g)
         calc_dict = {}
-        visited = []
         while queue:
             n = queue.pop(0)
-            visited.append(n)
             self._update_input_size_calculator(n, mod, calc_dict)
             for succ in nx_graph.successors(n):
                 queue.append(succ)

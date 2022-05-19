@@ -51,7 +51,7 @@ class DNASModel(nn.Module):
         self.regularizer = regularizer
         self.exclude_names = exclude_names
         self.exclude_types = tuple(exclude_types)
-        self._inner_model = copy.deepcopy(model)
+        self._inner_model = model
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
