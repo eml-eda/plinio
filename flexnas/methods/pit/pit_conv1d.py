@@ -92,13 +92,13 @@ class PITConv1d(nn.Conv1d):
         return cost
 
     def _generate_norm_constants(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        beta_norm = torch.tensor([1.0/(self.rf - i) for i in range(self.rf)], dtype=torch.float32)
+        beta_norm = torch.tensor([1.0 / (self.rf - i) for i in range(self.rf)], dtype=torch.float32)
         gamma_norm = []
         for i in range(self.rf):
             k_i = 0
             for p in range(self.dilation_masker._gamma_len):
                 k_i += 0 if i % 2**p == 0 else 1
-            gamma_norm.append(1.0/(self.dilation_masker._gamma_len - k_i))
+            gamma_norm.append(1.0 / (self.dilation_masker._gamma_len - k_i))
         gamma_norm = torch.tensor(gamma_norm, dtype=torch.float32)
         return beta_norm, gamma_norm
 

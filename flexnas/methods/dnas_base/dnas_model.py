@@ -19,7 +19,6 @@
 
 from abc import abstractmethod
 from typing import Any, Optional, Iterable, Tuple, Type
-import copy
 import torch
 import torch.nn as nn
 
@@ -37,7 +36,7 @@ class DNASModel(nn.Module):
 
         :param model: the inner nn.Module instance optimized by the NAS
         :type model: nn.Module
-        :param regularizer: the name of the model cost regularizer used by the NAS 
+        :param regularizer: the name of the model cost regularizer used by the NAS
         :type regularizer: Optional[str], optional
         :param exclude_names: the names of `model` submodules that should be ignored by the NAS, defaults to ()
         :type exclude_names: Iterable[str], optional

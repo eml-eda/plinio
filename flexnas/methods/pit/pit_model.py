@@ -18,16 +18,21 @@
 # *----------------------------------------------------------------------------*
 
 from typing import cast, Tuple, Type, Iterable, Optional, Dict
+import operator
 import math
+import torch
+import torch.nn as nn
 import torch.nn.functional as F
+import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.dnas_base import DNASModel
 from .pit_conv1d import PITConv1d
 from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
 from .pit_dilation_masker import PITDilationMasker
-from flexnas.utils.model_graph import *
-from flexnas.utils.features_calculator import *
+from flexnas.utils import model_graph
+from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, LinearFeaturesCalculator
+from flexnas.utils.features_calculator import ListReduceFeaturesCalculator, ModAttrFeaturesCalculator
 
 
 class PITModel(DNASModel):
@@ -164,7 +169,7 @@ class PITModel(DNASModel):
         :type mod: fx.GraphModule
         """
         g = mod.graph
-        queue = get_output_nodes(g)
+        queue = model_graph.get_output_nodes(g)
         shared_masker_queue = [None] * len(queue)
         while queue:
             n = queue.pop(0)
@@ -186,7 +191,7 @@ class PITModel(DNASModel):
         :type shared_masker: Optional[PITChannelMasker]
         """
         # TODO: add other NAS-able layers here
-        if is_layer(n, mod, nn.Conv1d) and not self._exclude_mod(n, mod):
+        if model_graph.is_layer(n, mod, nn.Conv1d) and not self._exclude_mod(n, mod):
             self._rewrite_conv1d(n, mod, shared_masker)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
@@ -230,8 +235,7 @@ class PITModel(DNASModel):
         """
         return (type(mod.get_submodule(n.target)) in self.exclude_types) or (n.name in self.exclude_names)
 
-    def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]
-                      ) -> Optional[PITChannelMasker]:
+    def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:
         """Determines if the currently processed node requires that its predecessor share a common channels mask.
 
         :param n: the target node
@@ -244,10 +248,10 @@ class PITModel(DNASModel):
         :return: the updated shared_masker
         :rtype: Optional[PITChannelMasker]
         """
-        if zero_or_one_input_op(n):
+        if model_graph.zero_or_one_input_op(n):
             # definitely no channel sharing
             return None
-        elif shared_input_size_op(n, mod):
+        elif model_graph.shared_input_size_op(n, mod):
             # modules that require multiple inputs all of the same size
             # create a new shared masker with the common n. of input channels, to be used by predecessors
             input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
@@ -267,8 +271,8 @@ class PITModel(DNASModel):
         """
         g = mod.graph
         # convert to networkx graph to have successors information, fx only gives predecessors unfortunately
-        nx_graph = fx_to_nx_graph(g)
-        queue = get_input_nodes(g)
+        nx_graph = model_graph.fx_to_nx_graph(g)
+        queue = model_graph.get_input_nodes(g)
         calc_dict = {}
         while queue:
             n = queue.pop(0)
@@ -321,11 +325,11 @@ class PITModel(DNASModel):
                 raise ValueError("Unsupported module node {}".format(n))
 
         if (n.op == 'call_method' and n.target == 'flatten') or (n.op == 'call_function' and n.target == torch.flatten):
-                ifc = calc_dict[n.all_input_nodes[0]]
-                input_size = n.all_input_nodes[0].meta['tensor_meta'].shape
-                # exclude batch size and channels
-                spatial_size = math.prod(input_size[2:])
-                calc_dict[n] = LinearFeaturesCalculator(ifc, spatial_size)
+            ifc = calc_dict[n.all_input_nodes[0]]
+            input_size = n.all_input_nodes[0].meta['tensor_meta'].shape
+            # exclude batch size and channels
+            spatial_size = math.prod(input_size[2:])
+            calc_dict[n] = LinearFeaturesCalculator(ifc, spatial_size)
 
         if n.op == 'call_function':
             if n.target == torch.add or n.target == operator.add:

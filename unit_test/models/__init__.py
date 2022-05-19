@@ -16,6 +16,5 @@
 # *                                                                            *
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-
 from .tc_resnet_14 import *
 from .simple_nn import *

@@ -62,10 +62,14 @@ def shared_input_size_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     if zero_or_one_input_op(n):
         return False
     if n.op == 'call_function':
-        if n.target == torch.add: return True
-        if n.target == operator.add: return True
-        if n.target == torch.sub: return True
-        if n.target == operator.sub: return True
+        if n.target == torch.add:
+            return True
+        if n.target == operator.add:
+            return True
+        if n.target == torch.sub:
+            return True
+        if n.target == operator.sub:
+            return True
         # TODO: add others here
     # are there any modules that require same input size? if so, add them below. Same for methods
     # if n.op == 'call_module':

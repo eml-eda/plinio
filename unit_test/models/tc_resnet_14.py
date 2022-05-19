@@ -16,11 +16,9 @@
 # *                                                                            *
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from math import ceil, floor
+from math import ceil
 
 
 class TCResNet14(nn.Module):
@@ -133,7 +131,7 @@ class TempBlock1(nn.Module):
     Temporal Block composed of two temporal convolutional block.
     The temporal convolutional block is composed of :
     - Padding layer
-    - Conv1d layer 
+    - Conv1d layer
     - BatchNorm layer
     - ReLU layer
     - Dropout layer (TODO: removed, re-insert)
@@ -224,7 +222,7 @@ class TempBlock2(nn.Module):
     Temporal Block composed of two temporal convolutional block.
     The temporal convolutional block is composed of :
     - Padding layer
-    - Conv1d layer 
+    - Conv1d layer
     - BatchNorm layer
     - ReLU layer
     - Dropout layer (TODO: removed, re-insert)
