@@ -17,3 +17,5 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 from .dnas_model import DNASModel
+
+__all__ = ['DNASModel']

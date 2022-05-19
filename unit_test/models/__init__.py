@@ -16,5 +16,7 @@
 # *                                                                            *
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from .tc_resnet_14 import *
-from .simple_nn import *
+from .tc_resnet_14 import TCResNet14
+from .simple_nn import SimpleNN
+
+__all__ = ['TCResNet14', 'SimpleNN']

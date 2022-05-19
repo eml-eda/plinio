@@ -16,4 +16,6 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .pit_model import *
+from .pit_model import PITModel
+
+__all__ = ['PITModel']
