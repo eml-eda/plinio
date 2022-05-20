@@ -22,6 +22,8 @@ import torch
 
 
 class PITBinarizer(torch.autograd.Function):
+    """A torch autograd function defining the mask binarizer used in PIT"""
+
     @staticmethod
     def forward(ctx: Any, *args: Any, **kwargs: Any) -> Any:
         x: torch.Tensor = args[0]

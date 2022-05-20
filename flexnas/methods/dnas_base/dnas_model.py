@@ -24,7 +24,18 @@ import torch.nn as nn
 
 
 class DNASModel(nn.Module):
+    """Abstract class to wrap a nn.Module with a DNAS functionality
 
+    :param model: the inner nn.Module instance optimized by the NAS
+    :type model: nn.Module
+    :param regularizer: the name of the model cost regularizer used by the NAS
+    :type regularizer: Optional[str], optional
+    :param exclude_names: the names of `model` submodules that should be ignored by the NAS, defaults to ()
+    :type exclude_names: Iterable[str], optional
+    :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS, defaults to ()
+    :type exclude_types: Iterable[Type[nn.Module]], optional
+    :raises ValueError: when called with an unsupported regularizer
+    """
     @abstractmethod
     def __init__(
             self,
@@ -32,18 +43,6 @@ class DNASModel(nn.Module):
             regularizer: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
-        """Abstract DNAS model constructor
-
-        :param model: the inner nn.Module instance optimized by the NAS
-        :type model: nn.Module
-        :param regularizer: the name of the model cost regularizer used by the NAS
-        :type regularizer: Optional[str], optional
-        :param exclude_names: the names of `model` submodules that should be ignored by the NAS, defaults to ()
-        :type exclude_names: Iterable[str], optional
-        :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS, defaults to ()
-        :type exclude_types: Iterable[Type[nn.Module]], optional
-        :raises ValueError: when called with an unsupported regularizer
-        """
         super(DNASModel, self).__init__()
         if regularizer not in self.supported_regularizers():
             raise ValueError("Unsupported regularizer {}".format(regularizer))
