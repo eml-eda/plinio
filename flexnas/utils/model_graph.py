@@ -20,6 +20,7 @@ from typing import List, Type
 import operator
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.fx as fx
 import networkx as nx
 
@@ -48,18 +49,18 @@ def get_output_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
     return ret
 
 
-def zero_or_one_input_op(n: fx.Node) -> bool:
-    return len(n.all_input_nodes) <= 1
-
-
 def is_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
     if n.op != 'call_module':
         return False
-    return type(parent.get_submodule(n.target)) == layer
+    return type(parent.get_submodule(str(n.target))) == layer
 
 
-def shared_input_size_op(n: fx.Node, parent: fx.GraphModule) -> bool:
-    if zero_or_one_input_op(n):
+def is_zero_or_one_input_op(n: fx.Node) -> bool:
+    return len(n.all_input_nodes) <= 1
+
+
+def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
+    if is_zero_or_one_input_op(n):
         return False
     if n.op == 'call_function':
         if n.target == torch.add:
@@ -74,4 +75,70 @@ def shared_input_size_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     # are there any modules that require same input size? if so, add them below. Same for methods
     # if n.op == 'call_module':
     # if n.op == 'call_method':
+    return False
+
+
+def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
+    if n.op == 'placeholder' and len(n.all_input_nodes) == 0:  # input node
+        return True
+    if n.op == 'call_module':
+        submodule = parent.get_submodule(str(n.target))
+        if type(submodule) == nn.Conv1d:
+            return True
+        if type(submodule) == nn.Conv2d:
+            return True
+        if type(submodule) == nn.Linear:
+            return True
+    return False
+
+
+def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
+    if n.op == 'output':
+        return True
+    if n.op == 'call_module':
+        submodule = parent.get_submodule(str(n.target))
+        if type(submodule) == nn.BatchNorm1d:
+            return True
+        if type(submodule) == nn.BatchNorm2d:
+            return True
+        if type(submodule) == nn.AvgPool1d:
+            return True
+        if type(submodule) == nn.AvgPool2d:
+            return True
+        if type(submodule) == nn.MaxPool1d:
+            return True
+        if type(submodule) == nn.BatchNorm2d:
+            return True
+        if type(submodule) == nn.Dropout:
+            return True
+        if type(submodule) == nn.ReLU:
+            return True
+        if type(submodule) == nn.ReLU6:
+            return True
+        if type(submodule) == nn.ConstantPad1d:
+            return True
+        if type(submodule) == nn.ConstantPad2d:
+            return True
+        # TODO: add others
+    if n.op == 'call_function':
+        if n.target == F.relu:
+            return True
+        if n.target == F.relu6:
+            return True
+        if n.target == F.log_softmax:
+            return True
+    return False
+
+
+def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
+    if n.op == 'call_method' and n.target == 'flatten':
+        return True
+    if n.op == 'call_function' and n.target == torch.flatten:
+        return True
+    return False
+
+
+def is_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
+    if n.op == 'call_function' and n.target == torch.cat:
+        return True
     return False

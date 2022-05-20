@@ -16,8 +16,8 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .model_graph import fx_to_nx_graph, get_input_nodes, get_output_nodes, zero_or_one_input_op, \
-    is_layer, shared_input_size_op
+from .model_graph import fx_to_nx_graph, get_input_nodes, get_output_nodes, is_zero_or_one_input_op, \
+    is_layer, is_shared_input_features_op
 
-__all__ = ['fx_to_nx_graph', 'get_input_nodes', 'get_output_nodes', 'zero_or_one_input_op',
-           'is_layer', 'shared_input_size_op']
+__all__ = ['fx_to_nx_graph', 'get_input_nodes', 'get_output_nodes', 'is_zero_or_one_input_op',
+           'is_layer', 'is_shared_input_features_op']

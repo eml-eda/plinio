@@ -18,11 +18,9 @@
 # *----------------------------------------------------------------------------*
 
 from typing import cast, List, Tuple, Type, Iterable, Optional, Dict
-import operator
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.dnas_base import DNASModel
@@ -155,7 +153,7 @@ class PITModel(DNASModel):
         mod = fx.symbolic_trace(self._inner_model)
         ShapeProp(mod).propagate(self._input_example)
         self._convert_layers(mod)
-        self._set_input_sizes(mod)
+        self._set_input_features(mod)
         mod.recompile()
         self._inner_model = mod
 
@@ -248,10 +246,10 @@ class PITModel(DNASModel):
         :return: the updated shared_masker
         :rtype: Optional[PITChannelMasker]
         """
-        if model_graph.zero_or_one_input_op(n):
+        if model_graph.is_zero_or_one_input_op(n):
             # definitely no channel sharing
             return None
-        elif model_graph.shared_input_size_op(n, mod):
+        elif model_graph.is_shared_input_features_op(n, mod):
             # modules that require multiple inputs all of the same size
             # create a new shared masker with the common n. of input channels, to be used by predecessors
             input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
@@ -260,10 +258,10 @@ class PITModel(DNASModel):
         else:
             raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
-    def _set_input_sizes(self, mod: fx.GraphModule):
-        """Determines, for each layer in the network, which preceding layer dictates its input shape.
+    def _set_input_features(self, mod: fx.GraphModule):
+        """Determines, for each layer in the network, which preceding layer dictates its input number of features.
 
-        This is needed to correctly evaluate the cost loss function during NAS optimization.
+        This is needed to correctly evaluate the regularization loss function during NAS optimization.
         This pass is implemented as a forward BFS on the network graph.
 
         :param mod: a torch.fx.GraphModule with tensor shapes annotations.
@@ -276,72 +274,77 @@ class PITModel(DNASModel):
         calc_dict = {}
         while queue:
             n = queue.pop(0)
-            self._update_input_size_calculator(n, mod, calc_dict)
+            # skip nodes for which predecessors have not yet been processed completely, we'll come back to them later
+            if len(n.all_input_nodes) > 0:
+                for i in n.all_input_nodes:
+                    if i not in calc_dict:
+                        return
+            self._set_input_features_calculator(n, mod, calc_dict)
+            self._update_output_features_calculator(n, mod, calc_dict)
             for succ in nx_graph.successors(n):
                 queue.append(succ)
 
     @staticmethod
-    def _update_input_size_calculator(n: fx.Node, mod: fx.GraphModule,
-                                      calc_dict: Dict[fx.Node, FeaturesCalculator]):
+    def _set_input_features_calculator(n: fx.Node, mod: fx.GraphModule, calc_dict: Dict[fx.Node, FeaturesCalculator]):
+        """Set the input features calculator attribute for NAS-able layers (currently just Conv1D)
 
-        channel_defining_modules = (
-            nn.Conv1d, nn.Conv2d, nn.Linear
-        )
-
-        channel_propagating_modules = (
-            nn.BatchNorm1d, nn.BatchNorm2d, nn.AvgPool1d, nn.AvgPool2d, nn.MaxPool1d, nn.BatchNorm2d, nn.Dropout,
-            nn.ReLU, nn.ReLU6, nn.ConstantPad1d, nn.ConstantPad2d
-        )
-
-        channel_propagating_functions = (
-            F.relu, F.relu6, F.log_softmax
-        )
-
-        # skip nodes for which predecessors have not yet been processed completely, we'll come back to them later
-        if len(n.all_input_nodes) > 0:
-            for i in n.all_input_nodes:
-                if i not in calc_dict:
-                    return
-
-        if n.op == 'call_module':
+        :param n: the target node
+        :type n: fx.Node
+        :param mod: the parent module
+        :type mod: fx.GraphModule
+        :param calc_dict: a dictionary containing output features calculators for all preceding nodes in the network
+        :type calc_dict: Dict[fx.Node, FeaturesCalculator]
+        """
+        # TODO: add other NAS-able layers here
+        if model_graph.is_layer(n, mod, nn.Conv1d):
+            prev = n.all_input_nodes[0]  # a Conv layer always has a single input
             sub_mod = mod.get_submodule(str(n.target))
-            if type(sub_mod) in channel_defining_modules:
-                calc_dict[n] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
-            elif type(sub_mod) in channel_propagating_modules:
-                calc_dict[n] = calc_dict[n.all_input_nodes[0]]  # they all have a single input
-            elif type(sub_mod) == PITConv1d:
-                prev = n.all_input_nodes[0]
-                if calc_dict[prev] is None:  # it means this is the first layer after an input node
-                    ifc = ModAttrFeaturesCalculator(sub_mod, 'in_channels')
-                else:
-                    ifc = calc_dict[prev]
-                # special case of PIT layers. here we also have to set the input_size_calculator attribute
-                sub_mod.input_size_calculator = ifc
-                calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_channels_eff')
-            else:
-                raise ValueError("Unsupported module node {}".format(n))
+            sub_mod.input_size_calculator = calc_dict[prev]
 
-        if (n.op == 'call_method' and n.target == 'flatten') or (n.op == 'call_function' and n.target == torch.flatten):
+    @staticmethod
+    def _update_output_features_calculator(n: fx.Node, mod: fx.GraphModule, calc_dict: Dict[fx.Node, FeaturesCalculator]):
+        """Update the dictionary containing output features calculators for all nodes in the network
+
+        :param n: the target node
+        :type n: fx.Node
+        :param mod: the parent module
+        :type mod: fx.GraphModule
+        :param calc_dict: a partially filled dictionary of output features calculators for all nodes in the network
+        :type calc_dict: Dict[fx.Node, FeaturesCalculator]
+        :raises ValueError: when the target node op is not supported
+        """
+        # TODO: add other NAS-able layers here
+        if model_graph.is_layer(n, mod, PITConv1d):
+            # For PITConv1D layers, the "active" output features are stored in the out_channels_eff attribute
+            sub_mod = mod.get_submodule(str(n.target))
+            calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_channels_eff')
+        elif model_graph.is_flatten(n, mod):
+            # For flatten ops, the output features are computed as: input_features * spatial_size
+            # note that this is NOT simply equal to the output shape if the preceding layer is a NAS-able one,
+            # for which some features # could be de-activated
             ifc = calc_dict[n.all_input_nodes[0]]
-            input_size = n.all_input_nodes[0].meta['tensor_meta'].shape
-            # exclude batch size and channels
-            spatial_size = math.prod(input_size[2:])
+            input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
+            spatial_size = math.prod(input_shape[2:])
             calc_dict[n] = LinearFeaturesCalculator(ifc, spatial_size)
-
-        if n.op == 'call_function':
-            if n.target == torch.add or n.target == operator.add:
-                # assumes all inputs to add have the same number of features (as expected)
-                calc_dict[n] = calc_dict[n.all_input_nodes[0]]
-                # alternative
-                # ifc = ListReduceFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes], max)
-                # calc_dict[n] = ifc
-            elif n.target == torch.cat:
-                # TODO: this assumes that concatenation is always on the features axis. Not always true. Fix.
-                ifc = ListReduceFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes], sum)
-                calc_dict[n] = ifc
-            elif n.target in channel_propagating_functions:
-                calc_dict[n] = calc_dict[n.all_input_nodes[0]]
-            else:
-                raise ValueError("Unsupported function node {}".format(n))
-
+        elif model_graph.is_concatenate(n, mod):
+            # for concatenation ops the number of output features is the sum of the output features of preceding layers
+            # as for flatten, this is NOT equal to the input shape of this layer, when one or more predecessors are NAS-able
+            # TODO: this assumes that concatenation is always on the features axis. Not always true. Fix.
+            ifc = ListReduceFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes], sum)
+            calc_dict[n] = ifc
+        elif model_graph.is_shared_input_features_op(n, mod):
+            # for nodes that require identical number of features in all their inputs (e.g., add)
+            # we simply assume that we can take any of the output features calculators from predecessors
+            # this is enforced for NAS-able layers by the use of shared maskers (see above)
+            calc_dict[n] = calc_dict[n.all_input_nodes[0]]
+        elif model_graph.is_features_defining_op(n, mod):
+            # these are "static" (i.e., non NAS-able) nodes that alter the number of output features,
+            # and hence the number of input features of subsequent layers
+            calc_dict[n] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
+        elif model_graph.is_features_propagating_op(n, mod):
+            # these are nodes that have a single input and n. output features == n. input features
+            # so, we just propagate forward the features calculator of the input
+            calc_dict[n] = calc_dict[n.all_input_nodes[0]]  # they all have a single input
+        else:
+            raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
         return
