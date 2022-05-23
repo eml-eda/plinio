@@ -50,7 +50,8 @@ class PITTimestepMasker(nn.Module):
         self._c_beta = self._generate_c_matrix()
 
     def forward(self) -> torch.Tensor:
-        """The forward function that generates the binary masks from the trainable floating point shadow copies
+        """The forward function that generates the binary masks from the trainable floating point
+        shadow copies
 
         Implemented as described in the journal paper.
 
@@ -67,7 +68,8 @@ class PITTimestepMasker(nn.Module):
 
         For timestep (i.e., rf) masking, the first mask element (beta_0) should always be preserved.
 
-        :return: a binary keep-alive mask vector, with 1s corresponding to elements that should never be masked
+        :return: a binary keep-alive mask vector, with 1s corresponding to elements that should
+        never be masked
         :rtype: torch.Tensor
         """
         ka_beta = torch.tensor([1.0] + [0.0] * (self.rf - 1), dtype=torch.float32)
@@ -76,7 +78,8 @@ class PITTimestepMasker(nn.Module):
     def _generate_c_matrix(self) -> torch.Tensor:
         """Method called at creation time, to generate the C_beta matrix.
 
-        The C_beta matrix is used to combine different timestep mask elements (beta_i), as described in the journal paper.
+        The C_beta matrix is used to combine different timestep mask elements (beta_i), as
+        described in the journal paper.
 
         :return: the C_beta matrix as tensor
         :rtype: torch.Tensor

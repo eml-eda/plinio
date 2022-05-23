@@ -21,7 +21,16 @@ import numpy as np
 import torch.nn as nn
 
 
-def count_trainable_parameters(net: nn.Module) -> float:
+def count_trainable_parameters(net: nn.Module) -> int:
+    """Utility function to count the number of trainable parameters in a `nn.Module`.
+
+    TODO: currently unued in the library. Remove if unnecessary
+
+    :param net: the target `nn.Module`
+    :type net: nn.Module
+    :return: the total number of trainable parameters.
+    :rtype: int
+    """
     model_parameters = filter(lambda p: p.requires_grad, net.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     return params

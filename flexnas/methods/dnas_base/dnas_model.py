@@ -30,9 +30,11 @@ class DNASModel(nn.Module):
     :type model: nn.Module
     :param regularizer: the name of the model cost regularizer used by the NAS
     :type regularizer: Optional[str], optional
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS, defaults to ()
+    :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
+    defaults to ()
     :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS, defaults to ()
+    :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS,
+    defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
     :raises ValueError: when called with an unsupported regularizer
     """

@@ -1,4 +1,5 @@
 {
+    "files.trimTrailingWhitespace": true,
     "python.linting.flake8Enabled": true,
     "python.linting.enabled": true,
     "python.testing.unittestArgs": [
@@ -13,7 +14,7 @@
     "files.exclude": {
         "**/__pycache__": true
     },
-    "python.linting.flake8Args": ["--ignore=F403", "--max-line-length=160", "--verbose"],
+    "python.linting.flake8Args": ["--ignore=F403", "--max-line-length=100", "--verbose"],
     "python.analysis.typeCheckingMode": "basic",
     "python.analysis.diagnosticSeverityOverrides": {
         "reportPrivateImportUsage": "none",

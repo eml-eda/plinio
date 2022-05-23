@@ -29,8 +29,8 @@ from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
 from .pit_dilation_masker import PITDilationMasker
 from flexnas.utils import model_graph
-from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, LinearFeaturesCalculator
-from flexnas.utils.features_calculator import ListReduceFeaturesCalculator, ModAttrFeaturesCalculator
+from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, \
+    LinearFeaturesCalculator, ListReduceFeaturesCalculator, ModAttrFeaturesCalculator
 
 
 class PITModel(DNASModel):
@@ -42,15 +42,20 @@ class PITModel(DNASModel):
     :type input_example: torch.Tensor
     :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
     :type regularizer: Optional[str], optional
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS, defaults to ()
+    :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
+    defaults to ()
     :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS, defaults to ()
+    :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS,
+    defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
-    :param train_channels: flag to control whether output channels are optimized by PIT or not, defaults to True
+    :param train_channels: flag to control whether output channels are optimized by PIT or not,
+    defaults to True
     :type train_channels: bool, optional
-    :param train_rf: flag to control whether receptive field is optimized by PIT or not, defaults to True
+    :param train_rf: flag to control whether receptive field is optimized by PIT or not, defaults
+    to True
     :type train_rf: bool, optional
-    :param train_dilation: flag to control whether dilation is optimized by PIT or not, defaults to True
+    :param train_dilation: flag to control whether dilation is optimized by PIT or not, defaults
+    to True
     :type train_dilation: bool, optional
     """
     def __init__(
@@ -151,12 +156,15 @@ class PITModel(DNASModel):
         self._inner_model = mod
 
     def _convert_layers(self, mod: fx.GraphModule):
-        """Replaces target layers (currently, only Conv1D) with their NAS-able version, while also recording the list of NAS-able
-        layers for speeding up later regularization loss computations.
+        """Replaces target layers (currently, only Conv1D) with their NAS-able version, while also
+        recording the list of NAS-able layers for speeding up later regularization loss
+        computations.
 
-        Layer conversion is implemented as a reverse BFS on the model graph (starting from the output and reversing all edges).
+        Layer conversion is implemented as a reverse BFS on the model graph (starting from the
+        output and reversing all edges).
 
-        :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to determine the sizes of PIT masks.
+        :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to
+        determine the sizes of PIT masks.
         :type mod: fx.GraphModule
         """
         g = mod.graph
@@ -171,8 +179,9 @@ class PITModel(DNASModel):
                 queue.append(pred)
                 shared_masker_queue.append(shared_masker)
 
-    def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]):
-        """Optionally rewrites a fx.GraphModule node replacing a sub-module instance with its corresponding NAS-able version
+    def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+        """Optionally rewrites a fx.GraphModule node replacing a sub-module instance with its
+        corresponding NAS-able version
 
         :param n: the node to be rewritten
         :type n: fx.Node
@@ -183,12 +192,13 @@ class PITModel(DNASModel):
         """
         # TODO: add other NAS-able layers here
         if model_graph.is_layer(n, mod, nn.Conv1d) and not self._exclude_mod(n, mod):
-            self._rewrite_conv1d(n, mod, shared_masker)
+            self._rewrite_conv1d(n, mod, sm)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
 
-    def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]):
-        """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a PITConv1D layer
+    def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+        """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a
+        PITConv1D layer
 
         :param n: the node to be rewritten, corresponds to a Conv1D layer
         :type n: fx.Node
@@ -198,8 +208,8 @@ class PITModel(DNASModel):
         :type shared_masker: Optional[PITChannelMasker]
         """
         submodule = cast(nn.Conv1d, mod.get_submodule(str(n.target)))
-        if shared_masker is not None:
-            chan_masker = shared_masker
+        if sm is not None:
+            chan_masker = sm
         else:
             chan_masker = PITChannelMasker(submodule.out_channels)
         new_submodule = PITConv1d(
@@ -215,7 +225,8 @@ class PITModel(DNASModel):
         return
 
     def _exclude_mod(self, n: fx.Node, mod: fx.GraphModule) -> bool:
-        """Returns True if a submodule should be excluded from the NAS optimization, based on the names and types blacklists.
+        """Returns True if a submodule should be excluded from the NAS optimization, based on the
+        names and types blacklists.
 
         :param n: the target node
         :type n: fx.Node
@@ -224,10 +235,13 @@ class PITModel(DNASModel):
         :return: True if the node should be excluded
         :rtype: bool
         """
-        return (type(mod.get_submodule(str(n.target))) in self.exclude_types) or (n.name in self.exclude_names)
+        exc_type = type(mod.get_submodule(str(n.target))) in self.exclude_types
+        return exc_type or (n.name in self.exclude_names)
 
-    def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule, shared_masker: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:
-        """Determines if the currently processed node requires that its predecessor share a common channels mask.
+    def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule,
+                              sm: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:
+        """Determines if the currently processed node requires that its predecessor share a common
+        channels mask.
 
         :param n: the target node
         :type n: fx.Node
@@ -244,7 +258,8 @@ class PITModel(DNASModel):
             return None
         elif model_graph.is_shared_input_features_op(n, mod):
             # modules that require multiple inputs all of the same size
-            # create a new shared masker with the common n. of input channels, to be used by predecessors
+            # create a new shared masker with the common n. of input channels, to be used by
+            # predecessors
             input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
             shared_masker = PITChannelMasker(input_size)
             return shared_masker
@@ -252,22 +267,26 @@ class PITModel(DNASModel):
             raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
     def _set_input_features(self, mod: fx.GraphModule):
-        """Determines, for each layer in the network, which preceding layer dictates its input number of features.
+        """Determines, for each layer in the network, which preceding layer dictates its input
+        number of features.
 
-        This is needed to correctly evaluate the regularization loss function during NAS optimization.
+        This is needed to correctly evaluate the regularization loss function during NAS
+        optimization.
         This pass is implemented as a forward BFS on the network graph.
 
         :param mod: a torch.fx.GraphModule with tensor shapes annotations.
         :type mod: fx.GraphModule
         """
         g = mod.graph
-        # convert to networkx graph to have successors information, fx only gives predecessors unfortunately
+        # convert to networkx graph to have successors information, fx only gives predecessors
+        # unfortunately
         nx_graph = model_graph.fx_to_nx_graph(g)
         queue = model_graph.get_input_nodes(g)
         calc_dict = {}
         while queue:
             n = queue.pop(0)
-            # skip nodes for which predecessors have not yet been processed completely, we'll come back to them later
+            # skip nodes for which predecessors have not yet been processed completely, we'll come
+            # back to them later
             if len(n.all_input_nodes) > 0:
                 for i in n.all_input_nodes:
                     if i not in calc_dict:
@@ -278,14 +297,16 @@ class PITModel(DNASModel):
                 queue.append(succ)
 
     @staticmethod
-    def _set_input_features_calculator(n: fx.Node, mod: fx.GraphModule, calc_dict: Dict[fx.Node, FeaturesCalculator]):
+    def _set_input_features_calculator(n: fx.Node, mod: fx.GraphModule,
+                                       calc_dict: Dict[fx.Node, FeaturesCalculator]):
         """Set the input features calculator attribute for NAS-able layers (currently just Conv1D)
 
         :param n: the target node
         :type n: fx.Node
         :param mod: the parent module
         :type mod: fx.GraphModule
-        :param calc_dict: a dictionary containing output features calculators for all preceding nodes in the network
+        :param calc_dict: a dictionary containing output features calculators for all preceding
+        nodes in the network
         :type calc_dict: Dict[fx.Node, FeaturesCalculator]
         """
         # TODO: add other NAS-able layers here
@@ -295,44 +316,50 @@ class PITModel(DNASModel):
             sub_mod.input_size_calculator = calc_dict[prev]
 
     @staticmethod
-    def _update_output_features_calculator(n: fx.Node, mod: fx.GraphModule, calc_dict: Dict[fx.Node, FeaturesCalculator]):
+    def _update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
+                                           calc_dict: Dict[fx.Node, FeaturesCalculator]):
         """Update the dictionary containing output features calculators for all nodes in the network
 
         :param n: the target node
         :type n: fx.Node
         :param mod: the parent module
         :type mod: fx.GraphModule
-        :param calc_dict: a partially filled dictionary of output features calculators for all nodes in the network
+        :param calc_dict: a partially filled dictionary of output features calculators for all
+        nodes in the network
         :type calc_dict: Dict[fx.Node, FeaturesCalculator]
         :raises ValueError: when the target node op is not supported
         """
         # TODO: add other NAS-able layers here
         if model_graph.is_layer(n, mod, PITConv1d):
-            # For PITConv1D layers, the "active" output features are stored in the out_channels_eff attribute
+            # For PITConv1D layers, the "active" output features are stored in the out_channels_eff
+            # attribute
             sub_mod = mod.get_submodule(str(n.target))
             calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_channels_eff')
         elif model_graph.is_flatten(n, mod):
             # For flatten ops, the output features are computed as: input_features * spatial_size
-            # note that this is NOT simply equal to the output shape if the preceding layer is a NAS-able one,
-            # for which some features # could be de-activated
+            # note that this is NOT simply equal to the output shape if the preceding layer is a
+            # NAS-able one, for which some features # could be de-activated
             ifc = calc_dict[n.all_input_nodes[0]]
             input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
             spatial_size = math.prod(input_shape[2:])
             calc_dict[n] = LinearFeaturesCalculator(ifc, spatial_size)
         elif model_graph.is_concatenate(n, mod):
-            # for concatenation ops the number of output features is the sum of the output features of preceding layers
-            # as for flatten, this is NOT equal to the input shape of this layer, when one or more predecessors are NAS-able
-            # TODO: this assumes that concatenation is always on the features axis. Not always true. Fix.
+            # for concatenation ops the number of output features is the sum of the output features
+            # of preceding layers as for flatten, this is NOT equal to the input shape of this
+            # layer, when one or more predecessors are NAS-able
+            # TODO: this assumes that concatenation is always on the features axis.
+            # Not always true. Fix.
             ifc = ListReduceFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes], sum)
             calc_dict[n] = ifc
         elif model_graph.is_shared_input_features_op(n, mod):
             # for nodes that require identical number of features in all their inputs (e.g., add)
-            # we simply assume that we can take any of the output features calculators from predecessors
+            # we simply assume that we can take any of the output features calculators from
+            # predecessors
             # this is enforced for NAS-able layers by the use of shared maskers (see above)
             calc_dict[n] = calc_dict[n.all_input_nodes[0]]
         elif model_graph.is_features_defining_op(n, mod):
-            # these are "static" (i.e., non NAS-able) nodes that alter the number of output features,
-            # and hence the number of input features of subsequent layers
+            # these are "static" (i.e., non NAS-able) nodes that alter the number of output
+            # features, and hence the number of input features of subsequent layers
             calc_dict[n] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
         elif model_graph.is_features_propagating_op(n, mod):
             # these are nodes that have a single input and n. output features == n. input features

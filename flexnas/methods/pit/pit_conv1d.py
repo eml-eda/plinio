@@ -33,7 +33,8 @@ class PITConv1d(nn.Conv1d):
     :type conv: nn.Conv1d
     :param out_length: the output length on the time axis (needed for timestep and dilation masking)
     :type out_length: int
-    :param regularizer: the cost regularizer used in the optimization (currently, either 'size' or 'flops')
+    :param regularizer: the cost regularizer used in the optimization (currently, either 'size' or
+    'flops')
     :type regularizer: str
     :param out_channel_masker: the `nn.Module` that generates the output channels binary masks
     :type out_channel_masker: PITChannelMasker
@@ -78,8 +79,10 @@ class PITConv1d(nn.Conv1d):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the NAS-able layer.
 
-        In a nutshell, uses the various ChannelMaskers to generate the binarized masks, then runs the convolution with the masked weights tensor.
-        This function has side effects, since it also saves the effective output channels and effective filter size in `out_channels_eff` and
+        In a nutshell, uses the various ChannelMaskers to generate the binarized masks, then runs
+        the convolution with the masked weights tensor.
+        This function has side effects, since it also saves the effective output channels and
+        effective filter size in `out_channels_eff` and
         `k_eff` respectively.
 
         :param input: the input activations tensor
@@ -90,7 +93,8 @@ class PITConv1d(nn.Conv1d):
         # for now we keep the same order of the old version (ch --> dil --> rf)
         # but it's probably more natural to do ch --> rf --> dil
         bin_alpha = self.out_channel_masker()
-        # TODO: check that the result is correct after removing the two transposes present in Matteo's original version
+        # TODO: check that the result is correct after removing the two transposes present in
+        # Matteo's original version
         pruned_weight = torch.mul(self.weight, bin_alpha.unsqueeze(1).unsqueeze(1))
         theta_gamma = self.dilation_masker()
         pruned_weight = torch.mul(theta_gamma, pruned_weight)
@@ -117,15 +121,17 @@ class PITConv1d(nn.Conv1d):
         :return: the regularization loss value
         :rtype: torch.Tensor
         """
-        cin = self.input_features_calculator.input_features
+        cin = self.input_features_calculator.features
         cost = cin * self.out_channels_eff * self.k_eff
-        # TODO: remove this "if" by creating two methods and attaching one of them at construction time
+        # TODO: remove this "if" by creating two methods and attaching one of them at construction
+        # time
         if self.regularizer == 'flops':
             cost = cost * self.out_length
         return cost
 
     def _generate_norm_constants(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Method called at construction time to generate the normalization constants for the correct evaluation of the effective kernel size.
+        """Method called at construction time to generate the normalization constants for the
+        correct evaluation of the effective kernel size.
 
         The details of how these constants are computed are found in the journal paper.
 
@@ -144,9 +150,11 @@ class PITConv1d(nn.Conv1d):
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:
-        """Returns the `FeaturesCalculator` instance that computes the number of input features for this layer.
+        """Returns the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
 
-        :return: the `FeaturesCalculator` instance that computes the number of input features for this layer.
+        :return: the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
         :rtype: FeaturesCalculator
         """
         return self._input_features_calculator
@@ -155,7 +163,8 @@ class PITConv1d(nn.Conv1d):
     def input_features_calculator(self, calc: FeaturesCalculator):
         """Set the `FeaturesCalculator` instance that computes the number of input features for this layer
 
-        :param calc: the `FeaturesCalculator` instance that computes the number of input features for this layer
+        :param calc: the `FeaturesCalculator` instance that computes the number of input features
+        for this layer
         :type calc: FeaturesCalculator
         """
         self._input_features_calculator = calc

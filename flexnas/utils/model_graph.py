@@ -26,6 +26,13 @@ import networkx as nx
 
 
 def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
+    """Transforms a `torch.fx.Graph` into an equivalent `networkx.DiGraph` for easier visits.
+
+    :param fx_graph: the `torch.fx.Graph` instance.
+    :type fx_graph: fx.Graph
+    :return: the corresponding `networkx.DiGraph`
+    :rtype: nx.DiGraph
+    """
     nx_graph = nx.DiGraph()
     for n in fx_graph.nodes:
         for i in n.all_input_nodes:
@@ -34,6 +41,15 @@ def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
 
 
 def get_input_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
+    """From a `torch.fx.Graph`, return the list of nodes that correspond to network inputs.
+
+    Basically finds all nodes of type 'placeholder'.
+
+    :param fx_graph: the network graph
+    :type fx_graph: fx.Graph
+    :return: a list of `torch.fx.Node` instances corresponding to network inputs.
+    :rtype: List[fx.Node]
+    """
     ret = []
     for n in fx_graph.nodes:
         if n.op == 'placeholder':
@@ -42,6 +58,15 @@ def get_input_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
 
 
 def get_output_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
+    """From a `torch.fx.Graph`, return the list of nodes that correspond to network outputs.
+
+    Basically finds all nodes of type 'output'.
+
+    :param fx_graph: the network graph
+    :type fx_graph: fx.Graph
+    :return: a list of `torch.fx.Node` instances corresponding to network outputs.
+    :rtype: List[fx.Node]
+    """
     ret = []
     for n in fx_graph.nodes:
         if n.op == 'output':
@@ -50,16 +75,47 @@ def get_output_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
 
 
 def is_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
+    """Checks if a `torch.fx.Node` corresponds to a specific layer type.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent `nn.Module`
+    :type parent: fx.GraphModule
+    :param layer: the layer type to be checked
+    :type layer: Type[nn.Module]
+    :return: `True` if `n` is of type `layer`
+    :rtype: bool
+    """
     if n.op != 'call_module':
         return False
     return type(parent.get_submodule(str(n.target))) == layer
 
 
 def is_zero_or_one_input_op(n: fx.Node) -> bool:
+    """Checks if a `torch.fx.Node` has no more than 1 input.
+
+    :param n: the target node
+    :type n: fx.Node
+    :return: `True` if `n` has 0 or 1 inputs.
+    :rtype: bool
+    """
     return len(n.all_input_nodes) <= 1
 
 
 def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` corresponds to an operation that requires all its inputs to
+    share the same number of features.
+
+    Note that this is implemented as a simple pattern matching against a (non-exhaustive) list of
+    `torch.fx` ops.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` requires all its inputs to have the same number of features.
+    :rtype: bool
+    """
     if is_zero_or_one_input_op(n):
         return False
     if n.op == 'call_function':
@@ -79,6 +135,23 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
 
 
 def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` corresponds to an operation that "defines" the number of
+    features for successors.
+
+    For example, convolutions and fully-connected layers have, in general,
+    out_features != in_features, hence they are "features-defining". In contrast, ReLU has
+    out_features == in_features, hence it is "features-propagating".
+
+    Note that this is implemented as a simple pattern matching against a (non-exhaustive) list of
+    `torch.fx` ops.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a "features-defining" op.
+    :rtype: bool
+    """
     if n.op == 'placeholder' and len(n.all_input_nodes) == 0:  # input node
         return True
     if n.op == 'call_module':
@@ -93,6 +166,23 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
 
 
 def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` corresponds to an operation that "propagates" the number of
+    input features to successors.
+
+    For example, convolutions and fully-connected layers have, in general,
+    out_features != in_features, hence they are "features-defining". In contrast, ReLU has
+    out_features == in_features, hence it is "features-propagating".
+
+    Note that this is implemented as a simple pattern matching against a (non-exhaustive) list of
+    `torch.fx` ops.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a "features-propagating" op.
+    :rtype: bool
+    """
     if n.op == 'output':
         return True
     if n.op == 'call_module':
@@ -131,6 +221,15 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
 
 
 def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` instance corresponds to a flatten operation.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a flatten op.
+    :rtype: bool
+    """
     if n.op == 'call_method' and n.target == 'flatten':
         return True
     if n.op == 'call_function' and n.target == torch.flatten:
@@ -139,6 +238,15 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
 
 
 def is_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` instance corresponds to a concat operation.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a concat op.
+    :rtype: bool
+    """
     if n.op == 'call_function' and n.target == torch.cat:
         return True
     return False

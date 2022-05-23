@@ -30,7 +30,8 @@ class PITChannelMasker(nn.Module):
     :type out_channels: int
     :param trainable: should the masks be trained, defaults to True
     :type trainable: bool, optional
-    :param keep_alive_channels: how many channels should always be kept alive (binarized at 1), defaults to 1
+    :param keep_alive_channels: how many channels should always be kept alive (binarized at 1),
+    defaults to 1
     :type keep_alive_channels: int, optional
     :param binarization_threshold: the binarization threshold, defaults to 0.5
     :type binarization_threshold: float, optional
@@ -50,12 +51,14 @@ class PITChannelMasker(nn.Module):
         self._keep_alive = self._generate_keep_alive_mask(keep_alive_channels)
 
     def forward(self) -> torch.Tensor:
-        """The forward function that generates the binary masks from the trainable floating point shadow copies
+        """The forward function that generates the binary masks from the trainable floating point
+        shadow copies.
 
         :return: the binary masks
         :rtype: torch.Tensor
         """
-        # this makes sure that the first "keep_alive" channels are always binarized at 1, without using ifs
+        # this makes sure that the first "keep_alive" channels are always binarized at 1, without
+        # using ifs
         keep_alive_alpha = torch.abs(self.alpha) * (1 - self._keep_alive) + self._keep_alive
         bin_alpha = PITBinarizer.apply(keep_alive_alpha, self._binarization_threshold)
         return bin_alpha
@@ -63,13 +66,16 @@ class PITChannelMasker(nn.Module):
     def _generate_keep_alive_mask(self, keep_alive_channels: int) -> torch.Tensor:
         """Method called at creation time, to generate a "keep-alive" mask vector.
 
-        This is a vector with a number of leading 1s equal to the number of channels that should never be eliminated
+        This is a vector with a number of leading 1s equal to the number of channels that should
+        never be eliminated
 
-        :return: a binary keep-alive mask vector, with 1s corresponding to elements that should never be masked
+        :return: a binary keep-alive mask vector, with 1s corresponding to elements that should
+        never be masked
         :rtype: torch.Tensor
         """
-        return torch.tensor([1.0] * keep_alive_channels + [0.0] * (self.out_channels - keep_alive_channels),
-                            dtype=torch.float32)
+        return torch.tensor(
+            [1.0] * keep_alive_channels + [0.0] * (self.out_channels - keep_alive_channels),
+            dtype=torch.float32)
 
     @property
     def trainable(self) -> bool:
