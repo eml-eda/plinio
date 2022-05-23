@@ -23,8 +23,10 @@ from math import ceil
 
 class TCResNet14(nn.Module):
     """
-    TCResNet14 architecture:
+    TCResNet14 architecture used for unit tests.
     Variable number of repeated instances of TemporalBlock1 and TemporalBlock2.
+
+    Testing on this network verifies that our conversion methods can handle residual connections
     """
 
     def __init__(self, config):
@@ -83,8 +85,8 @@ class TCResNet14(nn.Module):
 
 class TempNet(nn.Module):
     """
-    Temporal Convolutional Net composed of a number of an alternate number of TempBlock1 and TempBlock2 defined with a
-    specific parameter.
+    Temporal Convolutional Net composed of a number of an alternate number of TempBlock1 and
+    TempBlock2 defined with a specific parameter.
     """
 
     def __init__(self, num_inputs, num_channels, kernel_size, use_bias=True):
@@ -101,7 +103,8 @@ class TempNet(nn.Module):
             k.append(ceil(original_rf[i] / dilation_size[0]))
             k.append(ceil(original_rf[i] / dilation_size[1]))
 
-            in_channels = [num_inputs, num_channels[0]] if i == 0 else [num_channels[i - 1], num_channels[i]]
+            in_channels = [
+                num_inputs, num_channels[0]] if i == 0 else [num_channels[i - 1], num_channels[i]]
             out_channels = [num_channels[i], num_channels[i]]
 
             if (i % 2) != 0:
