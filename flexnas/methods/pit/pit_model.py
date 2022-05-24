@@ -195,6 +195,12 @@ class PITModel(DNASModel):
             self._rewrite_conv1d(n, mod, sm)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
+        if model_graph.is_layer(n, mod, PITConv1d):
+            # give users the possibility of manually adding NAS-able layers in the nn.Module
+            self._target_layers.append(mod)
+        # etc
+        # if model_graph.is_layer(n, mod, PITConv2d):
+            # self._target_layers.append(mod)
 
     def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
         """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a
