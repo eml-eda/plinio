@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import cast, List, Tuple, Type, Iterable, Optional, Dict
+from typing import cast, Any, List, Tuple, Type, Iterable, Optional, Dict
 import math
 import torch
 import torch.nn as nn
@@ -42,11 +42,14 @@ class PITModel(DNASModel):
     :type input_example: torch.Tensor
     :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
     :type regularizer: Optional[str], optional
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
-    defaults to ()
+    :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
+    defaults to True
+    :type autoconvert_layers: bool, optional
+    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
+    when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS,
-    defaults to ()
+    :param exclude_types: the types of `model` submodules that should be ignored by the NAS
+    when auto-converting defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
     :param train_channels: flag to control whether output channels are optimized by PIT or not,
     defaults to True
@@ -63,18 +66,29 @@ class PITModel(DNASModel):
             model: nn.Module,
             input_example: torch.Tensor,
             regularizer: str = 'size',
+            autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             train_channels: bool = True,
             train_rf: bool = True,
             train_dilation: bool = True):
-        super(PITModel, self).__init__(model, regularizer, exclude_names, exclude_types)
+        super(PITModel, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_example = input_example
+        self._autoconvert_layers = autoconvert_layers
         self._target_layers = []
-        self._convert()
+        self._inner_model = self._convert(model)
+        # after conversion to make sure they are applied to all layers
         self.train_channels = train_channels
         self.train_rf = train_rf
         self.train_dilation = train_dilation
+
+    def forward(self, *args: Any) -> torch.Tensor:
+        """Forward function for the DNAS model. Simply invokes the inner model's forward
+
+        :return: the output tensor
+        :rtype: torch.Tensor
+        """
+        return self._inner_model.forward(*args)
 
     def supported_regularizers(self) -> Tuple[str, ...]:
         return ('size', 'flops')
@@ -145,15 +159,20 @@ class PITModel(DNASModel):
             layer.train_dilation = value
         self._train_dilation = value
 
-    def _convert(self):
+    def _convert(self, inner_model: nn.Module) -> nn.Module:
         """Converts the inner model, making it "NAS-able" by PIT
+
+        :param inner_model: the original inner_model
+        :type inner_model: nn.Module
+        :return: the converted inner_model
+        :rtype: nn.Module
         """
-        mod = fx.symbolic_trace(self._inner_model)
+        mod = fx.symbolic_trace(inner_model)
         ShapeProp(mod).propagate(self._input_example)
         self._convert_layers(mod)
         self._set_input_features(mod)
         mod.recompile()
-        self._inner_model = mod
+        return mod
 
     def _convert_layers(self, mod: fx.GraphModule):
         """Replaces target layers (currently, only Conv1D) with their NAS-able version, while also
@@ -175,7 +194,9 @@ class PITModel(DNASModel):
             n = queue.pop(0)
             shared_masker = shared_masker_queue.pop(0)
             if n not in visited:
-                self._rewrite_node(n, mod, shared_masker)
+                if self._autoconvert_layers:
+                    self._rewrite_node(n, mod, shared_masker)
+                self._add_to_targets(n, mod)
                 shared_masker = self._update_shared_masker(n, mod, shared_masker)
                 for pred in n.all_input_nodes:
                     queue.append(pred)
@@ -188,7 +209,7 @@ class PITModel(DNASModel):
 
         :param n: the node to be rewritten
         :type n: fx.Node
-        :param mod: the parent module, where the new node has to be otpionally inserted
+        :param mod: the parent module, where the new node has to be optionally inserted
         :type mod: fx.GraphModule
         :param shared_masker: an optional shared channels mask derived from subsequent layers
         :type shared_masker: Optional[PITChannelMasker]
@@ -198,12 +219,6 @@ class PITModel(DNASModel):
             self._rewrite_conv1d(n, mod, sm)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
-        elif model_graph.is_layer(n, mod, PITConv1d):
-            # give users the possibility of manually adding NAS-able layers in the nn.Module
-            self._target_layers.append(mod.get_submodule(str(n.target)))
-        # etc
-        # elif model_graph.is_layer(n, mod, PITConv2d):
-            # self._target_layers.append(mod)
 
     def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
         """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a
@@ -230,7 +245,6 @@ class PITModel(DNASModel):
             PITDilationMasker(submodule.kernel_size[0]),
         )
         mod.add_submodule(str(n.target), new_submodule)
-        self._target_layers.append(new_submodule)
         return
 
     def _exclude_mod(self, n: fx.Node, mod: fx.GraphModule) -> bool:
@@ -246,6 +260,21 @@ class PITModel(DNASModel):
         """
         exc_type = type(mod.get_submodule(str(n.target))) in self.exclude_types
         return exc_type or (n.name in self.exclude_names)
+
+    def _add_to_targets(self, n: fx.Node, mod: fx.GraphModule):
+        """Optionally adds a layer to the list of NAS target layers
+
+        :param n: the node to be checked for monitoring
+        :type n: fx.Node
+        :param mod: the parent module
+        :type mod: fx.GraphModule
+        """
+        # TODO: add other NAS-able layers here
+        if model_graph.is_layer(n, mod, PITConv1d):
+            self._target_layers.append(mod.get_submodule(str(n.target)))
+        # etc
+        # elif model_graph.is_layer(n, mod, PITConv2d):
+            # self._target_layers.append(mod)
 
     def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule,
                               sm: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:

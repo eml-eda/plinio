@@ -125,7 +125,8 @@ class TestPIT(unittest.TestCase):
             regularizer: str = 'size',
             exclude_names: Iterable[str] = (),
             exclude_types: Tuple[Type[nn.Module], ...] = ()):
-        new_nn = PITModel(nn_ut, input_example, regularizer, exclude_names, exclude_types)
+        new_nn = PITModel(nn_ut, input_example, regularizer, exclude_names=exclude_names,
+                          exclude_types=exclude_types)
         return new_nn
 
     def _compare_prepared(self,

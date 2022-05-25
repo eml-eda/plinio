@@ -41,7 +41,6 @@ class DNASModel(nn.Module):
     @abstractmethod
     def __init__(
             self,
-            model: nn.Module,
             regularizer: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
@@ -51,15 +50,16 @@ class DNASModel(nn.Module):
         self.regularizer = regularizer
         self.exclude_names = exclude_names
         self.exclude_types = tuple(exclude_types)
-        self._inner_model = model
 
+    @abstractmethod
     def forward(self, *args: Any) -> torch.Tensor:
-        """Forward function for the DNAS model. Simply invokes the inner model's forward
+        """Forward function for the DNAS model.
 
+        :raises NotImplementedError: on the base DNAS class
         :return: the output tensor
         :rtype: torch.Tensor
         """
-        return self._inner_model.forward(*args)
+        raise NotImplementedError
 
     @abstractmethod
     def supported_regularizers(self) -> Tuple[str, ...]:
