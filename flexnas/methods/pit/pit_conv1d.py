@@ -82,8 +82,7 @@ class PITConv1d(nn.Conv1d):
         In a nutshell, uses the various ChannelMaskers to generate the binarized masks, then runs
         the convolution with the masked weights tensor.
         This function has side effects, since it also saves the effective output channels and
-        effective filter size in `out_channels_eff` and
-        `k_eff` respectively.
+        effective filter size in `out_channels_eff` and `k_eff` respectively.
 
         :param input: the input activations tensor
         :type input: torch.Tensor

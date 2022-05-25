@@ -170,14 +170,17 @@ class PITModel(DNASModel):
         g = mod.graph
         queue = model_graph.get_output_nodes(g)
         shared_masker_queue: List[Optional[PITChannelMasker]] = [None] * len(queue)
+        visited = []
         while queue:
             n = queue.pop(0)
             shared_masker = shared_masker_queue.pop(0)
-            self._rewrite_node(n, mod, shared_masker)
-            shared_masker = self._update_shared_masker(n, mod, shared_masker)
-            for pred in n.all_input_nodes:
-                queue.append(pred)
-                shared_masker_queue.append(shared_masker)
+            if n not in visited:
+                self._rewrite_node(n, mod, shared_masker)
+                shared_masker = self._update_shared_masker(n, mod, shared_masker)
+                for pred in n.all_input_nodes:
+                    queue.append(pred)
+                    shared_masker_queue.append(shared_masker)
+                visited.append(n)
 
     def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
         """Optionally rewrites a fx.GraphModule node replacing a sub-module instance with its
@@ -195,11 +198,11 @@ class PITModel(DNASModel):
             self._rewrite_conv1d(n, mod, sm)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
-        if model_graph.is_layer(n, mod, PITConv1d):
+        elif model_graph.is_layer(n, mod, PITConv1d):
             # give users the possibility of manually adding NAS-able layers in the nn.Module
-            self._target_layers.append(mod)
+            self._target_layers.append(mod.get_submodule(str(n.target)))
         # etc
-        # if model_graph.is_layer(n, mod, PITConv2d):
+        # elif model_graph.is_layer(n, mod, PITConv2d):
             # self._target_layers.append(mod)
 
     def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
