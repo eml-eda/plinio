@@ -33,9 +33,6 @@ class PITConv1d(nn.Conv1d):
     :type conv: nn.Conv1d
     :param out_length: the output length on the time axis (needed for timestep and dilation masking)
     :type out_length: int
-    :param regularizer: the cost regularizer used in the optimization (currently, either 'size' or
-    'flops')
-    :type regularizer: str
     :param out_channel_masker: the `nn.Module` that generates the output channels binary masks
     :type out_channel_masker: PITChannelMasker
     :param timestep_masker: the `nn.Module` that generates the output timesteps binary masks
@@ -47,7 +44,6 @@ class PITConv1d(nn.Conv1d):
     def __init__(self,
                  conv: nn.Conv1d,
                  out_length: int,
-                 regularizer: str,
                  out_channel_masker: PITChannelMasker,
                  timestep_masker: PITTimestepMasker,
                  dilation_masker: PITDilationMasker,
@@ -65,9 +61,7 @@ class PITConv1d(nn.Conv1d):
         self.weight = conv.weight
         self.bias = conv.bias
         self.out_length = out_length
-        if regularizer not in ('size', 'flops'):
-            raise ValueError("Unsupported regularizer {}".format(regularizer))
-        self.regularizer = regularizer
+        # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
         self.out_channel_masker = out_channel_masker
         self.timestep_masker = timestep_masker
@@ -114,19 +108,23 @@ class PITConv1d(nn.Conv1d):
 
         return y
 
-    def get_regularization_loss(self) -> torch.Tensor:
-        """Method that computes the regularization loss for this layer based on the selected regularizer.
+    def get_size(self) -> torch.Tensor:
+        """Method that computes the number of weights for the layer
 
-        :return: the regularization loss value
+        :return: the number of weights
         :rtype: torch.Tensor
         """
         cin = self.input_features_calculator.features
         cost = cin * self.out_channels_eff * self.k_eff
-        # TODO: remove this "if" by creating two methods and attaching one of them at construction
-        # time
-        if self.regularizer == 'flops':
-            cost = cost * self.out_length
         return cost
+
+    def get_macs(self) -> torch.Tensor:
+        """Method that computes the number of MAC operations for the layer
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        return self.get_size() * self.out_length
 
     def _generate_norm_constants(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Method called at construction time to generate the normalization constants for the

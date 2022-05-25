@@ -81,6 +81,10 @@ class PIT(DNAS):
         self.train_channels = train_channels
         self.train_rf = train_rf
         self.train_dilation = train_dilation
+        if self.regularizer == 'size':
+            self.get_regularization_loss = self.get_size
+        elif self.regularizer == 'macs':
+            self.get_regularization_loss = self.get_macs
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -91,13 +95,29 @@ class PIT(DNAS):
         return self._inner_model.forward(*args)
 
     def supported_regularizers(self) -> Tuple[str, ...]:
-        return ('size', 'flops')
+        return ('size', 'macs')
 
-    def get_regularization_loss(self) -> torch.Tensor:
-        reg_loss = torch.tensor(0)
+    def get_size(self) -> torch.Tensor:
+        """Computes the total number of parameters of all NAS-able layers
+
+        :return: the total number of parameters
+        :rtype: torch.Tensor
+        """
+        size = torch.tensor(0)
         for layer, in self._target_layers:
-            reg_loss += layer.get_regularization_loss()
-        return reg_loss
+            size += layer.get_size()
+        return size
+
+    def get_macs(self) -> torch.Tensor:
+        """Computes the total number of MACs in all NAS-able layers
+
+        :return: the total number of MACs
+        :rtype: torch.Tensor
+        """
+        macs = torch.tensor(0)
+        for layer, in self._target_layers:
+            macs += layer.get_macs()
+        return macs
 
     @property
     def train_channels(self) -> bool:
@@ -241,7 +261,6 @@ class PIT(DNAS):
         new_submodule = PITConv1d(
             submodule,
             n.meta['tensor_meta'].shape[1],
-            self.regularizer,
             chan_masker,
             PITTimestepMasker(submodule.kernel_size[0]),
             PITDilationMasker(submodule.kernel_size[0]),
