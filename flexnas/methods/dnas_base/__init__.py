@@ -16,6 +16,6 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .dnas_model import DNASModel
+from .dnas import DNAS
 
-__all__ = ['DNASModel']
+__all__ = ['DNAS']

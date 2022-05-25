@@ -20,7 +20,7 @@ from typing import Iterable, Tuple, Type
 import unittest
 import torch
 import torch.nn as nn
-from flexnas.methods import DNASModel, PITModel
+from flexnas.methods import DNAS, PIT
 from flexnas.methods.pit import PITConv1d
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
@@ -68,7 +68,7 @@ class TestPIT(unittest.TestCase):
     def test_keep_alive_masks_simple(self):
         # TODO: should generate more layers with random RF and Cout
         net = SimpleNN()
-        pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
+        pit_net = PIT(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
         # note: the type: ignore tells pylance to ignore type checks on the next line
         ka_alpha = pit_net._inner_model.conv1.out_channel_masker._keep_alive  # type: ignore
@@ -84,7 +84,7 @@ class TestPIT(unittest.TestCase):
     def test_c_matrices_simple(self):
         # TODO: should generate more layers with random RF and Cout
         net = SimpleNN()
-        pit_net = PITModel(net, input_example=torch.rand((1, 3, 40)))
+        pit_net = PIT(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
         c_beta = pit_net._inner_model.conv1.timestep_masker._c_beta  # type: ignore
         exp_c_beta = torch.tensor([
@@ -109,7 +109,7 @@ class TestPIT(unittest.TestCase):
         """ check that a PITModel just created returns the same output as its inner model"""
         net = SimpleNN()
         x = torch.rand((32,) + tuple(net.input_shape[1:]))
-        pit_net = PITModel(net, input_example=x[0:1])
+        pit_net = PIT(net, input_example=x[0:1])
         net.eval()
         pit_net.eval()
         y = net(x)
@@ -125,13 +125,13 @@ class TestPIT(unittest.TestCase):
             regularizer: str = 'size',
             exclude_names: Iterable[str] = (),
             exclude_types: Tuple[Type[nn.Module], ...] = ()):
-        new_nn = PITModel(nn_ut, input_example, regularizer, exclude_names=exclude_names,
-                          exclude_types=exclude_types)
+        new_nn = PIT(nn_ut, input_example, regularizer, exclude_names=exclude_names,
+                     exclude_types=exclude_types)
         return new_nn
 
     def _compare_prepared(self,
                           old_mod: nn.Module, new_mod: nn.Module,
-                          old_top: nn.Module, new_top: DNASModel,
+                          old_top: nn.Module, new_top: DNAS,
                           exclude_names: Iterable[str] = (),
                           exclude_types: Tuple[Type[nn.Module], ...] = ()):
         for name, child in old_mod.named_children():

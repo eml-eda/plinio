@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .pit_model import PITModel
+from .pit import PIT
 from .pit_conv1d import PITConv1d
 
-__all__ = ['PITModel', 'PITConv1d']
+__all__ = ['PIT', 'PITConv1d']

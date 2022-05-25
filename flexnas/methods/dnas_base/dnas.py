@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 
-class DNASModel(nn.Module):
+class DNAS(nn.Module):
     """Abstract class to wrap a nn.Module with a DNAS functionality
 
     :param model: the inner nn.Module instance optimized by the NAS
@@ -44,7 +44,7 @@ class DNASModel(nn.Module):
             regularizer: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
-        super(DNASModel, self).__init__()
+        super(DNAS, self).__init__()
         if regularizer not in self.supported_regularizers():
             raise ValueError("Unsupported regularizer {}".format(regularizer))
         self.regularizer = regularizer

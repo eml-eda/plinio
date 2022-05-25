@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
-from flexnas.methods.dnas_base import DNASModel
+from flexnas.methods.dnas_base import DNAS
 from .pit_conv1d import PITConv1d
 from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
@@ -33,7 +33,7 @@ from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesC
     LinearFeaturesCalculator, ListReduceFeaturesCalculator, ModAttrFeaturesCalculator
 
 
-class PITModel(DNASModel):
+class PIT(DNAS):
     """A class that wraps a nn.Module with the functionality of the PIT NAS tool
 
     :param model: the inner nn.Module instance optimized by the NAS
@@ -72,7 +72,7 @@ class PITModel(DNASModel):
             train_channels: bool = True,
             train_rf: bool = True,
             train_dilation: bool = True):
-        super(PITModel, self).__init__(regularizer, exclude_names, exclude_types)
+        super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_example = input_example
         self._autoconvert_layers = autoconvert_layers
         self._target_layers = []
@@ -196,8 +196,10 @@ class PITModel(DNASModel):
             if n not in visited:
                 if self._autoconvert_layers:
                     self._rewrite_node(n, mod, shared_masker)
+                    shared_masker = self._update_shared_masker(n, mod, shared_masker)
+                else:
+                    shared_masker = None
                 self._add_to_targets(n, mod)
-                shared_masker = self._update_shared_masker(n, mod, shared_masker)
                 for pred in n.all_input_nodes:
                     queue.append(pred)
                     shared_masker_queue.append(shared_masker)

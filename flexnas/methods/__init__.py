@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .dnas_base import DNASModel
-from .pit import PITModel
+from .dnas_base import DNAS
+from .pit import PIT
 
-__all__ = ['DNASModel', 'PITModel']
+__all__ = ['DNAS', 'PIT']
