@@ -369,10 +369,12 @@ class PIT(DNAS):
         :type calc_dict: Dict[fx.Node, FeaturesCalculator]
         """
         # TODO: add other NAS-able layers here
-        if model_graph.is_layer(n, mod, nn.Conv1d):
+        if model_graph.is_inherited_layer(n, mod, nn.Conv1d):
             prev = n.all_input_nodes[0]  # a Conv layer always has a single input
             sub_mod = mod.get_submodule(str(n.target))
-            sub_mod.input_size_calculator = calc_dict[prev]
+            sub_mod._input_features_calculator = calc_dict[prev]
+            #features = sub_mod._input_features_calculator.features
+
 
     @staticmethod
     def _update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
