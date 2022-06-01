@@ -97,6 +97,7 @@ class PIT(DNAS):
     def supported_regularizers(self) -> Tuple[str, ...]:
         return ('size', 'macs')
 
+
     def get_size(self) -> torch.Tensor:
         """Computes the total number of parameters of all NAS-able layers
 
