@@ -20,4 +20,5 @@
         "reportPrivateImportUsage": "none",
     },
     "autoDocstring.docstringFormat": "sphinx"
+    ,"terminal.integrated.env.osx": {"PYTHONPATH": "${workspaceFolder}"}
 }

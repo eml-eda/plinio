@@ -91,6 +91,24 @@ def is_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool
     return type(parent.get_submodule(str(n.target))) == layer
 
 
+def is_inherited_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
+    """Checks if a `torch.fx.Node` corresponds to a specific layer type or to
+       a layer that inherits the class of the specified layer (for instance PITConv1d inherits from nn.Conv1d).
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent `nn.Module`
+    :type parent: fx.GraphModule
+    :param layer: the layer type to be checked
+    :type layer: Type[nn.Module]
+    :return: `True` if `n` is of type `layer` or if 'n' inherits from 'layer'
+    :rtype: bool
+    """
+    if n.op != 'call_module':
+        return False
+    return isinstance(parent.get_submodule(str(n.target)), layer)
+
+
 def is_zero_or_one_input_op(n: fx.Node) -> bool:
     """Checks if a `torch.fx.Node` has no more than 1 input.
 

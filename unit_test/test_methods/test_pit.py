@@ -25,6 +25,8 @@ from flexnas.methods.pit import PITConv1d
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 
+from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, \
+    LinearFeaturesCalculator, ListReduceFeaturesCalculator, ModAttrFeaturesCalculator
 
 class TestPIT(unittest.TestCase):
     """PIT NAS testing class.
@@ -43,6 +45,7 @@ class TestPIT(unittest.TestCase):
         self.assertEqual(exp_tgt, n_tgt,
                          "SimpleNN has {} conv layers, but found {} target layers".format(
                              exp_tgt, n_tgt))
+
 
     def test_prepare_tc_resnet_14(self):
         """Test the conversion of a ResNet-like model"""
@@ -145,4 +148,4 @@ class TestPIT(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(verbosity=2)
