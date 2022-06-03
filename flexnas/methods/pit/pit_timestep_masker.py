@@ -20,7 +20,6 @@
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-from .pit_binarizer import PITBinarizer
 
 
 class PITTimestepMasker(nn.Module):
@@ -37,15 +36,13 @@ class PITTimestepMasker(nn.Module):
     """
     def __init__(self,
                  rf: int,
-                 trainable: bool = True,
-                 binarization_threshold: float = 0.5):
+                 trainable: bool = True):
         super(PITTimestepMasker, self).__init__()
         self.rf = rf
         self.beta = Parameter(
             torch.empty(self.rf, dtype=torch.float32).fill_(1.0), requires_grad=True)
         # this must be done after creating beta and gamma
         self.trainable = trainable
-        self._binarization_threshold = binarization_threshold
         self._keep_alive = self._generate_keep_alive_mask()
         self._c_beta = self._generate_c_matrix()
 
@@ -60,7 +57,6 @@ class PITTimestepMasker(nn.Module):
         """
         keep_alive_beta = torch.abs(self.beta) * (1 - self._keep_alive) + self._keep_alive
         theta_beta = torch.matmul(self._c_beta, keep_alive_beta)
-        theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
         return theta_beta
 
     def _generate_keep_alive_mask(self) -> torch.Tensor:
