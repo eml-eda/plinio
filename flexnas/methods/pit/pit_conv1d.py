@@ -24,6 +24,7 @@ from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesC
 from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
 from .pit_dilation_masker import PITDilationMasker
+from .pit_binarizer import PITBinarizer
 
 
 class PITConv1d(nn.Conv1d):
@@ -40,6 +41,8 @@ class PITConv1d(nn.Conv1d):
     :param dilation_masker: the `nn.Module` that generates the dilation binary masks
     :type dilation_masker: PITDilationMasker
     :raises ValueError: for unsupported regularizers
+    :param binarization_threshold: the binarization threshold for PIT masks, defaults to 0.5
+    :type binarization_threshold: float, optional
     """
     def __init__(self,
                  conv: nn.Conv1d,
@@ -47,6 +50,7 @@ class PITConv1d(nn.Conv1d):
                  out_channel_masker: PITChannelMasker,
                  timestep_masker: PITTimestepMasker,
                  dilation_masker: PITDilationMasker,
+                 binarization_threshold: float = 0.5,
                  ):
         super(PITConv1d, self).__init__(
             conv.in_channels,
@@ -66,8 +70,10 @@ class PITConv1d(nn.Conv1d):
         self.out_channel_masker = out_channel_masker
         self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
+        self._binarization_threshold = binarization_threshold
         self._beta_norm, self._gamma_norm = self._generate_norm_constants()
-        self.register_buffer('out_channels_eff', torch.tensor(self.out_channels, dtype=torch.float32))
+        self.register_buffer('out_channels_eff', torch.tensor(self.out_channels,
+                             dtype=torch.float32))
         self.register_buffer('k_eff', torch.tensor(self.rf, dtype=torch.float32))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -85,14 +91,17 @@ class PITConv1d(nn.Conv1d):
         """
         # for now we keep the same order of the old version (ch --> dil --> rf)
         # but it's probably more natural to do ch --> rf --> dil
-        bin_alpha = self.out_channel_masker()
+        alpha = self.out_channel_masker()
+        bin_alpha = PITBinarizer.apply(alpha, self._binarization_threshold)
         # TODO: check that the result is correct after removing the two transposes present in
         # Matteo's original version
         pruned_weight = torch.mul(self.weight, bin_alpha.unsqueeze(1).unsqueeze(1))
         theta_gamma = self.dilation_masker()
-        pruned_weight = torch.mul(theta_gamma, pruned_weight)
+        bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+        pruned_weight = torch.mul(bin_theta_gamma, pruned_weight)
         theta_beta = self.timestep_masker()
-        pruned_weight = torch.mul(theta_beta, pruned_weight)
+        bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
+        pruned_weight = torch.mul(bin_theta_beta, pruned_weight)
 
         # conv operation
         y = self._conv_forward(input, pruned_weight, self.bias)
@@ -103,7 +112,7 @@ class PITConv1d(nn.Conv1d):
         # TODO: check if the two following lines are equivalent to the commented ones
         # self.out_channels_eff.copy_(torch.sum(bin_alpha))
         # self.k_eff.copy_(torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma)))
-        self.out_channels_eff = torch.sum(bin_alpha)
+        self.out_channels_eff = torch.sum(alpha)
         self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
 
         return y

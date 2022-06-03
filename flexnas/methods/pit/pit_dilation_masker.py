@@ -21,7 +21,6 @@ import math
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-from .pit_binarizer import PITBinarizer
 
 
 class PITDilationMasker(nn.Module):
@@ -31,20 +30,16 @@ class PITDilationMasker(nn.Module):
     :type rf: int
     :param trainable: should the masks be trained, defaults to True
     :type trainable: bool, optional
-    :param binarization_threshold: the binarization threshold, defaults to 0.5
-    :type binarization_threshold: float, optional
     """
     def __init__(self,
                  rf: int,
-                 trainable: bool = True,
-                 binarization_threshold: float = 0.5):
+                 trainable: bool = True):
         super(PITDilationMasker, self).__init__()
         self.rf = rf
         self.gamma = Parameter(
             torch.empty(self._gamma_len, dtype=torch.float32).fill_(1.0), requires_grad=True)
         # this must be done after creating beta and gamma
         self.trainable = trainable
-        self._binarization_threshold = binarization_threshold
         self._keep_alive = self._generate_keep_alive_mask()
         self._c_gamma = self._generate_c_matrix()
 
@@ -61,7 +56,6 @@ class PITDilationMasker(nn.Module):
         # using ifs
         keep_alive_gamma = torch.abs(self.gamma) * (1 - self._keep_alive) + self._keep_alive
         theta_gamma = torch.matmul(self._c_gamma, keep_alive_gamma)
-        theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
         return theta_gamma
 
     def _generate_keep_alive_mask(self) -> torch.Tensor:

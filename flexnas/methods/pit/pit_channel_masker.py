@@ -20,7 +20,6 @@
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-from .pit_binarizer import PITBinarizer
 
 
 class PITChannelMasker(nn.Module):
@@ -33,21 +32,17 @@ class PITChannelMasker(nn.Module):
     :param keep_alive_channels: how many channels should always be kept alive (binarized at 1),
     defaults to 1
     :type keep_alive_channels: int, optional
-    :param binarization_threshold: the binarization threshold, defaults to 0.5
-    :type binarization_threshold: float, optional
     """
     def __init__(self,
                  out_channels: int,
                  trainable: bool = True,
-                 keep_alive_channels: int = 1,
-                 binarization_threshold: float = 0.5):
+                 keep_alive_channels: int = 1):
         super(PITChannelMasker, self).__init__()
         self.out_channels = out_channels
         self.alpha = Parameter(
             torch.empty(self.out_channels, dtype=torch.float32).fill_(1.0), requires_grad=True)
         # this should be done after creating alpha
         self.trainable = trainable
-        self._binarization_threshold = binarization_threshold
         self._keep_alive = self._generate_keep_alive_mask(keep_alive_channels)
 
     def forward(self) -> torch.Tensor:
@@ -60,8 +55,7 @@ class PITChannelMasker(nn.Module):
         # this makes sure that the first "keep_alive" channels are always binarized at 1, without
         # using ifs
         keep_alive_alpha = torch.abs(self.alpha) * (1 - self._keep_alive) + self._keep_alive
-        bin_alpha = PITBinarizer.apply(keep_alive_alpha, self._binarization_threshold)
-        return bin_alpha
+        return keep_alive_alpha
 
     def _generate_keep_alive_mask(self, keep_alive_channels: int) -> torch.Tensor:
         """Method called at creation time, to generate a "keep-alive" mask vector.
