@@ -72,9 +72,13 @@ class PITConv1d(nn.Conv1d):
         self.dilation_masker = dilation_masker
         self._binarization_threshold = binarization_threshold
         self._beta_norm, self._gamma_norm = self._generate_norm_constants()
-        self.register_buffer('out_channels_eff', torch.tensor(self.out_channels,
-                             dtype=torch.float32))
-        self.register_buffer('k_eff', torch.tensor(self.rf, dtype=torch.float32))
+        # self.register_buffer('out_channels_eff', torch.tensor(self.out_channels,
+        #                      dtype=torch.float32))
+        # self.register_buffer('k_eff', torch.tensor(self.rf, dtype=torch.float32))
+        # TODO: check if it works with checkpointing
+        self.out_channels_eff = torch.tensor(self.out_channels, dtype=torch.float32)
+        self.k_eff = torch.tensor(self.rf, dtype=torch.float32)
+
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the NAS-able layer.
