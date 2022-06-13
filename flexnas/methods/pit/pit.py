@@ -24,6 +24,7 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.dnas_base import DNAS
+from flexnas.methods.pit.pit_tracer import PITTracer
 from .pit_conv1d import PITConv1d
 from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
@@ -188,7 +189,10 @@ class PIT(DNAS):
         :return: the converted inner_model
         :rtype: nn.Module
         """
-        mod = fx.symbolic_trace(inner_model)
+        tracer = PITTracer()
+        graph = tracer.trace(inner_model)
+        name = inner_model.__class__.__name__
+        mod = fx.GraphModule(tracer.root, graph, name)
         ShapeProp(mod).propagate(self._input_example)
         self._convert_layers(mod)
         self._set_input_features(mod)
@@ -315,6 +319,8 @@ class PIT(DNAS):
         """
         if model_graph.is_zero_or_one_input_op(n):
             # definitely no channel sharing
+            return None
+        elif model_graph.is_untouchable_op(n):
             return None
         elif model_graph.is_shared_input_features_op(n, mod):
             # modules that require multiple inputs all of the same size
