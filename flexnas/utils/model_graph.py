@@ -120,6 +120,25 @@ def is_zero_or_one_input_op(n: fx.Node) -> bool:
     return len(n.all_input_nodes) <= 1
 
 
+def is_untouchable_op(n: fx.Node) -> bool:
+    """Checks if a `torch.fx.Node` has a functional convolution.
+
+    :param n: the target node
+    :type n: fx.Node
+    :return: `True` if `n` is a conv1d, conv2d or conv3d.
+    :rtype: bool
+    """
+    # We assume that functional convolution should not be optimized
+    if n.op == 'call_function':
+        if n.target == torch.conv1d:
+            return True
+        if n.target == torch.conv2d:
+            return True
+        if n.target == torch.conv3d:
+            return True
+    return False
+
+
 def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` corresponds to an operation that requires all its inputs to
     share the same number of features.
@@ -144,6 +163,8 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         if n.target == torch.sub:
             return True
         if n.target == operator.sub:
+            return True
+        if n.target == torch.cat:
             return True
         # TODO: add others here
     # are there any modules that require same input size? if so, add them below. Same for methods
