@@ -19,6 +19,8 @@
 from .tc_resnet_14 import TCResNet14
 from .simple_nn import SimpleNN
 from .simple_nn_pit import SimplePitNN
-from .toy_models import ToyModel1, ToyModel2, ToyModel3, ToyModel4, ToyModel5
+from .toy_models import ToyModel1, ToyModel2, ToyModel3, ToyModel4, ToyModel5, ToyModel6, ToyModel7
 
-__all__ = ['TCResNet14', 'SimpleNN', 'SimplePitNN', 'ToyModel1', 'ToyModel2', 'ToyModel3', 'ToyModel4', 'ToyModel5']
+__all__ = ['TCResNet14', 'SimpleNN', 'SimplePitNN', 'ToyModel1',
+           'ToyModel2', 'ToyModel3', 'ToyModel4', 'ToyModel5', 'ToyModel6',
+           'ToyModel7']
