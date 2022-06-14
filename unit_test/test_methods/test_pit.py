@@ -163,7 +163,7 @@ class TestPIT(unittest.TestCase):
         self.assertFalse(conv4_masker)
 
     def test_toy_model2(self):
-        """Test PIT fucntionalities on ToyModel2"""
+        """Test PIT functionalities on ToyModel2"""
         nn_ut = ToyModel2()
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 60)))
         # print(summary(nn_ut, torch.rand((1, 3, 60)), show_input=True, show_hierarchical=False))
@@ -627,6 +627,68 @@ class TestPIT(unittest.TestCase):
         y = net(x)
         pit_y = pit_net(x)
         assert torch.all(torch.eq(y, pit_y))
+
+    def test_regularization_loss_get_size_macs(self):
+        """Test the regularization loss computation"""
+        net = ToyModel6()
+        pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
+        # Check the number of weights for a single conv layer
+        conv1_size = pit_net._inner_model.conv1.get_size().item()  # type: ignore
+        input_features = pit_net._inner_model.conv1\
+                                             .input_features_calculator.features  # type: ignore
+        output_channels = pit_net._inner_model.conv1.out_channels_eff  # type: ignore
+        k_eff = pit_net._inner_model.conv1.k_eff  # type: ignore
+        self.assertEqual(conv1_size,
+                         input_features * output_channels * k_eff,  # type: ignore
+                         "Wrong layer size computed")  # type: ignore
+        # Check the number of MACs for a single conv layer
+        conv1_macs = pit_net._inner_model.conv1.get_macs()  # type: ignore
+        out_length = pit_net._inner_model.conv1.out_length  # type: ignore
+        self.assertEqual(conv1_macs,
+                         input_features * output_channels * k_eff * out_length,  # type: ignore
+                         "Wrong layer MACs computed")  # type: ignore
+        # Check the number of weights for the whole net
+        self.assertEqual(pit_net.get_size().item(),
+                         (3 * 10 * 3) +  # conv0
+                         (3 * 10 * 3) +  # conv1
+                         (20 * 4 * 9),   # conv2
+                         "Wrong net size computed")  # type: ignore
+        # Check the number of weights for the whole net
+        self.assertEqual(pit_net.get_macs().item(),
+                         (3 * 10 * 3 * 10) +  # conv0
+                         (3 * 10 * 3 * 10) +  # conv1
+                         (20 * 4 * 9 * 4),   # conv2
+                         "Wrong MACs size computed")  # type: ignore
+
+        net = ToyModel7()
+        pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
+        # Check the number of weights for a single conv layer
+        conv2_size = pit_net._inner_model.conv2.get_size().item()  # type: ignore
+        input_features = pit_net._inner_model.conv2\
+                                             .input_features_calculator.features  # type: ignore
+        output_channels = pit_net._inner_model.conv2.out_channels_eff  # type: ignore
+        k_eff = pit_net._inner_model.conv2.k_eff  # type: ignore
+        self.assertEqual(conv2_size,
+                         input_features * output_channels * k_eff,  # type: ignore
+                         "Wrong layer size computed")  # type: ignore
+        # Check the number of MACs for a single conv layer
+        conv2_macs = pit_net._inner_model.conv2.get_macs()  # type: ignore
+        out_length = pit_net._inner_model.conv2.out_length  # type: ignore
+        self.assertEqual(conv2_macs,
+                         input_features * output_channels * k_eff * out_length,  # type: ignore
+                         "Wrong layer MACs computed")  # type: ignore
+        # Check the number of weights for the whole net
+        self.assertEqual(pit_net.get_size().item(),
+                         (3 * 10 * 7) +  # conv0
+                         (3 * 10 * 7) +  # conv1
+                         (20 * 4 * 9),   # conv2
+                         "Wrong net size computed")  # type: ignore
+        # Check the number of weights for the whole net
+        self.assertEqual(pit_net.get_macs().item(),
+                         (3 * 10 * 7 * 10) +  # conv0
+                         (3 * 10 * 7 * 10) +  # conv1
+                         (20 * 4 * 9 * 4),    # conv2
+                         "Wrong MACs size computed")  # type: ignore
 
     @staticmethod
     def _execute_prepare(
