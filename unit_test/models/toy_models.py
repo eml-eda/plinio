@@ -119,3 +119,35 @@ class ToyModel5(nn.Module):
         x = torch.cat((a, b), dim=1)
         x = self.conv2(x)
         return x
+
+
+class ToyModel6(nn.Module):
+    def __init__(self, input_shape=(1, 3, 15), num_classes=3):
+        super(ToyModel6, self).__init__()
+        self.input_shape = input_shape
+        self.conv0 = nn.Conv1d(3, 10, (3,), padding='same')
+        self.conv1 = nn.Conv1d(3, 10, (3,), padding='same')
+        self.conv2 = nn.Conv1d(20, 4, (9,), padding='same')
+
+    def forward(self, x):
+        a = self.conv0(x)
+        b = self.conv1(x)
+        x = torch.cat((a, b), dim=1)
+        x = self.conv2(x)
+        return x
+
+
+class ToyModel7(nn.Module):
+    def __init__(self, input_shape=(1, 3, 15), num_classes=3):
+        super(ToyModel7, self).__init__()
+        self.input_shape = input_shape
+        self.conv0 = nn.Conv1d(3, 10, (7,), padding='same')
+        self.conv1 = nn.Conv1d(3, 10, (7,), padding='same')
+        self.conv2 = nn.Conv1d(20, 4, (9,), padding='same')
+
+    def forward(self, x):
+        a = self.conv0(x)
+        b = self.conv1(x)
+        x = torch.cat((a, b), dim=1)
+        x = self.conv2(x)
+        return x
