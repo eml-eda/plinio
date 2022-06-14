@@ -63,7 +63,6 @@ class TestPIT(unittest.TestCase):
         self.assertEqual(exp_tgt, n_tgt,
                          "SimpleNN has {} conv layers, but found {} target layers".format(
                              exp_tgt, n_tgt))
-
         # Input features check on the NAS-able layers
         conv0_input = new_nn._inner_model.conv0.input_features_calculator.features  # type: ignore
         conv0_exp_input = 3
@@ -280,11 +279,6 @@ class TestPIT(unittest.TestCase):
         self.assertEqual(exp_tgt, n_tgt,
                          "TCResNet14 has {} conv layers, but found {} target layers".format(
                              exp_tgt, n_tgt))
-        # print("")
-        # print("Original resnet inner model")
-        # print(summary(nn_ut, torch.rand((1, 6, 50)), show_input=True))
-        # print(summary(nn_ut, torch.rand((1, 6, 50)), show_input=False))
-        # print(summary(nn_ut, torch.rand((1, 6, 50)), show_input=True, show_hierarchical=True))
 
         converted_layers_name = dict(new_nn._inner_model.named_modules())
         # print(converted_layers_name.keys())
@@ -657,7 +651,7 @@ class TestPIT(unittest.TestCase):
         self.assertEqual(pit_net.get_macs().item(),
                          (3 * 10 * 3 * 10) +  # conv0
                          (3 * 10 * 3 * 10) +  # conv1
-                         (20 * 4 * 9 * 4),   # conv2
+                         (20 * 4 * 9 * 4),    # conv2
                          "Wrong MACs size computed")  # type: ignore
 
         net = ToyModel7()
