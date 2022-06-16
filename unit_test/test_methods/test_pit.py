@@ -30,6 +30,7 @@ from unit_test.models import ToyModel1, ToyModel2, ToyModel3
 from unit_test.models import ToyModel4, ToyModel5, ToyModel6, ToyModel7
 from torch.nn.parameter import Parameter
 # from pytorch_model_summary import summary
+import torch.optim as optim
 import numpy as np
 
 
@@ -683,6 +684,52 @@ class TestPIT(unittest.TestCase):
                          (3 * 10 * 7 * 10) +  # conv1
                          (20 * 4 * 9 * 4),    # conv2
                          "Wrong MACs size computed")  # type: ignore
+
+    def test_regularization_loss_forward_backward(self):
+        """Test the regularization loss after a forward and backward step"""
+        nn_ut = ToyModel4()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(8):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        print("")
+        prev_loss = 0
+        for ix, el in enumerate(inputs):
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            if ix > 0:
+                flag_loss = loss < prev_loss
+                # print("prev loss: ", prev_loss, "actual loss", loss)
+                self.assertTrue(flag_loss, "The loss value is not descending")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            prev_loss = loss
+
+        nn_ut = ToyModel2()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(20):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        print("")
+        prev_loss = 0
+        for ix, el in enumerate(inputs):
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            if ix > 0:
+                flag_loss = loss < prev_loss
+                # print("prev loss: ", prev_loss, "actual loss", loss)
+                self.assertTrue(flag_loss, "The loss value is not descending")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            prev_loss = loss
 
     @staticmethod
     def _execute_prepare(
