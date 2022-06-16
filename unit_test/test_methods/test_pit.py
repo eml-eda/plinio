@@ -701,9 +701,9 @@ class TestPIT(unittest.TestCase):
             pit_net(el)
             loss = pit_net.get_regularization_loss()
             if ix > 0:
-                flag_gradient = loss < prev_loss
+                flag_loss = loss < prev_loss
                 # print("prev loss: ", prev_loss, "actual loss", loss)
-                self.assertTrue(flag_gradient, "The loss value is not descending")
+                self.assertTrue(flag_loss, "The loss value is not descending")
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -723,9 +723,9 @@ class TestPIT(unittest.TestCase):
             pit_net(el)
             loss = pit_net.get_regularization_loss()
             if ix > 0:
-                flag_gradient = loss < prev_loss
+                flag_loss = loss < prev_loss
                 # print("prev loss: ", prev_loss, "actual loss", loss)
-                self.assertTrue(flag_gradient, "The loss value is not descending")
+                self.assertTrue(flag_loss, "The loss value is not descending")
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
