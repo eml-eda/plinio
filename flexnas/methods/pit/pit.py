@@ -105,8 +105,10 @@ class PIT(DNAS):
         :rtype: torch.Tensor
         """
         size = torch.tensor(0, dtype=torch.float32)
+        # size = torch.tensor(0)
         for layer in self._target_layers:
-            size += layer.get_size()
+            # size += layer.get_size()
+            size = size + layer.get_size()
         return size
 
     def get_macs(self) -> torch.Tensor:
@@ -116,8 +118,10 @@ class PIT(DNAS):
         :rtype: torch.Tensor
         """
         macs = torch.tensor(0, dtype=torch.float32)
+        # macs = torch.tensor(0)
         for layer in self._target_layers:
-            macs += layer.get_macs()
+            # macs += layer.get_macs()
+            macs = macs + layer.get_macs()
         return macs
 
     @property
