@@ -701,10 +701,10 @@ class TestPIT(unittest.TestCase):
         print("Initial loss value: ", loss)
 
         optimizer.zero_grad()
-        loss.backward(retain_graph=True)
+        loss.backward()
         optimizer.step()
         pit_net(x2)
-        # loss = pit_net.get_regularization_loss()
+        loss = pit_net.get_regularization_loss()
         print("1° Updated loss value: ", pit_net.get_regularization_loss())
 
         optimizer.zero_grad()
