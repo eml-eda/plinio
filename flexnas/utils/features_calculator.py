@@ -19,6 +19,7 @@
 
 from abc import abstractmethod
 from typing import List, Callable
+import torch
 import torch.nn as nn
 
 
@@ -37,7 +38,7 @@ class FeaturesCalculator:
 
     @property
     @abstractmethod
-    def features(self) -> int:
+    def features(self) -> torch.Tensor:
         """Returns the number of active (unmasked) features/channels.
 
         :raises NotImplementedError: on the base FeaturesCalculator class
@@ -57,10 +58,10 @@ class ConstFeaturesCalculator(FeaturesCalculator):
     """
     def __init__(self, const: int):
         super(ConstFeaturesCalculator, self).__init__()
-        self.const = const
+        self.const = torch.Tensor(const)
 
     @property
-    def features(self) -> int:
+    def features(self) -> torch.Tensor:
         return self.const
 
 
@@ -82,8 +83,8 @@ class ModAttrFeaturesCalculator(FeaturesCalculator):
         self.attr_name = attr_name
 
     @property
-    def features(self) -> int:
-        return getattr(self.mod, self.attr_name)
+    def features(self) -> torch.Tensor:
+        return torch.Tensor(getattr(self.mod, self.attr_name))
 
 
 class LinearFeaturesCalculator(FeaturesCalculator):
@@ -100,10 +101,10 @@ class LinearFeaturesCalculator(FeaturesCalculator):
     def __init__(self, prev: FeaturesCalculator, multiplier: int):
         super(LinearFeaturesCalculator, self).__init__()
         self.prev = prev
-        self.multiplier = multiplier
+        self.multiplier = torch.Tensor(multiplier)
 
     @property
-    def features(self) -> int:
+    def features(self) -> torch.Tensor:
         return self.multiplier * self.prev.features
 
 
