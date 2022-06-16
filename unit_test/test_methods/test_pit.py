@@ -686,7 +686,6 @@ class TestPIT(unittest.TestCase):
                          "Wrong MACs size computed")  # type: ignore
 
     def test_regularization_loss_forward_backward(self):
-        torch.autograd.set_detect_anomaly(True)
         """Test the regularization loss after a forward and backward step"""
         nn_ut = ToyModel4()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
