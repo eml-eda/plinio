@@ -117,28 +117,28 @@ class TestPIT(unittest.TestCase):
             conv0.out_channel_masker.alpha.detach().numpy()  # type: ignore
 
         # Two convolutional layers must have the same shared masker before a concat
-        masker_alpha_conv_0_1 = np.array_equal(conv0_alpha, conv1_alpha)  # type: ignore
+        masker_alpha_conv_0_1 = np.array_equal(conv0_alpha, conv1_alpha)
         self.assertTrue(masker_alpha_conv_0_1)
 
         # The convolutional layer after the add operation must have a different one
-        masker_alpha_conv_0_5 = np.array_equal(conv0_alpha, conv5_alpha)  # type: ignore
+        masker_alpha_conv_0_5 = np.array_equal(conv0_alpha, conv5_alpha)
         self.assertFalse(masker_alpha_conv_0_5)
 
         # Two consecutive convolutional layers with different out channels must have
         # different shared masker associated
-        masker_alpha_conv_3_4 = np.array_equal(conv3_alpha, conv4_alpha)  # type: ignore
+        masker_alpha_conv_3_4 = np.array_equal(conv3_alpha, conv4_alpha)
         self.assertFalse(masker_alpha_conv_3_4)
 
         # Three convolutional layers before and add must have the same shared masker
-        masker_alpha_conv_2_4 = np.array_equal(conv2_alpha, conv4_alpha)  # type: ignore
-        masker_alpha_conv_4_5 = np.array_equal(conv4_alpha, conv5_alpha)  # type: ignore
+        masker_alpha_conv_2_4 = np.array_equal(conv2_alpha, conv4_alpha)
+        masker_alpha_conv_4_5 = np.array_equal(conv4_alpha, conv5_alpha)
         self.assertTrue(masker_alpha_conv_2_4)
         self.assertTrue(masker_alpha_conv_4_5)
 
         # Exclude types check
         nn_ut = ToyModel1()
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 15)),
-                                       exclude_types=[nn.Conv1d])  # type: ignore
+                                       exclude_types=(nn.Conv1d,))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 0
         self.assertEqual(exp_tgt, n_tgt,
@@ -148,7 +148,7 @@ class TestPIT(unittest.TestCase):
         # Exclude names check
         nn_ut = ToyModel1()
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 15)),
-                                       exclude_names=['conv0', 'conv4'])  # type: ignore
+                                       exclude_names=('conv0', 'conv4'))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 4
         self.assertEqual(exp_tgt, n_tgt,
@@ -189,13 +189,13 @@ class TestPIT(unittest.TestCase):
             conv0.out_channel_masker.alpha.detach().numpy()  # type: ignore
 
         # Two convolutional layers must have the same shared masker before a concat
-        masker_alpha_conv_0_1 = np.array_equal(conv0_alpha, conv1_alpha)  # type: ignore
+        masker_alpha_conv_0_1 = np.array_equal(conv0_alpha, conv1_alpha)
         self.assertTrue(masker_alpha_conv_0_1)
 
         # Exclude names check
         nn_ut = ToyModel2()
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 60)),
-                                       exclude_names=['conv0', 'conv4'])  # type: ignore
+                                       exclude_names=('conv0', 'conv4'))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 3
         self.assertEqual(exp_tgt, n_tgt,
@@ -252,7 +252,7 @@ class TestPIT(unittest.TestCase):
         """Test the exclude_types functionality"""
         nn_ut = SimpleNN()
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)),
-                                       exclude_types=[nn.Conv1d])  # type: ignore
+                                       exclude_types=(nn.Conv1d,))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 0
         self.assertEqual(exp_tgt, n_tgt,
@@ -261,7 +261,7 @@ class TestPIT(unittest.TestCase):
 
         nn_ut = TCResNet14(self.config)
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 6, 50)),
-                                       exclude_types=[nn.Conv1d])  # type: ignore
+                                       exclude_types=(nn.Conv1d,))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 0
         self.assertEqual(exp_tgt, n_tgt,
@@ -352,7 +352,7 @@ class TestPIT(unittest.TestCase):
         # assigned on conv1 must also be present on conv0
         conv0_alpha = pit_net._inner_model.conv0.out_channel_masker.alpha  # type: ignore
         conv1_alpha = pit_net._inner_model.conv1.out_channel_masker.alpha  # type: ignore
-        assert torch.all(torch.eq(conv0_alpha, conv1_alpha))  # type: ignore
+        assert torch.all(torch.eq(conv0_alpha, conv1_alpha))
         conv2_input = pit_net._inner_model\
                              .conv2.input_features_calculator.features.item()  # type: ignore
         assert conv2_input == torch.sum(new_mask).item()
@@ -644,15 +644,13 @@ class TestPIT(unittest.TestCase):
                          "Wrong layer MACs computed")  # type: ignore
         # Check the number of weights for the whole net
         self.assertEqual(pit_net.get_size().item(),
-                         (3 * 10 * 3) +  # conv0
-                         (3 * 10 * 3) +  # conv1
-                         (20 * 4 * 9),   # conv2
+                         # conv0        conv1          conv2
+                         (3 * 10 * 3) + (3 * 10 * 3) + (20 * 4 * 9),
                          "Wrong net size computed")  # type: ignore
         # Check the number of weights for the whole net
         self.assertEqual(pit_net.get_macs().item(),
-                         (3 * 10 * 3 * 10) +  # conv0
-                         (3 * 10 * 3 * 10) +  # conv1
-                         (20 * 4 * 9 * 4),    # conv2
+                         # conv0             conv1               conv2
+                         (3 * 10 * 3 * 10) + (3 * 10 * 3 * 10) + (20 * 4 * 9 * 4),
                          "Wrong MACs size computed")  # type: ignore
 
         net = ToyModel7()
@@ -674,15 +672,13 @@ class TestPIT(unittest.TestCase):
                          "Wrong layer MACs computed")  # type: ignore
         # Check the number of weights for the whole net
         self.assertEqual(pit_net.get_size().item(),
-                         (3 * 10 * 7) +  # conv0
-                         (3 * 10 * 7) +  # conv1
-                         (20 * 4 * 9),   # conv2
+                         # conv0         conv1         conv2
+                         (3 * 10 * 7) + (3 * 10 * 7) + (20 * 4 * 9),
                          "Wrong net size computed")  # type: ignore
         # Check the number of weights for the whole net
         self.assertEqual(pit_net.get_macs().item(),
-                         (3 * 10 * 7 * 10) +  # conv0
-                         (3 * 10 * 7 * 10) +  # conv1
-                         (20 * 4 * 9 * 4),    # conv2
+                         # conv0             conv1               conv2
+                         (3 * 10 * 7 * 10) + (3 * 10 * 7 * 10) + (20 * 4 * 9 * 4),
                          "Wrong MACs size computed")  # type: ignore
 
     def test_regularization_loss_forward_backward(self):

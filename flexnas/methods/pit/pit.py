@@ -383,8 +383,7 @@ class PIT(DNAS):
             prev = n.all_input_nodes[0]  # a Conv layer always has a single input
             sub_mod = mod.get_submodule(str(n.target))
             sub_mod._input_features_calculator = calc_dict[prev]
-            #features = sub_mod._input_features_calculator.features
-
+            # features = sub_mod._input_features_calculator.features
 
     @staticmethod
     def _update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
