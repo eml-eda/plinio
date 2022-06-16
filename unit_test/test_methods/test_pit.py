@@ -703,7 +703,7 @@ class TestPIT(unittest.TestCase):
             if ix > 0:
                 flag_gradient = loss < prev_loss
                 # print("prev loss: ", prev_loss, "actual loss", loss)
-                self.assertTrue(flag_gradient, "The gradient value is not descending")
+                self.assertTrue(flag_gradient, "The loss value is not descending")
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -725,7 +725,7 @@ class TestPIT(unittest.TestCase):
             if ix > 0:
                 flag_gradient = loss < prev_loss
                 # print("prev loss: ", prev_loss, "actual loss", loss)
-                self.assertTrue(flag_gradient, "The gradient value is not descending")
+                self.assertTrue(flag_gradient, "The loss value is not descending")
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
