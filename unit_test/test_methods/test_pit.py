@@ -30,6 +30,7 @@ from unit_test.models import ToyModel1, ToyModel2, ToyModel3
 from unit_test.models import ToyModel4, ToyModel5, ToyModel6, ToyModel7
 from torch.nn.parameter import Parameter
 # from pytorch_model_summary import summary
+import torch.optim as optim
 import numpy as np
 
 
@@ -683,6 +684,35 @@ class TestPIT(unittest.TestCase):
                          (3 * 10 * 7 * 10) +  # conv1
                          (20 * 4 * 9 * 4),    # conv2
                          "Wrong MACs size computed")  # type: ignore
+
+    def test_regularization_loss_forward_backward(self):
+        torch.autograd.set_detect_anomaly(True)
+        """Test the regularization loss after a forward and backward step"""
+        nn_ut = ToyModel4()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        x2 = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        pit_net.eval()
+
+        pit_net(x)
+        optimizer = optim.Adam(pit_net.parameters())
+        loss = pit_net.get_regularization_loss()
+        print("")
+        print("Initial loss value: ", loss)
+
+        optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        optimizer.step()
+        pit_net(x2)
+        # loss = pit_net.get_regularization_loss()
+        print("1° Updated loss value: ", pit_net.get_regularization_loss())
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        pit_net(x)
+        loss = pit_net.get_regularization_loss()
+        print("2° Updated loss value: ", pit_net.get_regularization_loss())
 
     @staticmethod
     def _execute_prepare(
