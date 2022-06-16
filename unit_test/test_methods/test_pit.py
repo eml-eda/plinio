@@ -686,7 +686,7 @@ class TestPIT(unittest.TestCase):
                          "Wrong MACs size computed")  # type: ignore
 
     def test_regularization_loss_forward_backward(self):
-        """Test the regularization loss after a forward and backward step"""
+        """Test the regularization loss after forward and backward steps"""
         nn_ut = ToyModel4()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
@@ -695,14 +695,12 @@ class TestPIT(unittest.TestCase):
         inputs = []
         for i in range(8):
             inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
-        print("")
         prev_loss = 0
         for ix, el in enumerate(inputs):
             pit_net(el)
             loss = pit_net.get_regularization_loss()
             if ix > 0:
                 flag_loss = loss < prev_loss
-                # print("prev loss: ", prev_loss, "actual loss", loss)
                 self.assertTrue(flag_loss, "The loss value is not descending")
             optimizer.zero_grad()
             loss.backward()
@@ -717,14 +715,12 @@ class TestPIT(unittest.TestCase):
         inputs = []
         for i in range(20):
             inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
-        print("")
         prev_loss = 0
         for ix, el in enumerate(inputs):
             pit_net(el)
             loss = pit_net.get_regularization_loss()
             if ix > 0:
                 flag_loss = loss < prev_loss
-                # print("prev loss: ", prev_loss, "actual loss", loss)
                 self.assertTrue(flag_loss, "The loss value is not descending")
             optimizer.zero_grad()
             loss.backward()
