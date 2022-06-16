@@ -326,8 +326,8 @@ class TestPIT(unittest.TestCase):
                                        autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn, autoconvert_layers=False)
 
-    def test_custom_channel_masking(self):
-        """Test a pit layer channels output with a custom mask alpha applied"""
+    def test_custom_channel_masking_ToyModel4(self):
+        """Test a pit layer channels output with a custom mask alpha applied on ToyModel4"""
         nn_ut = ToyModel4()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
@@ -357,6 +357,8 @@ class TestPIT(unittest.TestCase):
                              .conv2.input_features_calculator.features.item()  # type: ignore
         assert conv2_input == torch.sum(new_mask).item()
 
+    def test_custom_channel_masking_ToyModel5(self):
+        """Test a pit layer channels output with a custom mask alpha applied on ToyModel5"""
         nn_ut = ToyModel5()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
@@ -374,6 +376,8 @@ class TestPIT(unittest.TestCase):
                              .conv2.input_features_calculator.features.item()  # type: ignore
         assert conv2_input == torch.sum(new_mask_0).item() * 2
 
+    def test_custom_channel_masking_ToyModel3(self):
+        """Test a pit layer channels output with a custom mask alpha applied on ToyModel3"""
         nn_ut = ToyModel3()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
@@ -391,7 +395,7 @@ class TestPIT(unittest.TestCase):
         # Check that after the masking the conv layer takes only as input the alive channels
         assert conv3_input == torch.sum(new_mask_3).item()
 
-    def test_custom_receptive_field_masking(self):
+    def test_custom_receptive_field_masking_ToyModel4(self):
         """Test a pit layer receptive field output with a custom mask applied"""
         nn_ut = ToyModel4()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
@@ -452,7 +456,7 @@ class TestPIT(unittest.TestCase):
         assert "{:.4f}".format(torch.sum(torch.mul(norm_theta_beta,
                                                    norm_theta_gamma)).item()) == '2.1667'
 
-    def test_custom_dilation_masking(self):
+    def test_custom_dilation_masking_ToyModel6(self):
         """Test a pit layer receptive field output with a custom mask applied"""
         nn_ut = ToyModel6()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
@@ -508,7 +512,8 @@ class TestPIT(unittest.TestCase):
         assert "{:.4f}".format(torch.sum(torch.mul(norm_theta_beta,
                                                    norm_theta_gamma)).item()) == '2.3333'
 
-    def test_keep_alive_masks_simple(self):
+    def test_keep_alive_masks_simple_SimpleNN(self):
+        """Test keep alive mask on SimpleNN network"""
         net = SimpleNN()
         pit_net = PIT(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
@@ -529,6 +534,8 @@ class TestPIT(unittest.TestCase):
                                     exp_ka_gamma), "Wrong keep-alive \
                                                     mask for dilation")  # type: ignore
 
+    def test_keep_alive_masks_simple_ToyModel7(self):
+        """Test keep alive mask on ToyModel7 network"""
         net = ToyModel7()
         pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
         # conv1 has a filter size of 7 and 10 output channels
@@ -548,6 +555,8 @@ class TestPIT(unittest.TestCase):
                                     exp_ka_gamma), "Wrong keep-alive \
                                                     mask for dilation")  # type: ignore
 
+    def test_keep_alive_masks_simple_ToyModel2(self):
+        """Test keep alive mask on ToyModel2 network"""
         net = ToyModel2()
         pit_net = PIT(net, input_example=torch.rand((1, 3, 60)))
         # conv1 has a filter size of 3 and 40 output channels
@@ -567,7 +576,8 @@ class TestPIT(unittest.TestCase):
                                     exp_ka_gamma), "Wrong keep-alive \
                                                     mask for dilation")  # type: ignore
 
-    def test_c_matrices_simple(self):
+    def test_c_matrices_SimpleNN(self):
+        """Test c_beta and c_gamma matrices on SimpleNN network"""
         net = SimpleNN()
         pit_net = PIT(net, input_example=torch.rand((1, 3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
@@ -590,6 +600,8 @@ class TestPIT(unittest.TestCase):
         ], dtype=torch.float32)
         self.assertTrue(torch.equal(c_gamma, exp_c_gamma), "Wrong C gamma matrix")  # type: ignore
 
+    def test_c_matrices_ToyModel7(self):
+        """Test c_beta and c_gamma matrices on ToyModel7 network"""
         net = ToyModel7()
         pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
         # conv1 has a filter size of 7 and 10 output channels
@@ -623,8 +635,8 @@ class TestPIT(unittest.TestCase):
         pit_y = pit_net(x)
         assert torch.all(torch.eq(y, pit_y))
 
-    def test_regularization_loss_get_size_macs(self):
-        """Test the regularization loss computation"""
+    def test_regularization_loss_get_size_macs_ToyModel6(self):
+        """Test the regularization loss computation on ToyModel6"""
         net = ToyModel6()
         pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
         # Check the number of weights for a single conv layer
@@ -653,6 +665,8 @@ class TestPIT(unittest.TestCase):
                          (3 * 10 * 3 * 10) + (3 * 10 * 3 * 10) + (20 * 4 * 9 * 4),
                          "Wrong MACs size computed")  # type: ignore
 
+    def test_regularization_loss_get_size_macs_ToyModel7(self):
+        """Test the regularization loss computation on ToyModel7"""
         net = ToyModel7()
         pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
         # Check the number of weights for a single conv layer
@@ -681,8 +695,8 @@ class TestPIT(unittest.TestCase):
                          (3 * 10 * 7 * 10) + (3 * 10 * 7 * 10) + (20 * 4 * 9 * 4),
                          "Wrong MACs size computed")  # type: ignore
 
-    def test_regularization_loss_forward_backward(self):
-        """Test the regularization loss after forward and backward steps"""
+    def test_regularization_loss_forward_backward_ToyModel4(self):
+        """Test the regularization loss after forward and backward steps on ToyModel4"""
         nn_ut = ToyModel4()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
@@ -703,6 +717,8 @@ class TestPIT(unittest.TestCase):
             optimizer.step()
             prev_loss = loss
 
+    def test_regularization_loss_forward_backward_ToyModel2(self):
+        """Test the regularization loss after forward and backward steps on ToyModel2"""
         nn_ut = ToyModel2()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
@@ -722,6 +738,194 @@ class TestPIT(unittest.TestCase):
             loss.backward()
             optimizer.step()
             prev_loss = loss
+
+    def test_regularization_loss_masks_ToyModel1(self):
+        """The ToyModel1 alpha/beta/gamma masks should go to 0 using only the regularization loss"""
+        nn_ut = ToyModel1()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(800):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        for el in inputs:
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        conv3_out_channels = pit_net._inner_model.conv3.out_channels - 1  # type: ignore
+        exp_conv3_alpha = torch.tensor([1.0] + [0.0] * conv3_out_channels, dtype=torch.float32)
+        conv3_alpha = pit_net._inner_model.conv3.out_channel_masker.alpha  # type: ignore
+        conv3_alpha = Parameter(PITBinarizer.apply(conv3_alpha, 0.5))
+        self.assertTrue(torch.equal(conv3_alpha,  # type: ignore
+                                    exp_conv3_alpha), "The channel mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        conv3_rf = pit_net._inner_model.conv3.timestep_masker.rf - 1   # type: ignore
+        exp_conv3_beta = torch.tensor([1.0] + [0.0] * conv3_rf, dtype=torch.float32)
+        conv3_beta = pit_net._inner_model.conv3.timestep_masker.beta  # type: ignore
+        conv3_beta = Parameter(PITBinarizer.apply(conv3_beta, 0.5))
+        self.assertTrue(torch.equal(conv3_beta,  # type: ignore
+                                    exp_conv3_beta), "The kernel mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        exp_conv3_gamma = torch.tensor([1.0] + [0.0], dtype=torch.float32)
+        conv3_gamma = pit_net._inner_model.conv3.dilation_masker.gamma  # type: ignore
+        conv3_gamma = Parameter(PITBinarizer.apply(conv3_gamma, 0.5))
+        self.assertTrue(torch.equal(conv3_gamma,  # type: ignore
+                                    exp_conv3_gamma), "The dilation mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+
+    def test_regularization_loss_masks_ToyModel7(self):
+        """The ToyModel7 alpha/beta/gamma masks should go to 0 using only the regularization loss"""
+        nn_ut = ToyModel7()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(1100):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        for el in inputs:
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        conv2_out_channels = pit_net._inner_model.conv2.out_channels - 1  # type: ignore
+        exp_conv2_alpha = torch.tensor([1.0] + [0.0] * conv2_out_channels, dtype=torch.float32)
+        conv2_alpha = pit_net._inner_model.conv2.out_channel_masker.alpha  # type: ignore
+        conv2_alpha = Parameter(PITBinarizer.apply(conv2_alpha, 0.5))
+        self.assertTrue(torch.equal(conv2_alpha,  # type: ignore
+                                    exp_conv2_alpha), "The channel mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        conv2_rf = pit_net._inner_model.conv2.timestep_masker.rf - 1   # type: ignore
+        exp_conv2_beta = torch.tensor([1.0] + [0.0] * conv2_rf, dtype=torch.float32)
+        conv2_beta = pit_net._inner_model.conv2.timestep_masker.beta  # type: ignore
+        conv2_beta = Parameter(PITBinarizer.apply(conv2_beta, 0.5))
+        self.assertTrue(torch.equal(conv2_beta,  # type: ignore
+                                    exp_conv2_beta), "The kernel mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        exp_conv2_gamma = torch.tensor([1.0] + [0.0] * 3, dtype=torch.float32)
+        conv2_gamma = pit_net._inner_model.conv2.dilation_masker.gamma  # type: ignore
+        conv2_gamma = Parameter(PITBinarizer.apply(conv2_gamma, 0.5))
+        self.assertTrue(torch.equal(conv2_gamma,  # type: ignore
+                                    exp_conv2_gamma), "The dilation mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+
+    def test_layer_optimizations_ToyModel4(self):
+        """The ToyModel4 alpha masks should remain fixed to 1 with train_channels=False"""
+        nn_ut = ToyModel4()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1], train_channels=False)
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(600):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        for el in inputs:
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        conv1_out_channels = pit_net._inner_model.conv1.out_channels - 1  # type: ignore
+        exp_conv1_alpha = torch.tensor([1.0] + [1.0] * conv1_out_channels, dtype=torch.float32)
+        conv1_alpha = pit_net._inner_model.conv1.out_channel_masker.alpha  # type: ignore
+        conv1_alpha = Parameter(PITBinarizer.apply(conv1_alpha, 0.5))
+        self.assertTrue(torch.equal(conv1_alpha,  # type: ignore
+                                    exp_conv1_alpha), "The channel mask values should remain \
+                                                      fixed to 1 with \
+                                                      train_channels=False")  # type: ignore
+        conv1_rf = pit_net._inner_model.conv1.timestep_masker.rf - 1   # type: ignore
+        exp_conv1_beta = torch.tensor([1.0] + [0.0] * conv1_rf, dtype=torch.float32)
+        conv1_beta = pit_net._inner_model.conv1.timestep_masker.beta  # type: ignore
+        conv1_beta = Parameter(PITBinarizer.apply(conv1_beta, 0.5))
+        self.assertTrue(torch.equal(conv1_beta,  # type: ignore
+                                    exp_conv1_beta), "The kernel mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        exp_conv1_gamma = torch.tensor([1.0] + [0.0], dtype=torch.float32)
+        conv1_gamma = pit_net._inner_model.conv1.dilation_masker.gamma  # type: ignore
+        conv1_gamma = Parameter(PITBinarizer.apply(conv1_gamma, 0.5))
+        self.assertTrue(torch.equal(conv1_gamma,  # type: ignore
+                                    exp_conv1_gamma), "The dilation mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+
+    def test_layer_optimizations_ToyModel3(self):
+        """The ToyModel4 beta masks should remain fixed to 1 with train_rf=False"""
+        nn_ut = ToyModel3()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1], train_rf=False)
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(600):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        for el in inputs:
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        conv6_out_channels = pit_net._inner_model.conv6.out_channels - 1  # type: ignore
+        exp_conv6_alpha = torch.tensor([1.0] + [0.0] * conv6_out_channels, dtype=torch.float32)
+        conv6_alpha = pit_net._inner_model.conv6.out_channel_masker.alpha  # type: ignore
+        conv6_alpha = Parameter(PITBinarizer.apply(conv6_alpha, 0.5))
+        self.assertTrue(torch.equal(conv6_alpha,  # type: ignore
+                                    exp_conv6_alpha), "The channel mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        conv6_rf = pit_net._inner_model.conv6.timestep_masker.rf - 1   # type: ignore
+        exp_conv6_beta = torch.tensor([1.0] + [1.0] * conv6_rf, dtype=torch.float32)
+        conv6_beta = pit_net._inner_model.conv6.timestep_masker.beta  # type: ignore
+        conv6_beta = Parameter(PITBinarizer.apply(conv6_beta, 0.5))
+        self.assertTrue(torch.equal(conv6_beta,  # type: ignore
+                                    exp_conv6_beta), "The kernel mask values should remain \
+                                                      fixed to 1 with \
+                                                      train_rf=False")  # type: ignore
+        exp_conv6_gamma = torch.tensor([1.0] + [0.0], dtype=torch.float32)
+        conv6_gamma = pit_net._inner_model.conv6.dilation_masker.gamma  # type: ignore
+        conv6_gamma = Parameter(PITBinarizer.apply(conv6_gamma, 0.5))
+        self.assertTrue(torch.equal(conv6_gamma,  # type: ignore
+                                    exp_conv6_gamma), "The dilation mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+
+    def test_layer_optimizations_ToyModel6(self):
+        """The ToyModel6 gamma masks should remain fixed to 1 with train_dilation=False"""
+        nn_ut = ToyModel6()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1], train_dilation=False)
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(900):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        for el in inputs:
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        conv2_out_channels = pit_net._inner_model.conv2.out_channels - 1  # type: ignore
+        exp_conv2_alpha = torch.tensor([1.0] + [0.0] * conv2_out_channels, dtype=torch.float32)
+        conv2_alpha = pit_net._inner_model.conv2.out_channel_masker.alpha  # type: ignore
+        conv2_alpha = Parameter(PITBinarizer.apply(conv2_alpha, 0.5))
+        self.assertTrue(torch.equal(conv2_alpha,  # type: ignore
+                                    exp_conv2_alpha), "The channel mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        conv2_rf = pit_net._inner_model.conv2.timestep_masker.rf - 1   # type: ignore
+        exp_conv2_beta = torch.tensor([1.0] + [0.0] * conv2_rf, dtype=torch.float32)
+        conv2_beta = pit_net._inner_model.conv2.timestep_masker.beta  # type: ignore
+        conv2_beta = Parameter(PITBinarizer.apply(conv2_beta, 0.5))
+        self.assertTrue(torch.equal(conv2_beta,  # type: ignore
+                                    exp_conv2_beta), "The dilation mask values should decrease \
+                                                     under the threshold target")  # type: ignore
+        exp_conv2_gamma = torch.tensor([1.0] + [1.0] * 3, dtype=torch.float32)
+        conv2_gamma = pit_net._inner_model.conv2.dilation_masker.gamma  # type: ignore
+        conv2_gamma = Parameter(PITBinarizer.apply(conv2_gamma, 0.5))
+        self.assertTrue(torch.equal(conv2_gamma,  # type: ignore
+                                    exp_conv2_gamma), "The dilation mask values should remain \
+                                                      fixed to 1 with \
+                                                      train_dilation=False")  # type: ignore
 
     @staticmethod
     def _execute_prepare(
