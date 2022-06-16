@@ -690,29 +690,47 @@ class TestPIT(unittest.TestCase):
         """Test the regularization loss after a forward and backward step"""
         nn_ut = ToyModel4()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        x2 = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
-        pit_net.eval()
-
-        pit_net(x)
         optimizer = optim.Adam(pit_net.parameters())
-        loss = pit_net.get_regularization_loss()
+        pit_net.eval()
+        inputs = []
+        for i in range(8):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
         print("")
-        print("Initial loss value: ", loss)
+        prev_loss = 0
+        for ix, el in enumerate(inputs):
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            if ix > 0:
+                flag_gradient = loss < prev_loss
+                # print("prev loss: ", prev_loss, "actual loss", loss)
+                self.assertTrue(flag_gradient, "The gradient value is not descending")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            prev_loss = loss
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        pit_net(x2)
-        loss = pit_net.get_regularization_loss()
-        print("1° Updated loss value: ", pit_net.get_regularization_loss())
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        pit_net(x)
-        loss = pit_net.get_regularization_loss()
-        print("2° Updated loss value: ", pit_net.get_regularization_loss())
+        nn_ut = ToyModel2()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(20):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        print("")
+        prev_loss = 0
+        for ix, el in enumerate(inputs):
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            if ix > 0:
+                flag_gradient = loss < prev_loss
+                # print("prev loss: ", prev_loss, "actual loss", loss)
+                self.assertTrue(flag_gradient, "The gradient value is not descending")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            prev_loss = loss
 
     @staticmethod
     def _execute_prepare(

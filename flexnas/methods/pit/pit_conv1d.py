@@ -110,10 +110,10 @@ class PITConv1d(nn.Conv1d):
         norm_theta_beta = torch.mul(theta_beta, self._beta_norm)
         norm_theta_gamma = torch.mul(theta_gamma, self._gamma_norm)
         # TODO: check if the two following lines are equivalent to the commented ones
-        self.out_channels_eff.copy_(torch.sum(bin_alpha))  # type: ignore
-        self.k_eff.copy_(torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma)))  # type: ignore
-        # self.out_channels_eff = torch.sum(alpha)
-        # self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
+        # self.out_channels_eff.copy_(torch.sum(bin_alpha))  # type: ignore
+        # self.k_eff.copy_(torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma)))  # type: ignore
+        self.out_channels_eff = torch.sum(alpha)
+        self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
 
         return y
 
