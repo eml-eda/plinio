@@ -58,7 +58,7 @@ class ConstFeaturesCalculator(FeaturesCalculator):
     """
     def __init__(self, const: int):
         super(ConstFeaturesCalculator, self).__init__()
-        self.const = torch.Tensor(const)
+        self.const = torch.tensor(const)
 
     @property
     def features(self) -> torch.Tensor:
@@ -84,7 +84,7 @@ class ModAttrFeaturesCalculator(FeaturesCalculator):
 
     @property
     def features(self) -> torch.Tensor:
-        return torch.Tensor(getattr(self.mod, self.attr_name))
+        return getattr(self.mod, self.attr_name)
 
 
 class LinearFeaturesCalculator(FeaturesCalculator):
@@ -101,7 +101,7 @@ class LinearFeaturesCalculator(FeaturesCalculator):
     def __init__(self, prev: FeaturesCalculator, multiplier: int):
         super(LinearFeaturesCalculator, self).__init__()
         self.prev = prev
-        self.multiplier = torch.Tensor(multiplier)
+        self.multiplier = torch.tensor(multiplier)
 
     @property
     def features(self) -> torch.Tensor:
