@@ -39,7 +39,8 @@ class PIT(DNAS):
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
-    :param input_example: an example of input tensor, required for symbolic tracing
+    :param input_example: an example of input tensor, required for symbolic tracing without batch
+    size that is forced before the ShapePropagate
     :type input_example: torch.Tensor
     :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
     :type regularizer: Optional[str], optional
@@ -196,7 +197,10 @@ class PIT(DNAS):
         graph = tracer.trace(inner_model)
         name = inner_model.__class__.__name__
         mod = fx.GraphModule(tracer.root, graph, name)
-        ShapeProp(mod).propagate(self._input_example)
+        # create a "fake" minibatch of 32 inputs for shape prop
+        batch_example = torch.stack([self._input_example] * 32, 0)
+        # ShapeProp(mod).propagate(self._input_example)
+        ShapeProp(mod).propagate(batch_example)
         self._convert_layers(mod)
         self._set_input_features(mod)
         mod.recompile()

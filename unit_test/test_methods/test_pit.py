@@ -56,7 +56,7 @@ class TestPIT(unittest.TestCase):
     def test_prepare_simple_model(self):
         """Test the conversion of a simple sequential model"""
         nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)))
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
         # Number of NAS-able layers check
         n_tgt = len(new_nn._target_layers)
@@ -80,7 +80,7 @@ class TestPIT(unittest.TestCase):
     def test_toy_model1(self):
         """Test PIT fucntionalities on ToyModel1"""
         nn_ut = ToyModel1()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 15)))
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 15)))
 
         # Input features check
         conv2_exp_input = 3
@@ -137,7 +137,7 @@ class TestPIT(unittest.TestCase):
 
         # Exclude types check
         nn_ut = ToyModel1()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 15)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 15)),
                                        exclude_types=(nn.Conv1d,))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 0
@@ -147,7 +147,7 @@ class TestPIT(unittest.TestCase):
 
         # Exclude names check
         nn_ut = ToyModel1()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 15)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 15)),
                                        exclude_names=('conv0', 'conv4'))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 4
@@ -165,8 +165,7 @@ class TestPIT(unittest.TestCase):
     def test_toy_model2(self):
         """Test PIT functionalities on ToyModel2"""
         nn_ut = ToyModel2()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 60)))
-        # print(summary(nn_ut, torch.rand((1, 3, 60)), show_input=True, show_hierarchical=False))
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 60)))
 
         # Input features check
         conv2_exp_input = 3
@@ -194,7 +193,7 @@ class TestPIT(unittest.TestCase):
 
         # Exclude names check
         nn_ut = ToyModel2()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 60)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 60)),
                                        exclude_names=('conv0', 'conv4'))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 3
@@ -212,7 +211,7 @@ class TestPIT(unittest.TestCase):
 
         # Test autoconvert set to False
         nn_ut = ToyModel2()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 60)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 60)),
                                        autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn, autoconvert_layers=False)
         n_tgt = len(new_nn._target_layers)
@@ -224,14 +223,14 @@ class TestPIT(unittest.TestCase):
     def test_exclude_names(self):
         """Test the exclude_names functionality"""
         nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
                                        exclude_names=['conv0'])
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 1
         self.assertEqual(exp_tgt, n_tgt,
                          "SimpleNN (excluding conv0) has {} NAS-able layers , \
                              but found {} target layers".format(exp_tgt, n_tgt))
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
                                        exclude_names=['conv0', 'conv1'])
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 0
@@ -239,7 +238,7 @@ class TestPIT(unittest.TestCase):
                          "SimpleNN (excluding conv0 and conv1) has {} NAS-able layers, \
                           but found {} target layers".format(exp_tgt, n_tgt))
         nn_ut = TCResNet14(self.config)
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 6, 50)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)),
                                        exclude_names=['conv0', 'tcn_network_5_tcn1',
                                        'tcn_network_3_tcn0', 'tcn_network_2_batchnorm1'])
         n_tgt = len(new_nn._target_layers)
@@ -251,7 +250,7 @@ class TestPIT(unittest.TestCase):
     def test_exclude_types(self):
         """Test the exclude_types functionality"""
         nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
                                        exclude_types=(nn.Conv1d,))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 0
@@ -260,7 +259,7 @@ class TestPIT(unittest.TestCase):
                           but found {} target layers".format(exp_tgt, n_tgt))
 
         nn_ut = TCResNet14(self.config)
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 6, 50)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)),
                                        exclude_types=(nn.Conv1d,))
         n_tgt = len(new_nn._target_layers)
         exp_tgt = 0
@@ -271,7 +270,7 @@ class TestPIT(unittest.TestCase):
     def test_prepare_tc_resnet_14(self):
         """Test the conversion of a ResNet-like model"""
         nn_ut = TCResNet14(self.config)
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 6, 50)))
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)))
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
 
         # Number of NAS-able layers check
@@ -319,18 +318,18 @@ class TestPIT(unittest.TestCase):
     def test_prepare_simple_pit_model(self):
         """Test the conversion of a simple sequential model already containing a pit layer"""
         nn_ut = SimplePitNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)))
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
         # Check with autoconvert disabled
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((1, 3, 40)),
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
                                        autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn, autoconvert_layers=False)
 
     def test_custom_channel_masking_ToyModel4(self):
         """Test a pit layer channels output with a custom mask alpha applied on ToyModel4"""
         nn_ut = ToyModel4()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         nn_ut.eval()
         pit_net.eval()
         y = nn_ut(x)
@@ -360,8 +359,9 @@ class TestPIT(unittest.TestCase):
     def test_custom_channel_masking_ToyModel5(self):
         """Test a pit layer channels output with a custom mask alpha applied on ToyModel5"""
         nn_ut = ToyModel5()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
+        x = torch.stack([x] * 32, 0)
         nn_ut.eval()
         pit_net.eval()
         y = nn_ut(x)
@@ -379,8 +379,9 @@ class TestPIT(unittest.TestCase):
     def test_custom_channel_masking_ToyModel3(self):
         """Test a pit layer channels output with a custom mask alpha applied on ToyModel3"""
         nn_ut = ToyModel3()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
+        x = torch.stack([x] * 32, 0)
         nn_ut.eval()
         pit_net.eval()
         y = nn_ut(x)
@@ -398,8 +399,8 @@ class TestPIT(unittest.TestCase):
     def test_custom_receptive_field_masking_ToyModel4(self):
         """Test a pit layer receptive field output with a custom mask applied"""
         nn_ut = ToyModel4()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         # Check the correct initialization of c_beta matrix
         assert torch.all(torch.eq(pit_net._inner_model
                                          .conv2.timestep_masker._c_beta,  # type: ignore
@@ -459,8 +460,9 @@ class TestPIT(unittest.TestCase):
     def test_custom_dilation_masking_ToyModel6(self):
         """Test a pit layer receptive field output with a custom mask applied"""
         nn_ut = ToyModel6()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
+        x = torch.stack([x] * 32, 0)
         c_gamma = pit_net._inner_model.conv2.dilation_masker._c_gamma  # type: ignore
         # Check the correct initialization of c_gamma matrix
         exp_c_gamma = torch.Tensor([[1., 1., 1., 1.],
@@ -514,7 +516,7 @@ class TestPIT(unittest.TestCase):
     def test_keep_alive_masks_simple_SimpleNN(self):
         """Test keep alive mask on SimpleNN network"""
         net = SimpleNN()
-        pit_net = PIT(net, input_example=torch.rand((1, 3, 40)))
+        pit_net = PIT(net, input_example=torch.rand((3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
         # note: the type: ignore tells pylance to ignore type checks on the next line
         ka_alpha = pit_net._inner_model.conv1.out_channel_masker._keep_alive  # type: ignore
@@ -536,7 +538,7 @@ class TestPIT(unittest.TestCase):
     def test_keep_alive_masks_simple_ToyModel7(self):
         """Test keep alive mask on ToyModel7 network"""
         net = ToyModel7()
-        pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
+        pit_net = PIT(net, input_example=torch.rand((3, 15)))
         # conv1 has a filter size of 7 and 10 output channels
         ka_alpha = pit_net._inner_model.conv1.out_channel_masker._keep_alive  # type: ignore
         exp_ka_alpha = torch.tensor([1.0] + [0.0] * 9, dtype=torch.float32)
@@ -557,7 +559,7 @@ class TestPIT(unittest.TestCase):
     def test_keep_alive_masks_simple_ToyModel2(self):
         """Test keep alive mask on ToyModel2 network"""
         net = ToyModel2()
-        pit_net = PIT(net, input_example=torch.rand((1, 3, 60)))
+        pit_net = PIT(net, input_example=torch.rand((3, 60)))
         # conv1 has a filter size of 3 and 40 output channels
         ka_alpha = pit_net._inner_model.conv1.out_channel_masker._keep_alive  # type: ignore
         exp_ka_alpha = torch.tensor([1.0] + [0.0] * 39, dtype=torch.float32)
@@ -578,7 +580,7 @@ class TestPIT(unittest.TestCase):
     def test_c_matrices_SimpleNN(self):
         """Test c_beta and c_gamma matrices on SimpleNN network"""
         net = SimpleNN()
-        pit_net = PIT(net, input_example=torch.rand((1, 3, 40)))
+        pit_net = PIT(net, input_example=torch.rand((3, 40)))
         # conv1 has a filter size of 5 and 57 output channels
         c_beta = pit_net._inner_model.conv1.timestep_masker._c_beta  # type: ignore
         exp_c_beta = torch.tensor([
@@ -602,7 +604,7 @@ class TestPIT(unittest.TestCase):
     def test_c_matrices_ToyModel7(self):
         """Test c_beta and c_gamma matrices on ToyModel7 network"""
         net = ToyModel7()
-        pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
+        pit_net = PIT(net, input_example=torch.rand((3, 15)))
         # conv1 has a filter size of 7 and 10 output channels
         c_beta = pit_net._inner_model.conv1.timestep_masker._c_beta  # type: ignore
         exp_c_beta = torch.Tensor([[1., 1., 1., 1., 1., 1., 1.],
@@ -626,8 +628,9 @@ class TestPIT(unittest.TestCase):
     def test_initial_inference(self):
         """ check that a PITModel just created returns the same output as its inner model"""
         net = SimpleNN()
-        x = torch.rand((32,) + tuple(net.input_shape[1:]))
-        pit_net = PIT(net, input_example=x[0:1])
+        x = torch.rand(tuple(net.input_shape[1:]))
+        pit_net = PIT(net, input_example=x)
+        x = torch.stack([x] * 32, 0)
         net.eval()
         pit_net.eval()
         y = net(x)
@@ -637,7 +640,7 @@ class TestPIT(unittest.TestCase):
     def test_regularization_loss_get_size_macs_ToyModel6(self):
         """Test the regularization loss computation on ToyModel6"""
         net = ToyModel6()
-        pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
+        pit_net = PIT(net, input_example=torch.rand((3, 15)))
         # Check the number of weights for a single conv layer
         conv1_size = pit_net._inner_model.conv1.get_size().item()  # type: ignore
         input_features = pit_net._inner_model.conv1\
@@ -667,7 +670,7 @@ class TestPIT(unittest.TestCase):
     def test_regularization_loss_get_size_macs_ToyModel7(self):
         """Test the regularization loss computation on ToyModel7"""
         net = ToyModel7()
-        pit_net = PIT(net, input_example=torch.rand((1, 3, 15)))
+        pit_net = PIT(net, input_example=torch.rand((3, 15)))
         # Check the number of weights for a single conv layer
         conv2_size = pit_net._inner_model.conv2.get_size().item()  # type: ignore
         input_features = pit_net._inner_model.conv2\
@@ -697,8 +700,8 @@ class TestPIT(unittest.TestCase):
     def test_regularization_loss_forward_backward_ToyModel4(self):
         """Test the regularization loss after forward and backward steps on ToyModel4"""
         nn_ut = ToyModel4()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -719,8 +722,8 @@ class TestPIT(unittest.TestCase):
     def test_regularization_network_weights_ToyModel3(self):
         """Check the weights remain equal using the regularization loss on ToyModel3"""
         nn_ut = ToyModel3()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -759,8 +762,8 @@ class TestPIT(unittest.TestCase):
     def test_regularization_network_weights_ToyModel4(self):
         """Check the value of the weights using the regularization loss on ToyModel4"""
         nn_ut = ToyModel4()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -799,8 +802,8 @@ class TestPIT(unittest.TestCase):
     def test_regularization_loss_forward_backward_ToyModel2(self):
         """Test the regularization loss after forward and backward steps on ToyModel2"""
         nn_ut = ToyModel2()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -821,8 +824,8 @@ class TestPIT(unittest.TestCase):
     def test_regularization_loss_masks_ToyModel1(self):
         """The ToyModel1 alpha/beta/gamma masks should go to 0 using only the regularization loss"""
         nn_ut = ToyModel1()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -858,8 +861,8 @@ class TestPIT(unittest.TestCase):
     def test_regularization_loss_masks_ToyModel7(self):
         """The ToyModel7 alpha/beta/gamma masks should go to 0 using only the regularization loss"""
         nn_ut = ToyModel7()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1])
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -895,8 +898,8 @@ class TestPIT(unittest.TestCase):
     def test_layer_optimizations_ToyModel4(self):
         """The ToyModel4 alpha masks should remain fixed to 1 with train_channels=False"""
         nn_ut = ToyModel4()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1], train_channels=False)
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x, train_channels=False)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -933,8 +936,8 @@ class TestPIT(unittest.TestCase):
     def test_layer_optimizations_ToyModel3(self):
         """The ToyModel4 beta masks should remain fixed to 1 with train_rf=False"""
         nn_ut = ToyModel3()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1], train_rf=False)
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x, train_rf=False)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -971,8 +974,8 @@ class TestPIT(unittest.TestCase):
     def test_layer_optimizations_ToyModel6(self):
         """The ToyModel6 gamma masks should remain fixed to 1 with train_dilation=False"""
         nn_ut = ToyModel6()
-        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
-        pit_net = PIT(nn_ut, input_example=x[0:1], train_dilation=False)
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x, train_dilation=False)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
@@ -1010,8 +1013,9 @@ class TestPIT(unittest.TestCase):
         """Check the changes in the weights using the combined loss"""
         nn_ut = ToyModel8()
         batch_size = 5
-        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x)
+        x = torch.stack([x] * 32, 0)
         nn_ut.eval()
         pit_net.eval()
         y = nn_ut(x)
@@ -1053,8 +1057,9 @@ class TestPIT(unittest.TestCase):
         """Check the output of the combined loss with all labels equal to 1"""
         nn_ut = ToyModel8()
         batch_size = 5
-        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x)
+        x = torch.stack([x] * 32, 0)
         pit_net.eval()
         optimizer = optim.Adam(pit_net.parameters())
         lambda_param = 0.0005
@@ -1085,8 +1090,9 @@ class TestPIT(unittest.TestCase):
         """Check the output of the combined loss with all labels equal to 0"""
         nn_ut = ToyModel8()
         batch_size = 5
-        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x)
+        x = torch.stack([x] * 32, 0)
         pit_net.eval()
         optimizer = optim.Adam(pit_net.parameters())
         lambda_param = 0.0005
@@ -1117,8 +1123,9 @@ class TestPIT(unittest.TestCase):
         """Check the output of the combined loss with all labels equal to 0"""
         nn_ut = ToyModel8()
         batch_size = 5
-        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x)
+        x = torch.stack([x] * 32, 0)
         pit_net.eval()
         optimizer = optim.Adam(pit_net.parameters())
         lambda_param = 0.0005
@@ -1130,7 +1137,7 @@ class TestPIT(unittest.TestCase):
                            dtype=torch.float32)))
         output_check = 0
         target_check = 0
-        for i in range(20):
+        for i in range(50):
             for ix, el in enumerate(inputs):
                 input, target = el[0], el[1]
                 output = pit_net(input)
@@ -1147,7 +1154,7 @@ class TestPIT(unittest.TestCase):
         target_check = target_check.detach().numpy()  # type: ignore
         target_check = np.array(target_check, dtype=float)
         self.assertTrue(np.isclose(output_check,
-                                   target_check, atol=1e-2).all())  # type: ignore
+                                   target_check, atol=1e-1).all())  # type: ignore
 
     @staticmethod
     def _execute_prepare(
