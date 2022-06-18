@@ -27,7 +27,7 @@ from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
 from unit_test.models import ToyModel1, ToyModel2, ToyModel3
-from unit_test.models import ToyModel4, ToyModel5, ToyModel6, ToyModel7
+from unit_test.models import ToyModel4, ToyModel5, ToyModel6, ToyModel7, ToyModel8
 from torch.nn.parameter import Parameter
 # from pytorch_model_summary import summary
 import torch.optim as optim
@@ -461,7 +461,6 @@ class TestPIT(unittest.TestCase):
         nn_ut = ToyModel6()
         x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x[0:1])
-        print()
         c_gamma = pit_net._inner_model.conv2.dilation_masker._c_gamma  # type: ignore
         # Check the correct initialization of c_gamma matrix
         exp_c_gamma = torch.Tensor([[1., 1., 1., 1.],
@@ -717,6 +716,86 @@ class TestPIT(unittest.TestCase):
             optimizer.step()
             prev_loss = loss
 
+    def test_regularization_network_weights_ToyModel3(self):
+        """Check the weights remain equal using the regularization loss on ToyModel3"""
+        nn_ut = ToyModel3()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(8):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        prev_conv0_weights = 0
+        prev_conv2_weights = 0
+        prev_conv6_weights = 0
+        for ix, el in enumerate(inputs):
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            conv0_weights = pit_net._inner_model.conv0.weight  # type: ignore
+            conv0_weights = conv0_weights.detach().numpy()  # type: ignore
+            conv0_weights = np.array(conv0_weights, dtype=float)
+            conv2_weights = pit_net._inner_model.conv2.weight  # type: ignore
+            conv2_weights = conv2_weights.detach().numpy()  # type: ignore
+            conv2_weights = np.array(conv2_weights, dtype=float)
+            conv6_weights = pit_net._inner_model.conv6.weight  # type: ignore
+            conv6_weights = conv6_weights.detach().numpy()  # type: ignore
+            conv6_weights = np.array(conv6_weights, dtype=float)
+            # Using only the regularization loss the weights of the network should not change
+            if ix > 0:
+                self.assertTrue(np.isclose(prev_conv0_weights,
+                                           conv0_weights, atol=1e-25).all())  # type: ignore
+                self.assertTrue(np.isclose(prev_conv2_weights,
+                                           conv2_weights, atol=1e-25).all())  # type: ignore
+                self.assertTrue(np.isclose(prev_conv6_weights,
+                                           conv6_weights, atol=1e-25).all())  # type: ignore
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            prev_conv0_weights = conv0_weights
+            prev_conv2_weights = conv2_weights
+            prev_conv6_weights = conv6_weights
+
+    def test_regularization_network_weights_ToyModel4(self):
+        """Check the value of the weights using the regularization loss on ToyModel4"""
+        nn_ut = ToyModel4()
+        x = torch.rand((32,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x[0:1])
+        optimizer = optim.Adam(pit_net.parameters())
+        pit_net.eval()
+        inputs = []
+        for i in range(8):
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+        prev_conv0_weights = 0
+        prev_conv1_weights = 0
+        prev_conv2_weights = 0
+        for ix, el in enumerate(inputs):
+            pit_net(el)
+            loss = pit_net.get_regularization_loss()
+            conv0_weights = pit_net._inner_model.conv0.weight  # type: ignore
+            conv0_weights = conv0_weights.detach().numpy()  # type: ignore
+            conv0_weights = np.array(conv0_weights, dtype=float)
+            conv1_weights = pit_net._inner_model.conv1.weight  # type: ignore
+            conv1_weights = conv1_weights.detach().numpy()  # type: ignore
+            conv1_weights = np.array(conv1_weights, dtype=float)
+            conv2_weights = pit_net._inner_model.conv2.weight  # type: ignore
+            conv2_weights = conv2_weights.detach().numpy()  # type: ignore
+            conv2_weights = np.array(conv2_weights, dtype=float)
+            # Using only the regularization loss the weights of the network should not change
+            if ix > 0:
+                self.assertTrue(np.isclose(prev_conv0_weights,
+                                           conv0_weights, atol=1e-25).all())  # type: ignore
+                self.assertTrue(np.isclose(prev_conv1_weights,
+                                           conv1_weights, atol=1e-25).all())  # type: ignore
+                self.assertTrue(np.isclose(prev_conv2_weights,
+                                           conv2_weights, atol=1e-25).all())  # type: ignore
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            prev_conv0_weights = conv0_weights
+            prev_conv1_weights = conv1_weights
+            prev_conv2_weights = conv2_weights
+
     def test_regularization_loss_forward_backward_ToyModel2(self):
         """Test the regularization loss after forward and backward steps on ToyModel2"""
         nn_ut = ToyModel2()
@@ -926,6 +1005,113 @@ class TestPIT(unittest.TestCase):
                                     exp_conv2_gamma), "The dilation mask values should remain \
                                                       fixed to 1 with \
                                                       train_dilation=False")  # type: ignore
+
+    def test_combined_loss_ToyModel8(self):
+        """Check the changes in the weights using the combined loss"""
+        nn_ut = ToyModel8()
+        batch_size = 5
+        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
+        nn_ut.eval()
+        pit_net.eval()
+        y = nn_ut(x)
+        pit_y = pit_net(x)
+        assert torch.all(torch.eq(y, pit_y))
+        optimizer = optim.Adam(pit_net.parameters())
+        lambda_param = 0.0005
+        inputs = []
+        for i in range(4):
+            if torch.rand(1) < 0.5:
+                inputs.append((torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:])),
+                               torch.zeros(batch_size, dtype=torch.long)))
+            else:
+                inputs.append((torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:])),
+                               torch.ones(batch_size, dtype=torch.long)))
+        prev_conv1_weights = 0
+        for i in range(50):
+            for ix, el in enumerate(inputs):
+                input, target = el[0], el[1]
+                output = pit_net(input)
+                task_loss = nn.CrossEntropyLoss()(output, target)
+                nas_loss = lambda_param * pit_net.get_regularization_loss()
+                total_loss = task_loss + nas_loss
+                conv1_weights = pit_net._inner_model.conv1.weight  # type: ignore
+                conv1_weights = conv1_weights.detach().numpy()  # type: ignore
+                conv1_weights = np.array(conv1_weights, dtype=float)
+                # Using the crossentropy loss combined with the regularization loss
+                # the weights of the network should change during the training.
+                if ix > 0:
+                    self.assertFalse(np.isclose(prev_conv1_weights,
+                                     conv1_weights, atol=1e-25).all())  # type: ignore
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+                prev_conv1_weights = conv1_weights
+            # print(pit_net._inner_model.fc.weight)  # type: ignore
+
+    def test_combined_loss_ones_labels_ToyModel8(self):
+        """Check the output of the combined loss with all labels equal to 1"""
+        nn_ut = ToyModel8()
+        batch_size = 5
+        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
+        pit_net.eval()
+        optimizer = optim.Adam(pit_net.parameters())
+        lambda_param = 0.0005
+        inputs = []
+        for i in range(80):
+            inputs.append((torch.full((batch_size,) + tuple(nn_ut.input_shape[1:]), 10,
+                           dtype=torch.float32),
+                           torch.ones(batch_size, dtype=torch.long)))
+        output_check = 0
+        for i in range(5):
+            for ix, el in enumerate(inputs):
+                input, target = el[0], el[1]
+                output = pit_net(input)
+                task_loss = nn.CrossEntropyLoss()(output, target)
+                nas_loss = lambda_param * pit_net.get_regularization_loss()
+                total_loss = task_loss + nas_loss
+                conv1_weights = pit_net._inner_model.conv1.weight  # type: ignore
+                conv1_weights = conv1_weights.detach().numpy()  # type: ignore
+                conv1_weights = np.array(conv1_weights, dtype=float)
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+                output_check = output
+        self.assertTrue(torch.sum(torch.argmax(output_check, dim=-1)) == batch_size,  # type: ignore
+                        "The network should output only 1 with all labels 1")  # type: ignore
+
+    def test_combined_loss_zero_labels_ToyModel8(self):
+        """Check the output of the combined loss with all labels equal to 0"""
+        nn_ut = ToyModel8()
+        batch_size = 5
+        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
+        pit_net.eval()
+        optimizer = optim.Adam(pit_net.parameters())
+        lambda_param = 0.0005
+        inputs = []
+        for i in range(80):
+            inputs.append((torch.full((batch_size,) + tuple(nn_ut.input_shape[1:]), 40,
+                           dtype=torch.float32),
+                           torch.zeros(batch_size, dtype=torch.long)))
+        output_check = 0
+        for i in range(5):
+            for ix, el in enumerate(inputs):
+                input, target = el[0], el[1]
+                output = pit_net(input)
+                task_loss = nn.CrossEntropyLoss()(output, target)
+                nas_loss = lambda_param * pit_net.get_regularization_loss()
+                total_loss = task_loss + nas_loss
+                conv1_weights = pit_net._inner_model.conv1.weight  # type: ignore
+                conv1_weights = conv1_weights.detach().numpy()  # type: ignore
+                conv1_weights = np.array(conv1_weights, dtype=float)
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+                output_check = output
+        self.assertTrue(torch.sum(torch.argmax(output_check, dim=-1)) == 0,  # type: ignore
+                        "The network should output only 0 with all labels 0")  # type: ignore
 
     @staticmethod
     def _execute_prepare(
