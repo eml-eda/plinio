@@ -1049,7 +1049,7 @@ class TestPIT(unittest.TestCase):
                 prev_conv1_weights = conv1_weights
             # print(pit_net._inner_model.fc.weight)  # type: ignore
 
-    def test_combined_loss_ones_labels_ToyModel8(self):
+    def test_combined_loss_ones_labels_CE_ToyModel8(self):
         """Check the output of the combined loss with all labels equal to 1"""
         nn_ut = ToyModel8()
         batch_size = 5
@@ -1081,7 +1081,7 @@ class TestPIT(unittest.TestCase):
         self.assertTrue(torch.sum(torch.argmax(output_check, dim=-1)) == batch_size,  # type: ignore
                         "The network should output only 1 with all labels 1")  # type: ignore
 
-    def test_combined_loss_zero_labels_ToyModel8(self):
+    def test_combined_loss_zero_labels_CE_ToyModel8(self):
         """Check the output of the combined loss with all labels equal to 0"""
         nn_ut = ToyModel8()
         batch_size = 5
@@ -1112,6 +1112,42 @@ class TestPIT(unittest.TestCase):
                 output_check = output
         self.assertTrue(torch.sum(torch.argmax(output_check, dim=-1)) == 0,  # type: ignore
                         "The network should output only 0 with all labels 0")  # type: ignore
+
+    def test_combined_loss_MSE_ToyModel8(self):
+        """Check the output of the combined loss with all labels equal to 0"""
+        nn_ut = ToyModel8()
+        batch_size = 5
+        x = torch.rand((batch_size,) + tuple(nn_ut.input_shape[1:]))
+        pit_net = PIT(nn_ut, input_example=x)
+        pit_net.eval()
+        optimizer = optim.Adam(pit_net.parameters())
+        lambda_param = 0.0005
+        inputs = []
+        for i in range(80):
+            inputs.append((torch.full((batch_size,) + tuple(nn_ut.input_shape[1:]), 40,
+                           dtype=torch.float32),
+                           torch.full((batch_size,) + tuple((2,)), 3,
+                           dtype=torch.float32)))
+        output_check = 0
+        target_check = 0
+        for i in range(20):
+            for ix, el in enumerate(inputs):
+                input, target = el[0], el[1]
+                output = pit_net(input)
+                task_loss = nn.MSELoss()(output, target)
+                nas_loss = lambda_param * pit_net.get_regularization_loss()
+                total_loss = task_loss + nas_loss
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+                output_check = output
+                target_check = target
+        output_check = output_check.detach().numpy()  # type: ignore
+        output_check = np.array(output_check, dtype=float)
+        target_check = target_check.detach().numpy()  # type: ignore
+        target_check = np.array(target_check, dtype=float)
+        self.assertTrue(np.isclose(output_check,
+                                   target_check, atol=1e-2).all())  # type: ignore
 
     @staticmethod
     def _execute_prepare(
