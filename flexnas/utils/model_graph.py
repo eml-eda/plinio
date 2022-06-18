@@ -93,7 +93,8 @@ def is_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool
 
 def is_inherited_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
     """Checks if a `torch.fx.Node` corresponds to a specific layer type or to
-       a layer that inherits the class of the specified layer (for instance PITConv1d inherits from nn.Conv1d).
+       a layer that inherits the class of the specified layer
+       (for instance PITConv1d inherits from nn.Conv1d).
 
     :param n: the target node
     :type n: fx.Node
@@ -165,6 +166,8 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         if n.target == operator.sub:
             return True
         if n.target == torch.cat:
+            return True
+        if n.target == torch.squeeze:
             return True
         # TODO: add others here
     # are there any modules that require same input size? if so, add them below. Same for methods
@@ -272,6 +275,10 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
     if n.op == 'call_method' and n.target == 'flatten':
         return True
     if n.op == 'call_function' and n.target == torch.flatten:
+        return True
+    if n.op == 'call_method' and n.target == 'squeeze':
+        return True
+    if n.op == 'call_function' and n.target == torch.squeeze:
         return True
     return False
 

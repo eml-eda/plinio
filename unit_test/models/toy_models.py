@@ -151,3 +151,29 @@ class ToyModel7(nn.Module):
         x = torch.cat((a, b), dim=1)
         x = self.conv2(x)
         return x
+
+
+class ToyModel8(nn.Module):
+    def __init__(self, input_shape=(2, 3, 8), num_classes=3):
+        super(ToyModel8, self).__init__()
+        self.input_shape = input_shape
+        self.conv0 = nn.Conv1d(3, 4, (3,), padding='same')
+        self.conv1 = nn.Conv1d(3, 4, (3,), padding='same')
+        self.conv2 = nn.Conv1d(8, 2, (3,), padding='same')
+        self.conv3 = nn.Conv1d(2, 1, (2,), padding='same')
+        self.pool0 = nn.AvgPool1d(2)
+        self.pool1 = nn.AvgPool1d(2)
+        self.bn0 = nn.BatchNorm1d(2, track_running_stats=False)
+        self.fc = nn.Linear(4, 2)
+
+    def forward(self, x):
+        a = self.conv0(x)
+        b = self.conv1(x)
+        x = torch.cat((a, b), dim=1)
+        x = self.pool0(self.bn0(self.conv2(x)))
+        x = self.conv3(x)
+        x = torch.squeeze(x)
+        # x = x.flatten(1)
+        x = self.fc(x)
+
+        return x
