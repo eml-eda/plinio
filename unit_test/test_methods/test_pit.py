@@ -26,7 +26,7 @@ from flexnas.methods.pit.pit_binarizer import PITBinarizer
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
-from unit_test.models import ToyModel1, ToyModel2, ToyModel3
+from unit_test.models import ToyModel1, ToyModel2, ToyModel3, ResNet18
 from unit_test.models import ToyModel4, ToyModel5, ToyModel6, ToyModel7, ToyModel8
 from torch.nn.parameter import Parameter
 # from pytorch_model_summary import summary
@@ -1155,6 +1155,14 @@ class TestPIT(unittest.TestCase):
         target_check = np.array(target_check, dtype=float)
         self.assertTrue(np.isclose(output_check,
                                    target_check, atol=1e-1).all())  # type: ignore
+
+    def test_resnet18_1d(self):
+        """Test the resnet18 1d baseline"""
+        resnet18 = ResNet18()
+        # print(summary(resnet18, torch.rand(1, 49, 12), show_input=True))
+        # print(summary(resnet18, torch.rand(1, 49, 12), show_input=False))
+        x = torch.rand(1, 49, 12)
+        print(resnet18(x))
 
     @staticmethod
     def _execute_prepare(
