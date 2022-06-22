@@ -204,6 +204,8 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if type(submodule) == nn.Linear:
             return True
+        if type(submodule) == nn.Sequential:
+            return True
     return False
 
 
@@ -250,6 +252,8 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         if type(submodule) == nn.ConstantPad1d:
             return True
         if type(submodule) == nn.ConstantPad2d:
+            return True
+        if type(submodule) == nn.AdaptiveAvgPool1d:
             return True
         # TODO: add others
     if n.op == 'call_function':
