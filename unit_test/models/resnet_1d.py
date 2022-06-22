@@ -24,10 +24,6 @@ class ResNet18(nn.Module):
             ResBlock(128, 256, downsample=True),
             ResBlock(256, 256, downsample=False)
         )
-        # self.layer4 = nn.Sequential(
-        #     ResBlock(256, 512, downsample=True),
-        #     ResBlock(512, 512, downsample=False)
-        # )
         self.gap = torch.nn.AdaptiveAvgPool1d(1)
         self.fc = torch.nn.Linear(256, 12)
 
@@ -36,7 +32,6 @@ class ResNet18(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        # x = self.layer4(x)
         x = self.gap(x)
         x = torch.flatten(x)
         x = self.fc(x)
@@ -59,10 +54,13 @@ class ResBlock(nn.Module):
         self.conv2 = nn.Conv1d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
         self.bn1 = nn.BatchNorm1d(out_channels)
         self.bn2 = nn.BatchNorm1d(out_channels)
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
+        self.relu3 = nn.ReLU()
 
     def forward(self, input):
         shortcut = self.shortcut(input)
-        input = nn.ReLU()(self.bn1(self.conv1(input)))
-        input = nn.ReLU()(self.bn2(self.conv2(input)))
+        input = self.relu1(self.bn1(self.conv1(input)))
+        input = self.relu2(self.bn2(self.conv2(input)))
         input = input + shortcut
-        return nn.ReLU()(input)
+        return self.relu3(input)
