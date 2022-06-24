@@ -20,6 +20,7 @@
 from typing import Tuple
 import torch
 import torch.nn as nn
+import itertools
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
 from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
@@ -113,6 +114,31 @@ class PITConv1d(nn.Conv1d):
         self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
 
         return y
+
+    @property
+    def out_channels_opt(self):
+        with torch.no_grad():
+            alpha = self.out_channel_masker()
+            bin_alpha = PITBinarizer.apply(alpha, self._binarization_threshold)
+            return torch.sum(bin_alpha)
+
+    @property
+    def dilation_opt(self):
+        with torch.no_grad():
+            theta_gamma = self.dilation_masker()
+            bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+            return max((sum(1 for _ in group) for value, group in itertools.groupby(bin_theta_gamma)
+                        if value == 0), default=0) + 1
+
+    @property
+    def kernel_size_opt(self):
+        with torch.no_grad():
+            theta_gamma = self.dilation_masker()
+            bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+            theta_beta = self.dilation_masker()
+            bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
+            bg_prod = torch.mul(bin_theta_gamma, bin_theta_beta)
+            return torch.sum(bg_prod)
 
     def get_size(self) -> torch.Tensor:
         """Method that computes the number of weights for the layer
