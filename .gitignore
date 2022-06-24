@@ -4,3 +4,6 @@ __pycache__
 data
 results
 wandb
+build
+dist
+*egg-info
