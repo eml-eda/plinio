@@ -442,3 +442,13 @@ class PIT(DNAS):
         else:
             raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
         return
+
+    def arch_summary(self):
+        for name, layer in self._inner_model.named_modules():
+            if isinstance(layer, PITConv1d):
+                print("{}: (Cout = {}, K = {}, D = {})".format(
+                    name,
+                    layer.out_channels_opt,
+                    layer.kernel_size_opt,
+                    layer.dilation_opt
+                ))
