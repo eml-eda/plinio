@@ -97,6 +97,11 @@ class PIT(DNAS):
         return self._inner_model.forward(*args)
 
     def supported_regularizers(self) -> Tuple[str, ...]:
+        """Returns a list of names of supported regularizers
+
+        :return: a tuple of strings with the name of supported regularizers
+        :rtype: Tuple[str, ...]
+        """
         return ('size', 'macs')
 
     def get_size(self) -> torch.Tensor:
