@@ -14,9 +14,9 @@
 # * See the License for the specific language governing permissions and        *
 # * limitations under the License.                                             *
 # *                                                                            *
-# * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
+# * Author:  Fabio Eterno <fabio.eterno@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from typing import Iterable, Tuple, Type
+from typing import cast, Iterable, Tuple, Type
 import unittest
 import torch
 import torch.nn as nn
@@ -29,7 +29,6 @@ from unit_test.models import SimplePitNN
 from unit_test.models import ToyModel1, ToyModel2, ToyModel3
 from unit_test.models import ToyModel4, ToyModel5, ToyModel6, ToyModel7, ToyModel8
 from torch.nn.parameter import Parameter
-# from pytorch_model_summary import summary
 import torch.optim as optim
 import numpy as np
 
@@ -1156,6 +1155,64 @@ class TestPIT(unittest.TestCase):
         self.assertTrue(np.isclose(output_check,
                                    target_check, atol=1e-1).all())  # type: ignore
 
+    def test_export_simple_model(self):
+        """Test the export of a simple sequential model"""
+        nn_ut = SimpleNN()
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
+        exported_nn = new_nn.arch_export()
+        self._compare_identical(nn_ut, exported_nn, nn_ut, exported_nn)
+
+    def test_export_with_masks(self):
+        nn_ut = SimpleNN()
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
+
+        conv0 = cast(PITConv1d, new_nn._inner_model.conv0)
+        conv0.out_channel_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, 1, 0, 1] * 8, dtype=torch.float))
+        conv0.timestep_masker.beta = nn.parameter.Parameter(
+            torch.tensor([1, 1, 0], dtype=torch.float))
+
+        conv1 = cast(PITConv1d, new_nn._inner_model.conv1)
+        conv1.out_channel_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, ] * 56 + [0, ], dtype=torch.float))
+        conv1.dilation_masker.gamma = nn.parameter.Parameter(
+            torch.tensor([1, 0, 0], dtype=torch.float))
+        exported_nn = new_nn.arch_export()
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv0':
+                assert child.out_channels == 24
+                assert child.in_channels == 3
+                assert child.kernel_size == (2,)
+                assert child.dilation == (1,)
+            if name == 'conv1':
+                assert child.out_channels == 56
+                assert child.in_channels == 24
+                assert child.kernel_size == (2,)
+                assert child.dilation == (4,)
+
+    def test_export_tc_resnet_14(self):
+        """Test the conversion of a ResNet-like model"""
+        nn_ut = TCResNet14(self.config)
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)))
+        exported_nn = new_nn.arch_export()
+        self._compare_identical(nn_ut, exported_nn, nn_ut, exported_nn)
+
+    def test_arch_summary(self):
+        """Test the summary report for a simple sequential model"""
+        nn_ut = SimpleNN()
+        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
+        summary = new_nn.arch_summary()
+        assert summary['conv0']['in_channels'] == 3
+        assert summary['conv0']['out_channels'] == 32
+        assert summary['conv0']['kernel_size'] == (3,)
+        assert summary['conv0']['dilation'] == (1,)
+        assert summary['conv1']['in_channels'] == 32
+        assert summary['conv1']['out_channels'] == 57
+        assert summary['conv1']['kernel_size'] == (5,)
+        assert summary['conv1']['dilation'] == (1,)
+        print(new_nn)
+
     @staticmethod
     def _execute_prepare(
             nn_ut: nn.Module,
@@ -1185,6 +1242,28 @@ class TestPIT(unittest.TestCase):
                     assert isinstance(new_child, PITConv1d)
                     assert child.out_channels == new_child.out_channels
                     # TODO: add more checks
+
+    def _compare_identical(self,
+                           old_mod: nn.Module, new_mod: nn.Module,
+                           old_top: nn.Module, new_top: nn.Module):
+        for name, child in old_mod.named_children():
+            new_child = cast(nn.Module, new_mod._modules[name])
+            self._compare_identical(child, new_child, old_top, new_top)
+            if isinstance(child, nn.Conv1d):
+                assert isinstance(new_child, nn.Conv1d)
+                assert child.in_channels == new_child.in_channels
+                assert child.out_channels == new_child.out_channels
+                assert child.kernel_size == new_child.kernel_size
+                assert child.stride == new_child.stride
+                assert child.padding == new_child.padding
+                assert child.dilation == new_child.dilation
+                assert child.groups == new_child.groups
+                assert torch.all(child.weight == new_child.weight)
+                if child.bias is not None:
+                    assert torch.all(child.bias == new_child.bias)
+                else:
+                    assert new_child.bias is None
+                assert child.padding_mode == new_child.padding_mode
 
 
 if __name__ == '__main__':

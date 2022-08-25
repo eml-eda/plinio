@@ -116,29 +116,81 @@ class PITConv1d(nn.Conv1d):
         return y
 
     @property
-    def out_channels_opt(self):
+    def out_channels_opt(self) -> int:
+        """Get the number of output channels found during the search
+
+        :return: the number of output channels found during the search
+        :rtype: int
+        """
+        with torch.no_grad():
+            bin_alpha = self.features_mask
+            return int(torch.sum(bin_alpha))
+
+    @property
+    def in_channels_opt(self) -> int:
+        """Get the number of input channels found during the search
+
+        :return: the number of input channels found during the search
+        :rtype: int
+        """
+        with torch.no_grad():
+            return int(self.input_features_calculator.features)
+
+    @property
+    def dilation_opt(self) -> Tuple[int]:
+        """Get the dilation found during the search
+
+        :return: the dilation found during the search
+        :rtype: Tuple[int]
+        """
+        with torch.no_grad():
+            theta_gamma = self.dilation_masker()
+            bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+            # find the longest sequence of 0s in the bin_theta_gamma mask
+            dil = max((sum(1 for _ in group) for value, group in itertools.groupby(bin_theta_gamma)
+                      if value == 0), default=0) + 1
+            # multiply times dilation[0] because the original layer could have had dilation > 1
+            return (int(dil) * self.dilation[0],)
+
+    @property
+    def kernel_size_opt(self) -> Tuple[int]:
+        """Get the kernel size found during the search
+
+        :return: the kernel sizse found during the search
+        :rtype: Tuple[int]
+        """
+        with torch.no_grad():
+            bg_prod = self.time_mask
+            return (int(torch.sum(bg_prod)),)
+
+    @property
+    def features_mask(self) -> torch.Tensor:
+        """Return the binarized mask that specifies which output features (channels) are kept by
+        the NAS
+
+        :return: the binarized mask over the features axis
+        :rtype: torch.Tensor
+        """
         with torch.no_grad():
             alpha = self.out_channel_masker()
-            bin_alpha = PITBinarizer.apply(alpha, self._binarization_threshold)
-            return torch.sum(bin_alpha)
+            return PITBinarizer.apply(alpha, self._binarization_threshold)
 
     @property
-    def dilation_opt(self):
+    def time_mask(self) -> torch.Tensor:
+        """Return the binarized mask that specifies which input timesteps are kept by the NAS
+
+        This includes both the effect of dilation and receptive field searches
+
+        :return: the binarized mask over the time axis
+        :rtype: torch.Tensor
+        """
         with torch.no_grad():
             theta_gamma = self.dilation_masker()
             bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
-            return max((sum(1 for _ in group) for value, group in itertools.groupby(bin_theta_gamma)
-                        if value == 0), default=0) + 1
-
-    @property
-    def kernel_size_opt(self):
-        with torch.no_grad():
-            theta_gamma = self.dilation_masker()
-            bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
-            theta_beta = self.dilation_masker()
+            theta_beta = self.timestep_masker()
             bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
             bg_prod = torch.mul(bin_theta_gamma, bin_theta_beta)
-            return torch.sum(bg_prod)
+            return bg_prod
 
     def get_size(self) -> torch.Tensor:
         """Method that computes the number of weights for the layer
@@ -190,7 +242,8 @@ class PITConv1d(nn.Conv1d):
 
     @input_features_calculator.setter
     def input_features_calculator(self, calc: FeaturesCalculator):
-        """Set the `FeaturesCalculator` instance that computes the number of input features for this layer
+        """Set the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
 
         :param calc: the `FeaturesCalculator` instance that computes the number of input features
         for this layer

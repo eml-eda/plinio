@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import List, Callable
+from typing import List
 import torch
 import torch.nn as nn
 
@@ -47,6 +47,17 @@ class FeaturesCalculator:
         """
         raise NotImplementedError
 
+    @property
+    @abstractmethod
+    def features_mask(self) -> torch.Tensor:
+        """Returns the input features mask
+
+        :raises NotImplementedError: on the base FeaturesCalculator class
+        :return: the number of active (unmasked) features/channels.
+        :rtype: int
+        """
+        raise NotImplementedError
+
 
 class ConstFeaturesCalculator(FeaturesCalculator):
     """A `FeaturesCalculator` that simply returns a constant.
@@ -64,6 +75,10 @@ class ConstFeaturesCalculator(FeaturesCalculator):
     def features(self) -> torch.Tensor:
         return self.const
 
+    @property
+    def features_mask(self) -> torch.Tensor:
+        return torch.ones((int(self.const),))
+
 
 class ModAttrFeaturesCalculator(FeaturesCalculator):
     """A `FeaturesCalculator` that returns the number of features as an attribute of a `nn.Module`
@@ -76,30 +91,35 @@ class ModAttrFeaturesCalculator(FeaturesCalculator):
     :type mod: nn.Module
     :param attr_name: the attribute name that corresponds to the requested number of features
     :type attr_name: str
+    :param mask_attr_name: the attribute name that corresponds to the binary features mask
+    :type attr_name: str
     """
-    def __init__(self, mod: nn.Module, attr_name: str):
+    def __init__(self, mod: nn.Module, attr_name: str, mask_attr_name: str):
         super(ModAttrFeaturesCalculator, self).__init__()
         self.mod = mod
         self.attr_name = attr_name
+        self.mask_attr_name = mask_attr_name
 
     @property
     def features(self) -> torch.Tensor:
         return getattr(self.mod, self.attr_name)
 
+    @property
+    def features_mask(self) -> torch.Tensor:
+        return getattr(self.mod, self.mask_attr_name)
 
-class LinearFeaturesCalculator(FeaturesCalculator):
-    """A `FeaturesCalculator` that computes the number of features as the product of a constant
-    times the number of features of the layer's predecessor
 
-    Used for layers' such as flatten and reshape.
+class FlattenFeaturesCalculator(FeaturesCalculator):
+    """A `FeaturesCalculator` that computes the number of features for a flatten operation
 
     :param prev: the `FeaturesCalculator` instance relative to the previous layer
     :type prev: FeaturesCalculator
-    :param multiplier: the constant multiplicaiton factor
+    :param multiplier: a constant multiplication factor corresponding to the number of weights in
+    each channel
     :type multiplier: int
     """
     def __init__(self, prev: FeaturesCalculator, multiplier: int):
-        super(LinearFeaturesCalculator, self).__init__()
+        super(FlattenFeaturesCalculator, self).__init__()
         self.prev = prev
         self.multiplier = torch.tensor(multiplier)
 
@@ -107,24 +127,37 @@ class LinearFeaturesCalculator(FeaturesCalculator):
     def features(self) -> torch.Tensor:
         return self.multiplier * self.prev.features
 
+    @property
+    def features_mask(self) -> torch.Tensor:
+        prev_mask = self.prev.features_mask
+        mask_list = []
+        for elm in prev_mask:
+            mask_list.append(elm * torch.ones((int(self.multiplier),)))
+        mask = torch.cat(mask_list, dim=0)
+        return mask
 
-class ListReduceFeaturesCalculator(FeaturesCalculator):
-    """A `FeaturesCalculator` that computes the number of features as a reduce operation on a list.
 
-    Used for layers' such as concat, where the number of output features is the sum of all
-    predecessors' output features.
+class ConcatFeaturesCalculator(FeaturesCalculator):
+    """A `FeaturesCalculator` that computes the number of features for a concat operation
+
+    For concat, the number of output features is the sum of all predecessors' output features.
 
     :param inputs: the list of `FeaturesCalculator` instances relative to the predecessors
     :type inputs: List[FeaturesCalculator]
-    :param fn: the reduction function.
-    :type fn: Callable
     """
-    def __init__(self, inputs: List[FeaturesCalculator], fn: Callable):
-        super(ListReduceFeaturesCalculator, self).__init__()
+    def __init__(self, inputs: List[FeaturesCalculator]):
+        super(ConcatFeaturesCalculator, self).__init__()
         self.inputs = inputs
-        self.fn = fn
 
     @property
-    def features(self) -> int:
+    def features(self) -> torch.Tensor:
         fn_params = [_.features for _ in self.inputs]
-        return self.fn(fn_params)
+        return torch.stack(fn_params, dim=0).sum()
+
+    @property
+    def features_mask(self) -> torch.Tensor:
+        mask_list = []
+        for prev in self.inputs:
+            mask_list.append(prev.features_mask)
+        mask = torch.cat(mask_list, dim=0)
+        return mask

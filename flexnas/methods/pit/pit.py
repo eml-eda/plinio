@@ -31,7 +31,7 @@ from .pit_timestep_masker import PITTimestepMasker
 from .pit_dilation_masker import PITDilationMasker
 from flexnas.utils import model_graph
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, \
-    LinearFeaturesCalculator, ListReduceFeaturesCalculator, ModAttrFeaturesCalculator
+    FlattenFeaturesCalculator, ConcatFeaturesCalculator, ModAttrFeaturesCalculator
 
 
 class PIT(DNAS):
@@ -185,7 +185,7 @@ class PIT(DNAS):
             layer.train_dilation = value
         self._train_dilation = value
 
-    def _convert(self, inner_model: nn.Module) -> nn.Module:
+    def _convert(self, inner_model: nn.Module, export: bool = False) -> nn.Module:
         """Converts the inner model, making it "NAS-able" by PIT
 
         :param inner_model: the original inner_model
@@ -199,14 +199,16 @@ class PIT(DNAS):
         mod = fx.GraphModule(tracer.root, graph, name)
         # create a "fake" minibatch of 32 inputs for shape prop
         batch_example = torch.stack([self._input_example] * 32, 0)
-        # ShapeProp(mod).propagate(self._input_example)
         ShapeProp(mod).propagate(batch_example)
-        self._convert_layers(mod)
-        self._set_input_features(mod)
+        if export:
+            self._convert_layers_out(mod)
+        else:
+            self._convert_layers_in(mod)
+            self._set_input_features(mod)
         mod.recompile()
         return mod
 
-    def _convert_layers(self, mod: fx.GraphModule):
+    def _convert_layers_in(self, mod: fx.GraphModule):
         """Replaces target layers (currently, only Conv1D) with their NAS-able version, while also
         recording the list of NAS-able layers for speeding up later regularization loss
         computations.
@@ -227,7 +229,7 @@ class PIT(DNAS):
             shared_masker = shared_masker_queue.pop(0)
             if n not in visited:
                 if self._autoconvert_layers:
-                    self._rewrite_node(n, mod, shared_masker)
+                    self._rewrite_node_in(n, mod, shared_masker)
                     shared_masker = self._update_shared_masker(n, mod, shared_masker)
                 else:
                     shared_masker = None
@@ -237,7 +239,7 @@ class PIT(DNAS):
                     shared_masker_queue.append(shared_masker)
                 visited.append(n)
 
-    def _rewrite_node(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+    def _rewrite_node_in(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
         """Optionally rewrites a fx.GraphModule node replacing a sub-module instance with its
         corresponding NAS-able version
 
@@ -250,11 +252,11 @@ class PIT(DNAS):
         """
         # TODO: add other NAS-able layers here
         if model_graph.is_layer(n, mod, nn.Conv1d) and not self._exclude_mod(n, mod):
-            self._rewrite_conv1d(n, mod, sm)
+            self._rewrite_conv1d_in(n, mod, sm)
         # if is_layer(n, mod, nn.Conv2d) and not self._exclude_mod(n, mod):
         #     return _rewrite_Conv2d()
 
-    def _rewrite_conv1d(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+    def _rewrite_conv1d_in(self, n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
         """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a
         PITConv1D layer
 
@@ -295,9 +297,10 @@ class PIT(DNAS):
         return exc_type or (n.name in self.exclude_names)
 
     def _add_to_targets(self, n: fx.Node, mod: fx.GraphModule):
-        """Optionally adds a layer to the list of NAS target layers
+        """Optionally adds the layer correspondign to a torch.fx.Node to the list of NAS target
+        layers
 
-        :param n: the node to be checked for monitoring
+        :param n: the node to be added
         :type n: fx.Node
         :param mod: the parent module
         :type mod: fx.GraphModule
@@ -308,6 +311,18 @@ class PIT(DNAS):
         # etc
         # elif model_graph.is_layer(n, mod, PITConv2d):
             # self._target_layers.append(mod)
+
+    def _is_in_targets(self, n: fx.Node, mod: fx.GraphModule) -> bool:
+        """Checks if the layer corresponding to a torch.fx.Node is in the list of NAS target layers
+
+        :param n: the node to be checked for monitoring
+        :type n: fx.Node
+        :param mod: the parent module
+        :type mod: fx.GraphModule
+        :return: true if the layer is a target
+        :rtype: bool
+        """
+        return mod.get_submodule(str(n.target)) in self._target_layers
 
     def _update_shared_masker(self, n: fx.Node, mod: fx.GraphModule,
                               sm: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:
@@ -386,7 +401,7 @@ class PIT(DNAS):
         if model_graph.is_inherited_layer(n, mod, nn.Conv1d):
             prev = n.all_input_nodes[0]  # a Conv layer always has a single input
             sub_mod = mod.get_submodule(str(n.target))
-            sub_mod._input_features_calculator = calc_dict[prev]
+            sub_mod.input_features_calculator = calc_dict[prev]  # type: ignore
             # features = sub_mod._input_features_calculator.features
 
     @staticmethod
@@ -408,7 +423,11 @@ class PIT(DNAS):
             # For PITConv1D layers, the "active" output features are stored in the out_channels_eff
             # attribute
             sub_mod = mod.get_submodule(str(n.target))
-            calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_channels_eff')
+            calc_dict[n] = ModAttrFeaturesCalculator(
+                sub_mod,
+                'out_channels_eff',
+                'features_mask'
+            )
         elif model_graph.is_flatten(n, mod):
             # For flatten ops, the output features are computed as: input_features * spatial_size
             # note that this is NOT simply equal to the output shape if the preceding layer is a
@@ -416,14 +435,14 @@ class PIT(DNAS):
             ifc = calc_dict[n.all_input_nodes[0]]
             input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
             spatial_size = math.prod(input_shape[2:])
-            calc_dict[n] = LinearFeaturesCalculator(ifc, spatial_size)
+            calc_dict[n] = FlattenFeaturesCalculator(ifc, spatial_size)
         elif model_graph.is_concatenate(n, mod):
             # for concatenation ops the number of output features is the sum of the output features
             # of preceding layers as for flatten, this is NOT equal to the input shape of this
             # layer, when one or more predecessors are NAS-able
             # TODO: this assumes that concatenation is always on the features axis.
             # Not always true. Fix.
-            ifc = ListReduceFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes], sum)
+            ifc = ConcatFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes])
             calc_dict[n] = ifc
         elif model_graph.is_shared_input_features_op(n, mod):
             # for nodes that require identical number of features in all their inputs (e.g., add)
@@ -443,12 +462,121 @@ class PIT(DNAS):
             raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
         return
 
-    def arch_summary(self):
+    def arch_export(self):
+        """Export the architecture found by the NAS as a `nn.Module`
+
+        The returned model will have the trained weights found during the search filled in, but
+        should be fine-tuned for optimal results.
+
+        :return: the architecture found by the NAS
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        return self._convert(self._inner_model, export=True)
+
+    def _convert_layers_out(self, mod: fx.GraphModule):
+        """Replaces the NAS-able layers with their original `nn.Module` version.
+        Layer conversion is implemented as a reverse BFS on the model graph (starting from the
+        output and reversing all edges).
+
+        :param mod: a torch.fx.GraphModule with tensor shapes annotations.
+        :type mod: fx.GraphModule
+        """
+        g = mod.graph
+        queue = model_graph.get_output_nodes(g)
+        visited = []
+        while queue:
+            n = queue.pop(0)
+            if n not in visited:
+                self._rewrite_node_out(n, mod)
+                for pred in n.all_input_nodes:
+                    queue.append(pred)
+                visited.append(n)
+
+    def _rewrite_node_out(self, n: fx.Node, mod: fx.GraphModule):
+        """Optionally rewrites a fx.GraphModule node replacing a NAS-able sub-module with its
+        original `nn.Module` version.
+
+        :param n: the node to be rewritten
+        :type n: fx.Node
+        :param mod: the parent module, where the new node has to be optionally inserted
+        :type mod: fx.GraphModule
+        """
+        # TODO: add other NAS-able layers here
+        if model_graph.is_layer(n, mod, PITConv1d):
+            if self._is_in_targets(n, mod):
+                self._rewrite_conv1d_out(n, mod)
+        # if model_graph.is_layer(n, mod, nn.Conv2d):
+        #    if self._is_in_targets(n, mod):
+        #       self._rewrite_conv1d_out(n, mod)
+
+    def _rewrite_conv1d_out(self, n: fx.Node, mod: fx.GraphModule):
+        """Rewrites a fx.GraphModule node corresponding to a PITConv1D layer, replacing it with a
+        Conv1D layer
+
+        :param n: the node to be rewritten, corresponds to a Conv1D layer
+        :type n: fx.Node
+        :param mod: the parent module, where the new node has to be inserted
+        :type mod: fx.GraphModule
+        :param shared_masker: an optional shared channels mask derived from subsequent layers
+        :type shared_masker: Optional[PITChannelMasker]
+        """
+        submodule = cast(PITConv1d, mod.get_submodule(str(n.target)))
+        cout_mask = submodule.features_mask.bool()
+        cin_mask = submodule.input_features_calculator.features_mask.bool()
+        time_mask = submodule.time_mask.bool()
+        new_submodule = nn.Conv1d(
+            submodule.in_channels_opt,
+            submodule.out_channels_opt,
+            submodule.kernel_size_opt,
+            submodule.stride,
+            submodule.padding,
+            submodule.dilation_opt,
+            submodule.groups,
+            submodule.bias is not None,
+            submodule.padding_mode)
+        new_weights = submodule.weight[cout_mask, :, :]
+        new_weights = new_weights[:, cin_mask, :]
+        new_weights = new_weights[:, :, time_mask]
+        new_submodule.weight = nn.parameter.Parameter(new_weights)
+        if submodule.bias is not None:
+            new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
+        mod.add_submodule(str(n.target), new_submodule)
+        return
+
+    def arch_summary(self) -> Dict[str, Dict[str, Any]]:
+        """Generates a dictionary representation of the architecture found by the NAS.
+        Only optimized layers are reported
+
+        :return: a dictionary representation of the architecture found by the NAS
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        arch = {}
         for name, layer in self._inner_model.named_modules():
             if isinstance(layer, PITConv1d):
-                print("{}: (Cout = {}, K = {}, D = {})".format(
-                    name,
-                    layer.out_channels_opt,
-                    layer.kernel_size_opt,
-                    layer.dilation_opt
-                ))
+                arch[name] = {
+                    'type': layer.__class__.__name__,
+                    'in_channels': layer.in_channels_opt,
+                    'out_channels': layer.out_channels_opt,
+                    'kernel_size': layer.kernel_size_opt,
+                    'dilation': layer.dilation_opt
+                }
+        return arch
+
+    def __str__(self):
+        """Prints the architecture found by the NAS to screen
+
+        :return: a str representation of the current architecture
+        :rtype: str
+        """
+        arch = self.arch_summary()
+        s = ""
+        for name, layer in arch.items():
+            s += "{} ({}): Cin = {}, Cout = {}, K = {}, D = {}".format(
+                layer['type'],
+                name,
+                layer['in_channels'],
+                layer['out_channels'],
+                layer['kernel_size'],
+                layer['dilation']
+            ) + "\n"
+        return s
