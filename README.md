@@ -11,6 +11,7 @@ A flexible library for testing and comparing different (differentiable) NAS tech
       * `pit_conv1d.py`: class defining a PIT Conv1D layer (template for other layers)
       * `pit_binarizer.py`: the elementary STE-based mask binarizer for all PIT masks
       * `pit_XXX_masker.py`: different type of mask layers for PIT
+      * `pit_converter.py`: a set of functions that handles the conversion of models to/from PIT format using `torch.fx`
   * `utils`: other utility code
     * `features_calculator.py`: different classes to compute the number of features in a layer (see PITModel class)
     * `model_graph.py`: utility functions to process a model graph

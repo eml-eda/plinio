@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List, Type
+from typing import List, Type, Tuple
 import operator
 import torch
 import torch.nn as nn
@@ -74,24 +74,39 @@ def get_output_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
     return ret
 
 
-def is_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
+def layer_type(n: fx.Node, parent: fx.GraphModule) -> Type:
+    """Gets the layer type of a `torch.fx.Node` of type `call_module`
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent `nn.Module`
+    :type parent: fx.GraphModule
+    :return: the type of n
+    :rtype: Type
+    """
+    return type(parent.get_submodule(str(n.target)))
+
+
+def is_layer(n: fx.Node, parent: fx.GraphModule,
+             layers: Tuple[Type[nn.Module], ...]) -> bool:
     """Checks if a `torch.fx.Node` corresponds to a specific layer type.
 
     :param n: the target node
     :type n: fx.Node
     :param parent: the parent `nn.Module`
     :type parent: fx.GraphModule
-    :param layer: the layer type to be checked
-    :type layer: Type[nn.Module]
+    :param layers: the layer types to be checked
+    :type layers: Union[Type[nn.Module], Tuple[Type[nn.Module], ...]]
     :return: `True` if `n` is of type `layer`
     :rtype: bool
     """
     if n.op != 'call_module':
         return False
-    return type(parent.get_submodule(str(n.target))) == layer
+    return layer_type(n, parent) in layers
 
 
-def is_inherited_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module]) -> bool:
+def is_inherited_layer(n: fx.Node, parent: fx.GraphModule,
+                       layers: Tuple[Type[nn.Module], ...]) -> bool:
     """Checks if a `torch.fx.Node` corresponds to a specific layer type or to
        a layer that inherits the class of the specified layer
        (for instance PITConv1d inherits from nn.Conv1d).
@@ -100,14 +115,14 @@ def is_inherited_layer(n: fx.Node, parent: fx.GraphModule, layer: Type[nn.Module
     :type n: fx.Node
     :param parent: the parent `nn.Module`
     :type parent: fx.GraphModule
-    :param layer: the layer type to be checked
-    :type layer: Type[nn.Module]
+    :param layers: the layer types to be checked
+    :type layers: Union[Type[nn.Module], Tuple[Type[nn.Module], ...]]
     :return: `True` if `n` is of type `layer` or if 'n' inherits from 'layer'
     :rtype: bool
     """
     if n.op != 'call_module':
         return False
-    return isinstance(parent.get_submodule(str(n.target)), layer)
+    return isinstance(parent.get_submodule(str(n.target)), layers)
 
 
 def is_zero_or_one_input_op(n: fx.Node) -> bool:
