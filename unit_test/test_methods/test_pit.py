@@ -663,7 +663,7 @@ class TestPIT(unittest.TestCase):
         # Check the number of weights for the whole net
         self.assertEqual(pit_net.get_macs().item(),
                          # conv0             conv1               conv2
-                         (3 * 10 * 3 * 10) + (3 * 10 * 3 * 10) + (20 * 4 * 9 * 4),
+                         (3 * 10 * 3 * 15) + (3 * 10 * 3 * 15) + (20 * 4 * 9 * 15),
                          "Wrong MACs size computed")  # type: ignore
 
     def test_regularization_loss_get_size_macs_ToyModel7(self):
@@ -693,7 +693,7 @@ class TestPIT(unittest.TestCase):
         # Check the number of weights for the whole net
         self.assertEqual(pit_net.get_macs().item(),
                          # conv0             conv1               conv2
-                         (3 * 10 * 7 * 10) + (3 * 10 * 7 * 10) + (20 * 4 * 9 * 4),
+                         (3 * 10 * 7 * 15) + (3 * 10 * 7 * 15) + (20 * 4 * 9 * 15),
                          "Wrong MACs size computed")  # type: ignore
 
     def test_regularization_loss_forward_backward_ToyModel4(self):
@@ -1155,7 +1155,7 @@ class TestPIT(unittest.TestCase):
         self.assertTrue(np.isclose(output_check,
                                    target_check, atol=1e-1).all())  # type: ignore
 
-    def test_export_simple_model(self):
+    def test_export_initial(self):
         """Test the export of a simple sequential model"""
         nn_ut = SimpleNN()
         new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
@@ -1181,15 +1181,27 @@ class TestPIT(unittest.TestCase):
 
         for name, child in exported_nn.named_children():
             if name == 'conv0':
+                child = cast(nn.Conv1d, child)
+                pit_child = cast(PITConv1d, new_nn._inner_model._modules[name])
                 assert child.out_channels == 24
                 assert child.in_channels == 3
                 assert child.kernel_size == (2,)
                 assert child.dilation == (1,)
+                # check that first two timesteps of channel 0 are identical
+                assert torch.all(child.weight[0, :, 0:2] == pit_child.weight[0, :, 0:2])
+                # check that PIT's 4th channel weights are now stored in the 3rd channel
+                assert torch.all(child.weight[2, :, 0:2] == pit_child.weight[3, :, 0:2])
             if name == 'conv1':
+                child = cast(nn.Conv1d, child)
+                pit_child = cast(PITConv1d, new_nn._inner_model._modules[name])
                 assert child.out_channels == 56
                 assert child.in_channels == 24
                 assert child.kernel_size == (2,)
                 assert child.dilation == (4,)
+                # check that weights are correctly saved with dilation. In this case the
+                # number of input channels changed, so we can only check one Cin at a time
+                assert torch.all(child.weight[0:56, 0, 0:2] == pit_child.weight[0:56, 0, 0:6:4])
+                assert torch.all(child.weight[0:56, 2, 0:2] == pit_child.weight[0:56, 3, 0:6:4])
 
     def test_export_tc_resnet_14(self):
         """Test the conversion of a ResNet-like model"""
@@ -1232,10 +1244,10 @@ class TestPIT(unittest.TestCase):
                           exclude_types: Tuple[Type[nn.Module], ...] = (),
                           autoconvert_layers=True):
         for name, child in old_mod.named_children():
-            new_child = new_mod._modules[name]
-            self._compare_prepared(child, new_child, old_top, new_top,   # type: ignore
+            new_child = cast(nn.Module, new_mod._modules[name])
+            self._compare_prepared(child, new_child, old_top, new_top,
                                    exclude_names, exclude_types,
-                                   autoconvert_layers)  # type: ignore
+                                   autoconvert_layers)
             if isinstance(child, nn.Conv1d):
                 if (name not in exclude_names) and \
                         (not isinstance(child, exclude_types) and (autoconvert_layers)):

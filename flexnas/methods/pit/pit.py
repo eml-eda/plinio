@@ -21,8 +21,7 @@ from typing import Any, Tuple, Type, Iterable, Dict
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
-from .pit_converter import convert
-from .pit_conv1d import PITConv1d
+from .pit_converter import convert, summary_rules
 
 
 class PIT(DNAS):
@@ -142,7 +141,10 @@ class PIT(DNAS):
         :type value: bool
         """
         for layer in self._target_layers:
-            layer.train_channels = value
+            if hasattr(layer, 'train_channels'):
+                layer.train_channels = value
+            else:
+                print(f"Warning: layer {layer} does not support channels optimization")
         self._train_channels = value
 
     @property
@@ -162,7 +164,10 @@ class PIT(DNAS):
         :type value: bool
         """
         for layer in self._target_layers:
-            layer.train_rf = value
+            if hasattr(layer, 'train_rf'):
+                layer.train_rf = value
+            else:
+                print(f"Warning: layer {layer} does not support receptive field optimization")
         self._train_rf = value
 
     @property
@@ -182,7 +187,10 @@ class PIT(DNAS):
         :type value: bool
         """
         for layer in self._target_layers:
-            layer.train_dilation = value
+            if hasattr(layer, 'train_dilation'):
+                layer.train_dilation = value
+            else:
+                print(f"Warning: layer {layer} does not support dilation optimization")
         self._train_dilation = value
 
     def arch_export(self):
@@ -207,14 +215,10 @@ class PIT(DNAS):
         """
         arch = {}
         for name, layer in self._inner_model.named_modules():
-            if isinstance(layer, PITConv1d):
-                arch[name] = {
-                    'type': layer.__class__.__name__,
-                    'in_channels': layer.in_channels_opt,
-                    'out_channels': layer.out_channels_opt,
-                    'kernel_size': layer.kernel_size_opt,
-                    'dilation': layer.dilation_opt
-                }
+            summarizable_layers = tuple(summary_rules.keys())
+            if layer in self._target_layers and type(layer) in summarizable_layers:
+                arch[name] = summary_rules[type(layer)](layer)  # type: ignore
+                arch[name]['type'] = layer.__class__.__name__
         return arch
 
     def __str__(self):

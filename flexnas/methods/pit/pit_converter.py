@@ -16,13 +16,14 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import cast, List, Iterable, Type, Tuple, Optional, Dict
+from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Any
 import math
 import torch
 import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 from .pit_conv1d import PITConv1d
+from .pit_conv2d import PITConv2d
 from .pit_channel_masker import PITChannelMasker
 from .pit_timestep_masker import PITTimestepMasker
 from .pit_dilation_masker import PITDilationMasker
@@ -363,9 +364,10 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
 
 
 ####################################################################################################
-# Modify below here to add new target layers. Define a pair of autoimport and export functions,
+# Modify below here to add new target layers. Define three functions (autoimport, export, summary)
 # and then add them to the rules dictionaries. The signatures should always be the same.
 ####################################################################################################
+
 
 def autoimport_conv1d(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
     """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a
@@ -385,10 +387,34 @@ def autoimport_conv1d(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMa
         chan_masker = PITChannelMasker(submodule.out_channels)
     new_submodule = PITConv1d(
         submodule,
-        n.meta['tensor_meta'].shape[1],
-        chan_masker,
-        PITTimestepMasker(submodule.kernel_size[0]),
-        PITDilationMasker(submodule.kernel_size[0]),
+        out_length=n.meta['tensor_meta'].shape[2],
+        out_channel_masker=chan_masker,
+        timestep_masker=PITTimestepMasker(submodule.kernel_size[0]),
+        dilation_masker=PITDilationMasker(submodule.kernel_size[0]),
+    )
+    mod.add_submodule(str(n.target), new_submodule)
+    return
+
+
+def autoimport_conv2d(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+    """Rewrites a fx.GraphModule node corresponding to a Conv2D layer, replacing it with a
+    PITConv2D layer
+
+    :param n: the node to be rewritten, corresponds to a Conv2D layer
+    :type n: fx.Node
+    :param mod: the parent module, where the new node has to be inserted
+    :type mod: fx.GraphModule
+    :param shared_masker: an optional shared channels mask derived from subsequent layers
+    :type shared_masker: Optional[PITChannelMasker]
+    """
+    submodule = cast(nn.Conv2d, mod.get_submodule(str(n.target)))
+    chan_masker = sm if sm is not None else PITChannelMasker(submodule.out_channels)
+    # note: kernel sizse and dilation are not optimized for conv2d
+    new_submodule = PITConv2d(
+        submodule,
+        out_height=n.meta['tensor_meta'].shape[2],
+        out_width=n.meta['tensor_meta'].shape[3],
+        out_channel_masker=chan_masker,
     )
     mod.add_submodule(str(n.target), new_submodule)
     return
@@ -402,8 +428,6 @@ def export_conv1d(n: fx.Node, mod: fx.GraphModule):
     :type n: fx.Node
     :param mod: the parent module, where the new node has to be inserted
     :type mod: fx.GraphModule
-    :param shared_masker: an optional shared channels mask derived from subsequent layers
-    :type shared_masker: Optional[PITChannelMasker]
     """
     submodule = cast(PITConv1d, mod.get_submodule(str(n.target)))
     cout_mask = submodule.features_mask.bool()
@@ -429,14 +453,68 @@ def export_conv1d(n: fx.Node, mod: fx.GraphModule):
     return
 
 
+def export_conv2d(n: fx.Node, mod: fx.GraphModule):
+    """Rewrites a fx.GraphModule node corresponding to a PITConv2D layer, replacing it with a
+    Conv2D layer
+
+    :param n: the node to be rewritten, corresponds to a Conv1D layer
+    :type n: fx.Node
+    :param mod: the parent module, where the new node has to be inserted
+    :type mod: fx.GraphModule
+    """
+    submodule = cast(PITConv2d, mod.get_submodule(str(n.target)))
+    cout_mask = submodule.features_mask.bool()
+    cin_mask = submodule.input_features_calculator.features_mask.bool()
+    # note: kernel size and dilation are not optimized for conv2d
+    new_submodule = nn.Conv2d(
+        submodule.in_channels_opt,
+        submodule.out_channels_opt,
+        submodule.kernel_size,
+        submodule.stride,
+        submodule.padding,
+        submodule.dilation,
+        submodule.groups,
+        submodule.bias is not None,
+        submodule.padding_mode)
+    new_weights = submodule.weight[cout_mask, :, :]
+    new_weights = new_weights[:, cin_mask, :]
+    new_submodule.weight = nn.parameter.Parameter(new_weights)
+    if submodule.bias is not None:
+        new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
+    mod.add_submodule(str(n.target), new_submodule)
+    return
+
+
+def summary_conv1d(layer: nn.Module) -> Dict[str, Any]:
+    return {
+        'in_channels': layer.in_channels_opt,
+        'out_channels': layer.out_channels_opt,
+        'kernel_size': layer.kernel_size_opt,
+        'dilation': layer.dilation_opt
+    }
+
+
+def summary_conv2d(layer: nn.Module) -> Dict[str, Any]:
+    return {
+        'in_channels': layer.in_channels_opt,
+        'out_channels': layer.out_channels_opt,
+    }
+
+
 autoimport_rules = {
     nn.Conv1d: autoimport_conv1d,
-    # nn.Conv2d: autoimport_conv2d,
+    nn.Conv2d: autoimport_conv2d,
     # nn.Linear: autoimport_linear,
 }
 
 export_rules = {
     PITConv1d: export_conv1d,
-    # PITConv2d: export_conv2d,
+    PITConv2d: export_conv2d,
+    # PITLinear: export_linear,
+}
+
+summary_rules = {
+    PITConv1d: summary_conv1d,
+    PITConv2d: export_conv2d,
     # PITLinear: export_linear,
 }
