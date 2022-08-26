@@ -171,6 +171,8 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     """
     if is_zero_or_one_input_op(n):
         return False
+    if is_concatenate(n, parent) and not is_channels_concatenate(n, parent):
+        return True
     if n.op == 'call_function':
         if n.target == torch.add:
             return True
@@ -179,8 +181,6 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         if n.target == torch.sub:
             return True
         if n.target == operator.sub:
-            return True
-        if n.target == torch.cat:
             return True
         if n.target == torch.squeeze:
             return True
@@ -213,13 +213,13 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     if n.op == 'call_module':
         submodule = parent.get_submodule(str(n.target))
-        if type(submodule) == nn.Conv1d:
+        if isinstance(submodule, nn.Conv1d):
             return True
-        if type(submodule) == nn.Conv2d:
+        if isinstance(submodule, nn.Conv2d):
             return True
-        if type(submodule) == nn.Linear:
+        if isinstance(submodule, nn.Linear):
             return True
-        if type(submodule) == nn.Sequential:
+        if isinstance(submodule, nn.Sequential):
             return True
     return False
 
@@ -278,6 +278,16 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if n.target == F.log_softmax:
             return True
+        if n.target == torch.add:
+            return True
+        if n.target == operator.add:
+            return True
+        if n.target == torch.sub:
+            return True
+        if n.target == operator.sub:
+            return True
+        if n.target == torch.squeeze:
+            return True
     return False
 
 
@@ -298,6 +308,22 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
     if n.op == 'call_method' and n.target == 'squeeze':
         return True
     if n.op == 'call_function' and n.target == torch.squeeze:
+        return True
+    return False
+
+
+def is_channels_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` instance corresponds to a concat operation
+    over the channels axis.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a concat op.
+    :rtype: bool
+    """
+    if n.op == 'call_function' and n.target == torch.cat and n.kwargs['dim'] == 1:
         return True
     return False
 

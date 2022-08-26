@@ -16,32 +16,30 @@
 # *                                                                            *
 # * Author:  Fabio Eterno <fabio.eterno@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from typing import cast, Iterable, Tuple, Type
+from typing import Tuple, Dict
 import unittest
+import math
 import torch
 import torch.nn as nn
-from flexnas.methods import DNAS, PIT
+from flexnas.methods import PIT
 from flexnas.methods.pit import PITConv1d
 from flexnas.methods.pit.pit_binarizer import PITBinarizer
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
-from unit_test.models import SimplePitNN
-from unit_test.models import ToyModel1, ToyModel2, ToyModel3
-from unit_test.models import ToyModel4, ToyModel5, ToyModel6, ToyModel7, ToyModel8
+from unit_test.models import MultiPath1
+from unit_test.models import ToyAdd, ToyChannelsCat, ToyModel6, ToyModel7, ToyModel8
 from torch.nn.parameter import Parameter
 import torch.optim as optim
 import numpy as np
 
+from unit_test.models.toy_models import ToySequentialConv1d
+
 
 class TestPIT(unittest.TestCase):
-    """PIT NAS testing class.
-
-    TODO: could be separated in more sub-classes, creating a test_pit folder with test_convert/
-    test_extract/ etc subfolders.
-    """
+    """Test masking operations in PIT"""
 
     def setUp(self):
-        self.config = {
+        self.tc_resnet_config = {
             "input_channels": 6,
             "output_size": 12,
             "num_channels": [24, 36, 36, 48, 48, 72, 72],
@@ -52,466 +50,119 @@ class TestPIT(unittest.TestCase):
             "avg_pool": True,
         }
 
-    def test_prepare_simple_model(self):
-        """Test the conversion of a simple sequential model"""
+    def test_converted_output_simple(self):
+        """Test that the output of a model converted to PIT is the same as the original nn.Module,
+        before any training.
+        """
         nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
-        self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
-        # Number of NAS-able layers check
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 2
-        self.assertEqual(exp_tgt, n_tgt,
-                         "SimpleNN has {} conv layers, but found {} target layers".format(
-                             exp_tgt, n_tgt))
-        # Input features check on the NAS-able layers
-        conv0_input = new_nn._inner_model.conv0.input_features_calculator.features  # type: ignore
-        conv0_exp_input = 3
-        self.assertEqual(conv0_exp_input, conv0_input,
-                         "Conv0 has {} input features, but found {}".format(
-                             conv0_exp_input, conv0_input))
-        conv1_input = new_nn._inner_model.conv1\
-                            .input_features_calculator.features.item()  # type: ignore
-        conv1_exp_input = 32
-        self.assertEqual(conv1_exp_input, conv1_input,
-                         "Conv1 has {} input features, but found {}".format(
-                             conv1_exp_input, conv1_input))
+        pit_net = PIT(nn_ut, input_example=torch.rand(nn_ut.input_shape[1:]))
+        self._check_output_equal(nn_ut, pit_net, nn_ut.input_shape[1:])
 
-    def test_toy_model1(self):
-        """Test PIT fucntionalities on ToyModel1"""
-        nn_ut = ToyModel1()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 15)))
+    def test_converted_output_advanced(self):
+        """Test that the output of a model converted to PIT is the same as the original nn.Module,
+        before any training.
+        """
+        input_shape = (6, 50)
+        nn_ut = TCResNet14(self.tc_resnet_config)
+        pit_net = PIT(nn_ut, input_example=torch.rand(input_shape))
+        self._check_output_equal(nn_ut, pit_net, input_shape)
 
-        # Input features check
-        conv2_exp_input = 3
-        conv2_input = new_nn._inner_model.conv2\
-                            .input_features_calculator.features  # type: ignore
-        self.assertEqual(conv2_exp_input, conv2_input,
-                         "Conv2 has {} input features, but found {}".format(
-                             conv2_exp_input, conv2_input))
-        conv5_exp_input = 64
-        conv5_input = new_nn._inner_model.conv5\
-                            .input_features_calculator.features  # type: ignore
-        self.assertEqual(conv5_exp_input, conv5_input,
-                         "Conv5 has {} input features, but found {}".format(
-                             conv5_exp_input, conv5_input))
-        conv4_exp_input = 50
-        conv4_input = new_nn._inner_model.conv4\
-                            .input_features_calculator.features  # type: ignore
-        self.assertEqual(conv4_exp_input, conv4_input,
-                         "Conv4 has {} input features, but found {}".format(
-                             conv4_exp_input, conv4_input))
-
-        # Input shared masker check
-        conv5_alpha = new_nn._inner_model.\
-            conv5.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        conv4_alpha = new_nn._inner_model.\
-            conv4.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        conv3_alpha = new_nn._inner_model.\
-            conv3.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        conv2_alpha = new_nn._inner_model.\
-            conv2.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        conv1_alpha = new_nn._inner_model.\
-            conv1.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        conv0_alpha = new_nn._inner_model.\
-            conv0.out_channel_masker.alpha.detach().numpy()  # type: ignore
-
-        # Two convolutional layers must have the same shared masker before a concat
-        masker_alpha_conv_0_1 = np.array_equal(conv0_alpha, conv1_alpha)
-        self.assertTrue(masker_alpha_conv_0_1)
-
-        # The convolutional layer after the add operation must have a different one
-        masker_alpha_conv_0_5 = np.array_equal(conv0_alpha, conv5_alpha)
-        self.assertFalse(masker_alpha_conv_0_5)
-
-        # Two consecutive convolutional layers with different out channels must have
-        # different shared masker associated
-        masker_alpha_conv_3_4 = np.array_equal(conv3_alpha, conv4_alpha)
-        self.assertFalse(masker_alpha_conv_3_4)
-
-        # Three convolutional layers before and add must have the same shared masker
-        masker_alpha_conv_2_4 = np.array_equal(conv2_alpha, conv4_alpha)
-        masker_alpha_conv_4_5 = np.array_equal(conv4_alpha, conv5_alpha)
-        self.assertTrue(masker_alpha_conv_2_4)
-        self.assertTrue(masker_alpha_conv_4_5)
-
-        # Exclude types check
-        nn_ut = ToyModel1()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 15)),
-                                       exclude_types=(nn.Conv1d,))
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 0
-        self.assertEqual(exp_tgt, n_tgt,
-                         "ToyModel1 (excluding the nn.Conv1d type) has {} NAS-able layers,\
-                          but found {} target layers".format(exp_tgt, n_tgt))
-
-        # Exclude names check
-        nn_ut = ToyModel1()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 15)),
-                                       exclude_names=('conv0', 'conv4'))
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 4
-        self.assertEqual(exp_tgt, n_tgt,
-                         "ToyModel1 (excluding conv0 and conv4) has {} NAS-able layers,\
-                          but found {} target layers".format(exp_tgt, n_tgt))
-        # I must not find a PITChannelMasker corresponding to the excluded layer
-        conv4_masker = True
-        try:
-            new_nn._inner_model.conv4.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        except Exception:
-            conv4_masker = False
-        self.assertFalse(conv4_masker)
-
-    def test_toy_model2(self):
-        """Test PIT functionalities on ToyModel2"""
-        nn_ut = ToyModel2()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 60)))
-
-        # Input features check
-        conv2_exp_input = 3
-        conv2_input = new_nn._inner_model.conv2\
-                            .input_features_calculator.features  # type: ignore
-        self.assertEqual(conv2_exp_input, conv2_input,
-                         "Conv2 has {} input features, but found {}".format(
-                             conv2_exp_input, conv2_input))
-        conv4_exp_input = 40
-        conv4_input = new_nn._inner_model.conv4\
-                            .input_features_calculator.features  # type: ignore
-        self.assertEqual(conv4_exp_input, conv4_input,
-                         "Conv4 has {} input features, but found {}".format(
-                             conv4_exp_input, conv4_input))
-
-        # Input shared masker check
-        conv1_alpha = new_nn._inner_model.\
-            conv1.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        conv0_alpha = new_nn._inner_model.\
-            conv0.out_channel_masker.alpha.detach().numpy()  # type: ignore
-
-        # Two convolutional layers must have the same shared masker before a concat
-        masker_alpha_conv_0_1 = np.array_equal(conv0_alpha, conv1_alpha)
-        self.assertTrue(masker_alpha_conv_0_1)
-
-        # Exclude names check
-        nn_ut = ToyModel2()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 60)),
-                                       exclude_names=('conv0', 'conv4'))
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 3
-        self.assertEqual(exp_tgt, n_tgt,
-                         "ToyModel2 (excluding conv0 and conv4) has {} NAS-able layers,\
-                          but found {} target layers".format(exp_tgt, n_tgt))
-
-        # I must not find a PITChannelMasker corresponding to the excluded layer
-        conv4_masker = True
-        try:
-            new_nn._inner_model.conv4.out_channel_masker.alpha.detach().numpy()  # type: ignore
-        except Exception:
-            conv4_masker = False
-        self.assertFalse(conv4_masker)
-
-        # Test autoconvert set to False
-        nn_ut = ToyModel2()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 60)),
-                                       autoconvert_layers=False)
-        self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn, autoconvert_layers=False)
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 0
-        self.assertEqual(exp_tgt, n_tgt,
-                         "SimpleNN (excluding the nn.Conv1d type) has {} NAS-able layers,\
-                          but found {} target layers".format(exp_tgt, n_tgt))
-
-    def test_exclude_names(self):
-        """Test the exclude_names functionality"""
-        nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
-                                       exclude_names=['conv0'])
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 1
-        self.assertEqual(exp_tgt, n_tgt,
-                         "SimpleNN (excluding conv0) has {} NAS-able layers , \
-                             but found {} target layers".format(exp_tgt, n_tgt))
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
-                                       exclude_names=['conv0', 'conv1'])
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 0
-        self.assertEqual(exp_tgt, n_tgt,
-                         "SimpleNN (excluding conv0 and conv1) has {} NAS-able layers, \
-                          but found {} target layers".format(exp_tgt, n_tgt))
-        nn_ut = TCResNet14(self.config)
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)),
-                                       exclude_names=['conv0', 'tcn_network_5_tcn1',
-                                       'tcn_network_3_tcn0', 'tcn_network_2_batchnorm1'])
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 16
-        self.assertEqual(exp_tgt, n_tgt,
-                         "TCResNet14 (excluding 3 conv layers) has {} NAS-able layers, \
-                          but found {} target layers".format(exp_tgt, n_tgt))
-
-    def test_exclude_types(self):
-        """Test the exclude_types functionality"""
-        nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
-                                       exclude_types=(nn.Conv1d,))
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 0
-        self.assertEqual(exp_tgt, n_tgt,
-                         "SimpleNN (excluding the nn.Conv1d type) has {} NAS-able layers,\
-                          but found {} target layers".format(exp_tgt, n_tgt))
-
-        nn_ut = TCResNet14(self.config)
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)),
-                                       exclude_types=(nn.Conv1d,))
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 0
-        self.assertEqual(exp_tgt, n_tgt,
-                         "SimpleNN (excluding the nn.Conv1d type) has {} NAS-able layers,\
-                          but found {} target layers".format(exp_tgt, n_tgt))
-
-    def test_prepare_tc_resnet_14(self):
-        """Test the conversion of a ResNet-like model"""
-        nn_ut = TCResNet14(self.config)
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)))
-        self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
-
-        # Number of NAS-able layers check
-        n_tgt = len(new_nn._target_layers)
-        exp_tgt = 3 * len(self.config['num_channels'][1:]) + 1
-        self.assertEqual(exp_tgt, n_tgt,
-                         "TCResNet14 has {} conv layers, but found {} target layers".format(
-                             exp_tgt, n_tgt))
-
-        converted_layers_name = dict(new_nn._inner_model.named_modules())
-        # print(converted_layers_name.keys())
-
-        # Input features check on the NAS-able layers
-        conv0_input = new_nn._inner_model\
-                            .conv0.input_features_calculator.features  # type: ignore
-        conv0_exp_input = 6
-        self.assertEqual(conv0_exp_input, conv0_input,
-                         "Conv0 has {} input features, but found {}".format(
-                             conv0_exp_input, conv0_input))
-
-        tcn_network_0_tcn0_exp_input = 24
-        tcn_network_0_tcn0_input = \
-            converted_layers_name['tcn.network.0.tcn0'].input_features_calculator\
-                                                       .features.item()  # type: ignore
-        self.assertEqual(tcn_network_0_tcn0_exp_input, tcn_network_0_tcn0_input,
-                         "tcn.network.0.tcn0 has {} input features, but found {}".format(
-                             tcn_network_0_tcn0_exp_input, tcn_network_0_tcn0_input))
-
-        tcn_network_2_downsample_exp_input = 36
-        tcn_network_2_downsample_input = \
-            converted_layers_name['tcn.network.2.downsample'].input_features_calculator\
-                                                             .features  # type: ignore
-        self.assertEqual(tcn_network_2_downsample_exp_input, tcn_network_2_downsample_input,
-                         "tcn.network.2.downsample has {} input features, but found {}".format(
-                             tcn_network_2_downsample_exp_input, tcn_network_2_downsample_input))
-
-        tcn_network_5_tcn1_exp_input = 72
-        tcn_network_5_tcn1_input = \
-            converted_layers_name['tcn.network.5.tcn1'].input_features_calculator\
-                                                       .features  # type: ignore
-        self.assertEqual(tcn_network_5_tcn1_exp_input, tcn_network_5_tcn1_input,
-                         "tcn.network.5.tcn1 has {} input features, but found {}".format(
-                             tcn_network_5_tcn1_exp_input, tcn_network_5_tcn1_input))
-
-    def test_prepare_simple_pit_model(self):
-        """Test the conversion of a simple sequential model already containing a pit layer"""
-        nn_ut = SimplePitNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
-        self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn)
-        # Check with autoconvert disabled
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)),
-                                       autoconvert_layers=False)
-        self._compare_prepared(nn_ut, new_nn._inner_model, nn_ut, new_nn, autoconvert_layers=False)
-
-    def test_custom_channel_masking_ToyModel4(self):
-        """Test a pit layer channels output with a custom mask alpha applied on ToyModel4"""
-        nn_ut = ToyModel4()
-        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+    def test_channel_mask_init(self):
+        """Test initialization of channel masks"""
+        nn_ut = ToySequentialConv1d()
+        x = torch.rand((3, 15))
         pit_net = PIT(nn_ut, input_example=x)
-        nn_ut.eval()
-        pit_net.eval()
-        y = nn_ut(x)
-        pit_y = pit_net(x)
-        assert torch.all(torch.eq(y, pit_y))
-        # Check that the original channel mask is set with all 1
-        assert torch.sum(pit_net._inner_model
-                                .conv0.out_channel_masker.alpha).item() == 10  # type: ignore
-        # Define a mask that will be overwritten
-        new_mask = torch.Tensor([1, 1, 1, 1, 1, 1, 0, 0, 1, 1])
-        conv0_alpha = Parameter(new_mask)
-        pit_net._inner_model.conv0.out_channel_masker.alpha = conv0_alpha  # type: ignore
-        # Define a custom mask for conv1
-        new_mask = torch.Tensor([1, 1, 0, 0, 1, 1, 0, 1, 1, 1])
-        conv1_alpha = Parameter(new_mask)
-        pit_net._inner_model.conv1.out_channel_masker.alpha = conv1_alpha  # type: ignore
-        pit_y = pit_net(x)
-        # Before an add operation the two channel mask must be equal, so the new_mask
-        # assigned on conv1 must also be present on conv0
-        conv0_alpha = pit_net._inner_model.conv0.out_channel_masker.alpha  # type: ignore
-        conv1_alpha = pit_net._inner_model.conv1.out_channel_masker.alpha  # type: ignore
-        assert torch.all(torch.eq(conv0_alpha, conv1_alpha))
-        conv2_input = pit_net._inner_model\
-                             .conv2.input_features_calculator.features.item()  # type: ignore
-        assert conv2_input == torch.sum(new_mask).item()
+        # check that the original channel mask is set with all 1
+        self._check_channel_mask_init(pit_net, ('conv0', 'conv1'))
 
-    def test_custom_channel_masking_ToyModel5(self):
-        """Test a pit layer channels output with a custom mask alpha applied on ToyModel5"""
-        nn_ut = ToyModel5()
-        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+    def test_channel_mask_sharing(self):
+        """Test that channel masks sharing works correctly"""
+        nn_ut = ToyAdd()
+        x = torch.rand((3, 15))
         pit_net = PIT(nn_ut, input_example=x)
-        x = torch.stack([x] * 32, 0)
-        nn_ut.eval()
-        pit_net.eval()
-        y = nn_ut(x)
-        pit_y = pit_net(x)
-        assert torch.all(torch.eq(y, pit_y))
-        # Check before a cat operation between 2 convolutional layers
-        new_mask_0 = torch.Tensor([1, 1, 0, 0, 1, 1, 0, 0, 1, 1])
-        conv0_alpha = Parameter(new_mask_0)
-        pit_net._inner_model.conv0.out_channel_masker.alpha = conv0_alpha  # type: ignore
-        pit_y = pit_net(x)
-        conv2_input = pit_net._inner_model\
-                             .conv2.input_features_calculator.features.item()  # type: ignore
-        assert conv2_input == torch.sum(new_mask_0).item() * 2
+        # check that the original channel mask is set with all 1
+        self._check_channel_mask_init(pit_net, ('conv0', 'conv1'))
+        mask0 = torch.Tensor([1, 1, 1, 1, 1, 1, 0, 0, 1, 1])
+        self._write_channel_mask(pit_net, 'conv0', mask0)
+        # since conv0 and conv1 share their maskers, we should see it also on conv1
+        mask1 = self._read_channel_mask(pit_net, 'conv1')
+        self.assertTrue(torch.all(mask0 == mask1), "Masks not correctly shared")
+        # after a forward step, they should remain identical
+        _ = pit_net(x)
+        mask0 = self._read_channel_mask(pit_net, 'conv0')
+        mask1 = self._read_channel_mask(pit_net, 'conv1')
+        self.assertTrue(torch.all(mask0 == mask1), "Masks no longer equal after forward")
 
-    def test_custom_channel_masking_ToyModel3(self):
-        """Test a pit layer channels output with a custom mask alpha applied on ToyModel3"""
-        nn_ut = ToyModel3()
-        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+    def test_channel_mask_cat(self):
+        """Test that layers fed into a cat operation over the channels axis have correct input
+        features"""
+        nn_ut = ToyChannelsCat()
+        input_shape = (3, 15)
+        pit_net = PIT(nn_ut, input_example=torch.rand(input_shape))
+        mask0 = (torch.rand((10,)) > 0.5).float()
+        self._write_channel_mask(pit_net, 'conv0', mask0)
+        mask1 = (torch.rand((15,)) > 0.5).float()  # float but only 0 and 1
+        self._write_channel_mask(pit_net, 'conv1', mask1)
+        # execute model to propagate input features
+        _ = pit_net(torch.stack([torch.rand(input_shape)] * 32, 0))
+        exp_features = int(torch.sum(mask0)) + int(torch.sum(mask1))
+        # first channels are always alive
+        exp_features += 1 if mask0[0] == 0 else 0
+        exp_features += 1 if mask1[0] == 0 else 0
+        self._check_input_features(pit_net, {'conv2': exp_features})
+
+    def test_rf_mask_init(self):
+        """Test a pit layer receptive field masks at initialization"""
+        nn_ut = ToySequentialConv1d()
+        input_shape = (3, 15)
+        x = torch.rand(input_shape)
         pit_net = PIT(nn_ut, input_example=x)
-        x = torch.stack([x] * 32, 0)
-        nn_ut.eval()
-        pit_net.eval()
-        y = nn_ut(x)
-        pit_y = pit_net(x)
-        assert torch.all(torch.eq(y, pit_y))
-        new_mask_3 = torch.Tensor([1, 1, 0, 0, 0, 0, 0, 1])
-        conv3_alpha = Parameter(new_mask_3)
-        pit_net._inner_model.conv3.out_channel_masker.alpha = conv3_alpha  # type: ignore
-        pit_y = pit_net(x)
-        conv3_input = pit_net._inner_model\
-                             .conv3.input_features_calculator.features  # type: ignore
-        # Check that after the masking the conv layer takes only as input the alive channels
-        assert conv3_input == torch.sum(new_mask_3).item()
+        self._check_rf_mask_init(pit_net, ('conv0', 'conv1'))
 
-    def test_custom_receptive_field_masking_ToyModel4(self):
-        """Test a pit layer receptive field output with a custom mask applied"""
-        nn_ut = ToyModel4()
-        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+    def test_rf_mask_forced(self):
+        """Test a pit layer receptive field masks forcing some beta values"""
+        nn_ut = ToySequentialConv1d()
+        input_shape = (3, 15)
+        x = torch.rand(input_shape)
         pit_net = PIT(nn_ut, input_example=x)
-        # Check the correct initialization of c_beta matrix
-        assert torch.all(torch.eq(pit_net._inner_model
-                                         .conv2.timestep_masker._c_beta,  # type: ignore
-                         torch.tensor([[1, 1, 1], [0, 1, 1], [0, 0, 1]])))  # type: ignore
-        # Check the correct initialization of beta tensor
-        assert torch.all(torch.eq(pit_net._inner_model
-                                         .conv2.timestep_masker.beta,  # type: ignore
-                         torch.tensor([1, 1, 1])))  # type: ignore
-        # Check the correct initialization of theta beta tensor
-        assert torch.all(torch.eq(pit_net._inner_model
-                                         .conv2.timestep_masker(),  # type: ignore
-                         torch.tensor([3, 2, 1])))  # type: ignore
-
-        # Assign a new beta in order to get a beta binarized of [1, 0, 0].
-        # The first channel is always alive.
-        conv2_beta_new = Parameter(torch.Tensor([0.4, 0.3, 0.3]))
-        conv2_beta_new = Parameter(PITBinarizer.apply(conv2_beta_new, 0.5))
-        pit_net._inner_model.conv2.dilation_masker.beta = conv2_beta_new  # type: ignore
+        self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.5, 0.5, 0.25]))
         pit_net(x)
+        theta_beta = pit_net._inner_model.conv0.timestep_masker()  # type: ignore
+        bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
+        # note: first element converted to 1 regardless of value (keep alive)
+        theta_beta_exp = torch.tensor([1 + 0.5 + 0.25, 0.5 + 0.25, 0.25])
+        bin_theta_beta_exp = torch.tensor([1, 1, 0])
+        self.assertTrue(torch.all(theta_beta == theta_beta_exp))
+        self.assertTrue(torch.all(bin_theta_beta == bin_theta_beta_exp))
 
-        # Assign a new beta in order to get a beta binarized of [1, 0, 0].
-        # The first channel is always alive.
-        conv2_beta_new = Parameter(torch.Tensor([0.4, 0.3, 0.3]))
-        conv2_beta_new = Parameter(PITBinarizer.apply(conv2_beta_new, 0.5))
-        pit_net._inner_model.conv2.timestep_masker.beta = conv2_beta_new  # type: ignore
+        k_eff = pit_net._inner_model.conv0.k_eff  # type: ignore
+        # obtained from the paper formulas based on normalization factors and beta values
+        exp_norm_factors = torch.tensor([(1 / 3), (1 / 2), 1])
+        k_eff_exp = torch.sum(torch.mul(theta_beta_exp, exp_norm_factors))
+        self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
+
+        self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.4, 0.1, 0]))
         pit_net(x)
-        theta_beta = pit_net._inner_model.conv2.timestep_masker()  # type: ignore
-        theta_gamma = pit_net._inner_model.conv2.dilation_masker()  # type: ignore
-        # Check the correct value of the new theta beta tensor
-        assert torch.all(torch.eq(theta_beta,  # type: ignore
-                         torch.tensor([1, 0, 0])))  # type: ignore
-        _beta_norm = pit_net._inner_model.conv2._beta_norm  # type: ignore
-        _gamma_norm = pit_net._inner_model.conv2._gamma_norm  # type: ignore
-        norm_theta_beta = torch.mul(theta_beta, _beta_norm)  # type: ignore
-        norm_theta_gamma = torch.mul(theta_gamma, _gamma_norm)  # type: ignore
-        assert "{:.4f}".format(torch.sum(torch.mul(norm_theta_beta,
-                                                   norm_theta_gamma)).item()) == '0.3333'
+        theta_beta = pit_net._inner_model.conv0.timestep_masker()  # type: ignore
+        bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
+        theta_beta_exp = torch.tensor([1 + 0.1, 0.1, 0])
+        bin_theta_beta_exp = torch.tensor([1, 0, 0])
+        self.assertTrue(torch.all(theta_beta == theta_beta_exp))
+        self.assertTrue(torch.all(bin_theta_beta == bin_theta_beta_exp))
 
-        # Assign a new beta in order to get a beta binarized of [2, 1, 1].
-        # The first channel is always alive.
-        conv2_beta_new = Parameter(torch.Tensor([0.4, 0.3, 0.6]))
-        conv2_beta_new = Parameter(PITBinarizer.apply(conv2_beta_new, 0.5))
-        pit_net._inner_model.conv2.timestep_masker.beta = conv2_beta_new  # type: ignore
-        pit_net(x)
-        theta_beta = pit_net._inner_model.conv2.timestep_masker()  # type: ignore
-        theta_gamma = pit_net._inner_model.conv2.dilation_masker()  # type: ignore
-        # Check the correct value of the new theta beta tensor
-        assert torch.all(torch.eq(theta_beta,  # type: ignore
-                         torch.tensor([2, 1, 1])))  # type: ignore
-        _beta_norm = pit_net._inner_model.conv2._beta_norm  # type: ignore
-        _gamma_norm = pit_net._inner_model.conv2._gamma_norm  # type: ignore
-        norm_theta_beta = torch.mul(theta_beta, _beta_norm)  # type: ignore
-        norm_theta_gamma = torch.mul(theta_gamma, _gamma_norm)  # type: ignore
-        assert "{:.4f}".format(torch.sum(torch.mul(norm_theta_beta,
-                                                   norm_theta_gamma)).item()) == '2.1667'
+        k_eff = pit_net._inner_model.conv0.k_eff  # type: ignore
+        k_eff_exp = torch.sum(torch.mul(theta_beta_exp, exp_norm_factors))
+        self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
 
-    def test_custom_dilation_masking_ToyModel6(self):
-        """Test a pit layer receptive field output with a custom mask applied"""
-        nn_ut = ToyModel6()
-        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+    def test_dilation_mask_init(self):
+        """Test a pit layer dilation masks"""
+        nn_ut = ToySequentialConv1d()
+        input_shape = (3, 15)
+        x = torch.rand(input_shape)
         pit_net = PIT(nn_ut, input_example=x)
-        x = torch.stack([x] * 32, 0)
-        c_gamma = pit_net._inner_model.conv2.dilation_masker._c_gamma  # type: ignore
-        # Check the correct initialization of c_gamma matrix
-        exp_c_gamma = torch.Tensor([[1., 1., 1., 1.],
-                                    [0., 0., 0., 1.],
-                                    [0., 0., 1., 1.],
-                                    [0., 0., 0., 1.],
-                                    [0., 1., 1., 1.],
-                                    [0., 0., 0., 1.],
-                                    [0., 0., 1., 1.],
-                                    [0., 0., 0., 1.],
-                                    [1., 1., 1., 1.]])
-        self.assertTrue(torch.equal(c_gamma, exp_c_gamma), "Wrong C gamma matrix")  # type: ignore
-        # Check the correct initialization of the gamma tensor
-        assert torch.all(torch.eq(pit_net._inner_model
-                                         .conv2.dilation_masker.gamma,  # type: ignore
-                         torch.tensor([1, 1, 1, 1])))  # type: ignore
-        # Assign a new gamma
-        conv2_gamma_new = Parameter(torch.Tensor([0.4, 0.4, 0.4, 0.4]))
-        conv2_gamma_new = Parameter(PITBinarizer.apply(conv2_gamma_new, 0.5))
-        pit_net._inner_model.conv2.dilation_masker.gamma = conv2_gamma_new  # type: ignore
-        pit_net(x)
-        theta_beta = pit_net._inner_model.conv2.timestep_masker()  # type: ignore
-        theta_gamma = pit_net._inner_model.conv2.dilation_masker()  # type: ignore
-        assert torch.all(torch.eq(theta_gamma,  # type: ignore
-                         torch.tensor([1., 0., 0., 0., 0., 0., 0., 0., 1.])))  # type: ignore
-        _beta_norm = pit_net._inner_model.conv2._beta_norm  # type: ignore
-        _gamma_norm = pit_net._inner_model.conv2._gamma_norm  # type: ignore
-        norm_theta_beta = torch.mul(theta_beta, _beta_norm)  # type: ignore
-        norm_theta_gamma = torch.mul(theta_gamma, _gamma_norm)  # type: ignore
-        # Check the correct value of the new theta gamma tensor
-        assert "{:.4f}".format(torch.sum(torch.mul(norm_theta_beta,
-                                                   norm_theta_gamma)).item()) == '0.5000'
+        self._check_dilation_mask_init(pit_net, ('conv0', 'conv1'))
 
-        # Assign a new gamma
-        conv2_gamma_new = Parameter(torch.Tensor([0.7, 0.4, 0.7, 0.4]))
-        conv2_gamma_new = Parameter(PITBinarizer.apply(conv2_gamma_new, 0.5))
-        pit_net._inner_model.conv2.dilation_masker.gamma = conv2_gamma_new  # type: ignore
-        pit_net(x)
-        theta_beta = pit_net._inner_model.conv2.timestep_masker()  # type: ignore
-        theta_gamma = pit_net._inner_model.conv2.dilation_masker()  # type: ignore
-        assert torch.all(torch.eq(theta_gamma,  # type: ignore
-                         torch.tensor([2., 0., 1., 0., 1., 0., 1., 0., 2.])))  # type: ignore
-        _beta_norm = pit_net._inner_model.conv2._beta_norm  # type: ignore
-        _gamma_norm = pit_net._inner_model.conv2._gamma_norm  # type: ignore
-        norm_theta_beta = torch.mul(theta_beta, _beta_norm)  # type: ignore
-        norm_theta_gamma = torch.mul(theta_gamma, _gamma_norm)  # type: ignore
-        # Check the correct value of the new theta gamma tensor
-        assert "{:.4f}".format(torch.sum(torch.mul(norm_theta_beta,
-                                                   norm_theta_gamma)).item()) == '2.3333'
-
+    # TODO: continue testing from here
     def test_keep_alive_masks_simple_SimpleNN(self):
         """Test keep alive mask on SimpleNN network"""
         net = SimpleNN()
@@ -555,26 +206,26 @@ class TestPIT(unittest.TestCase):
                                     exp_ka_gamma), "Wrong keep-alive \
                                                     mask for dilation")  # type: ignore
 
-    def test_keep_alive_masks_simple_ToyModel2(self):
-        """Test keep alive mask on ToyModel2 network"""
-        net = ToyModel2()
-        pit_net = PIT(net, input_example=torch.rand((3, 60)))
-        # conv1 has a filter size of 3 and 40 output channels
-        ka_alpha = pit_net._inner_model.conv1.out_channel_masker._keep_alive  # type: ignore
-        exp_ka_alpha = torch.tensor([1.0] + [0.0] * 39, dtype=torch.float32)
-        self.assertTrue(torch.equal(ka_alpha,  # type: ignore
-                                    exp_ka_alpha), "Wrong keep-alive \
-                                                    mask for channels")  # type: ignore
-        ka_beta = pit_net._inner_model.conv1.timestep_masker._keep_alive  # type: ignore
-        exp_ka_beta = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
-        self.assertTrue(torch.equal(ka_beta,   # type: ignore
-                                    exp_ka_beta), "Wrong keep-alive \
-                                                  mask for rf")  # type: ignore
-        ka_gamma = pit_net._inner_model.conv1.dilation_masker._keep_alive  # type: ignore
-        exp_ka_gamma = torch.tensor([1.0] + [0.0] * 1, dtype=torch.float32)
-        self.assertTrue(torch.equal(ka_gamma,   # type: ignore
-                                    exp_ka_gamma), "Wrong keep-alive \
-                                                    mask for dilation")  # type: ignore
+    # def test_keep_alive_masks_simple_ToyModel2(self):
+    #     """Test keep alive mask on ToyModel2 network"""
+    #     net = ToyModel2()
+    #     pit_net = PIT(net, input_example=torch.rand((3, 60)))
+    #     # conv1 has a filter size of 3 and 40 output channels
+    #     ka_alpha = pit_net._inner_model.conv1.out_channel_masker._keep_alive  # type: ignore
+    #     exp_ka_alpha = torch.tensor([1.0] + [0.0] * 39, dtype=torch.float32)
+    #     self.assertTrue(torch.equal(ka_alpha,  # type: ignore
+    #                                 exp_ka_alpha), "Wrong keep-alive \
+    #                                                 mask for channels")  # type: ignore
+    #     ka_beta = pit_net._inner_model.conv1.timestep_masker._keep_alive  # type: ignore
+    #     exp_ka_beta = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
+    #     self.assertTrue(torch.equal(ka_beta,   # type: ignore
+    #                                 exp_ka_beta), "Wrong keep-alive \
+    #                                               mask for rf")  # type: ignore
+    #     ka_gamma = pit_net._inner_model.conv1.dilation_masker._keep_alive  # type: ignore
+    #     exp_ka_gamma = torch.tensor([1.0] + [0.0] * 1, dtype=torch.float32)
+    #     self.assertTrue(torch.equal(ka_gamma,   # type: ignore
+    #                                 exp_ka_gamma), "Wrong keep-alive \
+    #                                                 mask for dilation")  # type: ignore
 
     def test_c_matrices_SimpleNN(self):
         """Test c_beta and c_gamma matrices on SimpleNN network"""
@@ -698,14 +349,14 @@ class TestPIT(unittest.TestCase):
 
     def test_regularization_loss_forward_backward_ToyModel4(self):
         """Test the regularization loss after forward and backward steps on ToyModel4"""
-        nn_ut = ToyModel4()
-        x = torch.rand(tuple(nn_ut.input_shape[1:]))
+        nn_ut = ToyAdd()
+        x = torch.rand(tuple(nn_ut.input_shape[1:]))  # type: ignore
         pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
         pit_net.eval()
         inputs = []
         for i in range(8):
-            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))
+            inputs.append(torch.rand((32,) + tuple(nn_ut.input_shape[1:])))  # type: ignore
         prev_loss = 0
         for ix, el in enumerate(inputs):
             pit_net(el)
@@ -760,7 +411,7 @@ class TestPIT(unittest.TestCase):
 
     def test_regularization_network_weights_ToyModel4(self):
         """Check the value of the weights using the regularization loss on ToyModel4"""
-        nn_ut = ToyModel4()
+        nn_ut = ToyAdd()
         x = torch.rand(tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
@@ -822,7 +473,7 @@ class TestPIT(unittest.TestCase):
 
     def test_regularization_loss_masks_ToyModel1(self):
         """The ToyModel1 alpha/beta/gamma masks should go to 0 using only the regularization loss"""
-        nn_ut = ToyModel1()
+        nn_ut = MultiPath1()
         x = torch.rand(tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x)
         optimizer = optim.Adam(pit_net.parameters())
@@ -896,7 +547,7 @@ class TestPIT(unittest.TestCase):
 
     def test_layer_optimizations_ToyModel4(self):
         """The ToyModel4 alpha masks should remain fixed to 1 with train_channels=False"""
-        nn_ut = ToyModel4()
+        nn_ut = ToyAdd()
         x = torch.rand(tuple(nn_ut.input_shape[1:]))
         pit_net = PIT(nn_ut, input_example=x, train_channels=False)
         optimizer = optim.Adam(pit_net.parameters())
@@ -1155,127 +806,141 @@ class TestPIT(unittest.TestCase):
         self.assertTrue(np.isclose(output_check,
                                    target_check, atol=1e-1).all())  # type: ignore
 
-    def test_export_initial(self):
-        """Test the export of a simple sequential model"""
-        nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
-        exported_nn = new_nn.arch_export()
-        self._compare_identical(nn_ut, exported_nn, nn_ut, exported_nn)
+    def _check_output_equal(self, nn: nn.Module, pit_nn: PIT, input_shape: Tuple[int, ...],
+                            iterations=10):
+        for i in range(iterations):
+            # add batch size in front
+            x = torch.rand((32,) + input_shape)
+            nn.eval()
+            pit_nn.eval()
+            y = nn(x)
+            pit_y = pit_nn(x)
+            self.assertTrue(torch.all(torch.eq(y, pit_y)), "Wrong output of PIT model")
 
-    def test_export_with_masks(self):
-        nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
+    def _check_channel_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
+        """Check if the channel masks are initialized correctly"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        for layer_name in check_layers:
+            layer = converted_layer_names[layer_name]
+            if isinstance(layer, PITConv1d):
+                alpha = layer.out_channel_masker.alpha
+                check = torch.ones((layer.out_channels,))
+                self.assertTrue(torch.all(alpha == check), "Wrong alpha values")
+                self.assertEqual(torch.sum(alpha), layer.out_channels, "Wrong alpha sum")
+                self.assertEqual(torch.sum(alpha), layer.out_channels_eff, "Wrong channels eff")
+                self.assertEqual(torch.sum(alpha), layer.out_channels_opt, "Wrong channels opt")
 
-        conv0 = cast(PITConv1d, new_nn._inner_model.conv0)
-        conv0.out_channel_masker.alpha = nn.parameter.Parameter(
-            torch.tensor([1, 1, 0, 1] * 8, dtype=torch.float))
-        conv0.timestep_masker.beta = nn.parameter.Parameter(
-            torch.tensor([1, 1, 0], dtype=torch.float))
+    def _check_rf_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
+        """Check if the RF masks are initialized correctly"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        for layer_name in check_layers:
+            layer = converted_layer_names[layer_name]
+            if isinstance(layer, PITConv1d):
+                kernel_size = layer.kernel_size[0]
+                beta = layer.timestep_masker.beta
+                check = torch.ones((kernel_size,))
+                self.assertTrue(torch.all(beta == check), "Wrong beta values")
+                c_check = []
+                for i in range(kernel_size):
+                    c_check.append([0] * i + [1] * (kernel_size - i))
+                c_check = torch.tensor(c_check)
+                c_beta = layer.timestep_masker._c_beta
+                self.assertTrue(torch.all(c_beta == c_check), "Wrong C beta matrix")
+                gamma_beta = layer.timestep_masker()
+                gamma_check = torch.tensor(list(range(1, kernel_size + 1))[::-1])
+                self.assertTrue(torch.all(gamma_beta == gamma_check), "Wrong theta beta array")
 
-        conv1 = cast(PITConv1d, new_nn._inner_model.conv1)
-        conv1.out_channel_masker.alpha = nn.parameter.Parameter(
-            torch.tensor([1, ] * 56 + [0, ], dtype=torch.float))
-        conv1.dilation_masker.gamma = nn.parameter.Parameter(
-            torch.tensor([1, 0, 0], dtype=torch.float))
-        exported_nn = new_nn.arch_export()
+    def _check_dilation_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
+        """Check if the dilation masks are initialized correctly"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        for layer_name in check_layers:
+            layer = converted_layer_names[layer_name]
+            if isinstance(layer, PITConv1d):
+                kernel_size = layer.kernel_size[0]
+                rf_seed = (kernel_size - 1) * layer.dilation[0] + 1
+                gamma = layer.dilation_masker.gamma
+                len_gamma_exp = math.ceil(math.log2(rf_seed))
+                check = torch.ones((len_gamma_exp,))
+                self.assertTrue(torch.all(gamma == check), "Wrong gamma values")
 
-        for name, child in exported_nn.named_children():
-            if name == 'conv0':
-                child = cast(nn.Conv1d, child)
-                pit_child = cast(PITConv1d, new_nn._inner_model._modules[name])
-                assert child.out_channels == 24
-                assert child.in_channels == 3
-                assert child.kernel_size == (2,)
-                assert child.dilation == (1,)
-                # check that first two timesteps of channel 0 are identical
-                assert torch.all(child.weight[0, :, 0:2] == pit_child.weight[0, :, 0:2])
-                # check that PIT's 4th channel weights are now stored in the 3rd channel
-                assert torch.all(child.weight[2, :, 0:2] == pit_child.weight[3, :, 0:2])
-            if name == 'conv1':
-                child = cast(nn.Conv1d, child)
-                pit_child = cast(PITConv1d, new_nn._inner_model._modules[name])
-                assert child.out_channels == 56
-                assert child.in_channels == 24
-                assert child.kernel_size == (2,)
-                assert child.dilation == (4,)
-                # check that weights are correctly saved with dilation. In this case the
-                # number of input channels changed, so we can only check one Cin at a time
-                assert torch.all(child.weight[0:56, 0, 0:2] == pit_child.weight[0:56, 0, 0:6:4])
-                assert torch.all(child.weight[0:56, 2, 0:2] == pit_child.weight[0:56, 3, 0:6:4])
+                max_dilation = 2**(len_gamma_exp - 1)
+                c_check_tr = []
+                for i in range(len_gamma_exp):
+                    row = []
+                    j = 0
+                    while j < kernel_size:
+                        row = row + [1]
+                        j += 1
+                        num_zeros = max(min(max_dilation - 1, kernel_size - j - 1), 0)
+                        row = row + ([0] * num_zeros)
+                        j += num_zeros
+                    c_check_tr.append(row)
+                    max_dilation //= 2
+                c_check = torch.transpose(torch.tensor(c_check_tr), 1, 0)
+                c_gamma = layer.dilation_masker._c_gamma
+                self.assertTrue(torch.all(c_check == c_gamma), "Wrong C gamma matrix")
 
-    def test_export_tc_resnet_14(self):
-        """Test the conversion of a ResNet-like model"""
-        nn_ut = TCResNet14(self.config)
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((6, 50)))
-        exported_nn = new_nn.arch_export()
-        self._compare_identical(nn_ut, exported_nn, nn_ut, exported_nn)
+                c_theta = []
+                for i in range(rf_seed):
+                    k_i = sum([1 - int(i % (2**p) == 0) for p in range(1, len_gamma_exp)])
+                    val = sum([check[len_gamma_exp - j] for j in range(1, len_gamma_exp - k_i + 1)])
+                    c_theta.append(val)
+                c_theta = torch.tensor(c_theta)
+                theta_gamma = layer.dilation_masker()
+                self.assertTrue(torch.all(c_theta == theta_gamma), "Wrong theta gamma array")
 
-    def test_arch_summary(self):
-        """Test the summary report for a simple sequential model"""
-        nn_ut = SimpleNN()
-        new_nn = self._execute_prepare(nn_ut, input_example=torch.rand((3, 40)))
-        summary = new_nn.arch_summary()
-        assert summary['conv0']['in_channels'] == 3
-        assert summary['conv0']['out_channels'] == 32
-        assert summary['conv0']['kernel_size'] == (3,)
-        assert summary['conv0']['dilation'] == (1,)
-        assert summary['conv1']['in_channels'] == 32
-        assert summary['conv1']['out_channels'] == 57
-        assert summary['conv1']['kernel_size'] == (5,)
-        assert summary['conv1']['dilation'] == (1,)
-        print(new_nn)
 
-    @staticmethod
-    def _execute_prepare(
-            nn_ut: nn.Module,
-            input_example: torch.Tensor,
-            regularizer: str = 'size',
-            exclude_names: Iterable[str] = (),
-            exclude_types: Tuple[Type[nn.Module], ...] = (),
-            autoconvert_layers=True):
-        new_nn = PIT(nn_ut, input_example, regularizer, exclude_names=exclude_names,
-                     exclude_types=exclude_types, autoconvert_layers=autoconvert_layers)
-        return new_nn
+    def _write_channel_mask(self, nn: PIT, layer_name: str, mask: torch.Tensor):
+        """Force a given value on the output channels mask"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        layer = converted_layer_names[layer_name]
+        layer.out_channel_masker.alpha = Parameter(mask)  # type: ignore
 
-    def _compare_prepared(self,
-                          old_mod: nn.Module, new_mod: nn.Module,
-                          old_top: nn.Module, new_top: DNAS,
-                          exclude_names: Iterable[str] = (),
-                          exclude_types: Tuple[Type[nn.Module], ...] = (),
-                          autoconvert_layers=True):
-        for name, child in old_mod.named_children():
-            new_child = cast(nn.Module, new_mod._modules[name])
-            self._compare_prepared(child, new_child, old_top, new_top,
-                                   exclude_names, exclude_types,
-                                   autoconvert_layers)
-            if isinstance(child, nn.Conv1d):
-                if (name not in exclude_names) and \
-                        (not isinstance(child, exclude_types) and (autoconvert_layers)):
-                    assert isinstance(new_child, PITConv1d)
-                    assert child.out_channels == new_child.out_channels
-                    # TODO: add more checks
+    def _write_rf_mask(self, nn: PIT, layer_name: str, mask: torch.Tensor):
+        """Force a given value on the rf mask"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        layer = converted_layer_names[layer_name]
+        layer.timestep_masker.beta = Parameter(mask)  # type: ignore
 
-    def _compare_identical(self,
-                           old_mod: nn.Module, new_mod: nn.Module,
-                           old_top: nn.Module, new_top: nn.Module):
-        for name, child in old_mod.named_children():
-            new_child = cast(nn.Module, new_mod._modules[name])
-            self._compare_identical(child, new_child, old_top, new_top)
-            if isinstance(child, nn.Conv1d):
-                assert isinstance(new_child, nn.Conv1d)
-                assert child.in_channels == new_child.in_channels
-                assert child.out_channels == new_child.out_channels
-                assert child.kernel_size == new_child.kernel_size
-                assert child.stride == new_child.stride
-                assert child.padding == new_child.padding
-                assert child.dilation == new_child.dilation
-                assert child.groups == new_child.groups
-                assert torch.all(child.weight == new_child.weight)
-                if child.bias is not None:
-                    assert torch.all(child.bias == new_child.bias)
-                else:
-                    assert new_child.bias is None
-                assert child.padding_mode == new_child.padding_mode
+    def _write_dilation_mask(self, nn: PIT, layer_name: str, mask: torch.Tensor):
+        """Force a given value on the dilation mask"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        layer = converted_layer_names[layer_name]
+        layer.dilation_masker.gamma = Parameter(mask)  # type: ignore
+
+    def _read_channel_mask(self, nn: PIT, layer_name: str) -> torch.Tensor:
+        """Read a value from the output channels mask of a layer"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        layer = converted_layer_names[layer_name]
+        return layer.out_channel_masker.alpha  # type: ignore
+
+    def _read_rf_mask(self, nn: PIT, layer_name: str) -> torch.Tensor:
+        """Read a value from the rf mask of a layer"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        layer = converted_layer_names[layer_name]
+        return layer.timestep_masker.beta  # type: ignore
+
+    def _read_dilation_mask(self, nn: PIT, layer_name: str) -> torch.Tensor:
+        """Read a value from the dilation mask of a layer"""
+        converted_layer_names = dict(nn._inner_model.named_modules())
+        layer = converted_layer_names[layer_name]
+        return layer.dilation_masker.gamma  # type: ignore
+
+    def _check_input_features(self, new_nn: PIT, input_features_dict: Dict[str, int]):
+        """Check if the number of input features of each layer in a NAS-able model is as expected.
+
+        input_features_dict is a dictionary containing: {layer_name, expected_input_features}
+        """
+        # TODO: avoid duplicate code from test_pit_convert.
+        converted_layer_names = dict(new_nn._inner_model.named_modules())
+        for name, exp in input_features_dict.items():
+            layer = converted_layer_names[name]
+            in_features = layer.input_features_calculator.features  # type: ignore
+            self.assertEqual(in_features, exp,
+                             f"Layer {name} has {in_features} input features, expected {exp}")
+
+
+
 
 
 if __name__ == '__main__':

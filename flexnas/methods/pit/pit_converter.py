@@ -122,7 +122,7 @@ def convert_layers(mod: fx.GraphModule,
             if conversion_type in ('import', 'autoimport'):
                 add_to_targets(n, mod, target_layers, exclude_names, exclude_types)
             if conversion_type == 'autoimport':
-                shared_masker = update_shared_masker(n, mod)
+                shared_masker = update_shared_masker(n, mod, shared_masker)
             else:
                 shared_masker = None
 
@@ -152,7 +152,9 @@ def exclude(n: fx.Node, mod: fx.GraphModule,
     :rtype: bool
     """
     exc_type = type(mod.get_submodule(str(n.target))) in exclude_types
-    return exc_type or (n.name in exclude_names)
+    # note that we use n.target and not n.name because it is consistent with the names obtained
+    # by named_modules()
+    return exc_type or (str(n.target) in exclude_names)
 
 
 def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker],
@@ -232,7 +234,8 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
         target_layers.append(mod.get_submodule(str(n.target)))
 
 
-def update_shared_masker(n: fx.Node, mod: fx.GraphModule) -> Optional[PITChannelMasker]:
+def update_shared_masker(n: fx.Node, mod: fx.GraphModule,
+                         sm: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:
     """Determines if the currently processed node requires that its predecessor share a common
     channels mask.
 
@@ -240,21 +243,33 @@ def update_shared_masker(n: fx.Node, mod: fx.GraphModule) -> Optional[PITChannel
     :type n: fx.Node
     :param mod: the parent module
     :type mod: fx.GraphModule
+    :param sm: the optional input shared channels masker to propagate from subsequent layers
+    :type sm: Optional[PITChannelMasker]
     :raises ValueError: for unsupported nodes, to avoid unexpected behaviors
     :return: the updated shared_masker
     :rtype: Optional[PITChannelMasker]
     """
     if model_graph.is_zero_or_one_input_op(n):
-        # definitely no channel sharing
-        return None
+        if model_graph.is_features_defining_op(n, mod):
+            # this op defines its output features, no propagation
+            return None
+        else:
+            # this op has cin = cout. Return the masker received as input
+            return sm
     elif model_graph.is_untouchable_op(n):
+        return None
+    elif model_graph.is_channels_concatenate(n, mod):
+        # if we concatenate over channels, we don't need to share the mask
         return None
     elif model_graph.is_shared_input_features_op(n, mod):
         # modules that require multiple inputs all of the same size
         # create a new shared masker with the common n. of input channels, to be used by
         # predecessors
-        input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
-        shared_masker = PITChannelMasker(input_size)
+        if sm is None or model_graph.is_features_defining_op(n, mod):
+            input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
+            shared_masker = PITChannelMasker(input_size)
+        else:
+            shared_masker = sm
         return shared_masker
     else:
         raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
@@ -337,13 +352,12 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
         spatial_size = math.prod(input_shape[2:])
         calc_dict[n] = FlattenFeaturesCalculator(ifc, spatial_size)
     elif model_graph.is_concatenate(n, mod):
-        # for concatenation ops the number of output features is the sum of the output features
-        # of preceding layers as for flatten, this is NOT equal to the input shape of this
-        # layer, when one or more predecessors are NAS-able
-        # TODO: this assumes that concatenation is always on the features axis.
-        # Not always true. Fix.
-        ifc = ConcatFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes])
-        calc_dict[n] = ifc
+        if model_graph.is_channels_concatenate(n, mod):
+            # for concatenation over the channels axis the number of output features is the sum
+            # of the output features of preceding layers as for flatten, this is NOT equal to the
+            # input shape of this layer, when one or more predecessors are NAS-able
+            ifc = ConcatFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes])
+            calc_dict[n] = ifc
     elif model_graph.is_shared_input_features_op(n, mod):
         # for nodes that require identical number of features in all their inputs (e.g., add)
         # we simply assume that we can take any of the output features calculators from
