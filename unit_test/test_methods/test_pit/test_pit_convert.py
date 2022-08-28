@@ -26,7 +26,7 @@ from flexnas.methods.pit.pit_converter import export_rules
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
-from unit_test.models import MultiPath1, MultiPath2
+from unit_test.models import ToyMultiPath1, ToyMultiPath2
 
 
 class TestPITConvert(unittest.TestCase):
@@ -47,7 +47,7 @@ class TestPITConvert(unittest.TestCase):
     def test_autoimport_simple(self):
         """Test the conversion of a simple sequential model with layer autoconversion"""
         nn_ut = SimpleNN()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 40)))
+        new_nn = PIT(nn_ut, input_shape=(3, 40))
         self._compare_prepared(nn_ut, new_nn._inner_model)
         self._check_target_layers(new_nn, exp_tgt=2)
         self._check_input_features(new_nn, {'conv0': 3, 'conv1': 32})
@@ -56,7 +56,7 @@ class TestPITConvert(unittest.TestCase):
         """Test the conversion of a ResNet-like model"""
         config = self.tc_resnet_config
         nn_ut = TCResNet14(config)
-        new_nn = PIT(nn_ut, input_example=torch.rand((6, 50)))
+        new_nn = PIT(nn_ut, input_shape=(6, 50))
         self._compare_prepared(nn_ut, new_nn._inner_model)
         self._check_target_layers(new_nn, exp_tgt=3 * len(config['num_channels'][1:]) + 1)
         # check some random layers input features
@@ -70,8 +70,8 @@ class TestPITConvert(unittest.TestCase):
 
     def test_autoimport_multipath(self):
         """Test the conversion of a toy model with multiple concat and add operations"""
-        nn_ut = MultiPath1()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 15)))
+        nn_ut = ToyMultiPath1()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn._inner_model)
         self._check_target_layers(new_nn, exp_tgt=6)
         self._check_input_features(new_nn, {'conv2': 3, 'conv4': 50, 'conv5': 64})
@@ -84,8 +84,8 @@ class TestPITConvert(unittest.TestCase):
         )
         self._check_shared_maskers(new_nn, shared_masker_rules)
 
-        nn_ut = MultiPath2()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 60)))
+        nn_ut = ToyMultiPath2()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn._inner_model)
         self._check_target_layers(new_nn, exp_tgt=5)
         # self._check_input_features(new_nn, {'conv2': 3, 'conv4': 40, 'fc1': 30})
@@ -97,23 +97,23 @@ class TestPITConvert(unittest.TestCase):
         self._check_shared_maskers(new_nn, shared_masker_rules)
 
     def test_exclude_types_simple(self):
-        nn_ut = MultiPath1()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 15)), exclude_types=(nn.Conv1d,))
+        nn_ut = ToyMultiPath1()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv1d,))
         # excluding Conv1D, nothing should be converted to PIT format
         self._check_target_layers(new_nn, exp_tgt=0)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
 
     def test_exclude_names_simple(self):
-        nn_ut = MultiPath1()
+        nn_ut = ToyMultiPath1()
         excluded = ('conv0', 'conv4')
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 15)), exclude_names=excluded)
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
         # excluding conv0 and conv4, there are 4 convertible conv1d layers left
         self._check_target_layers(new_nn, exp_tgt=4)
         self._check_layers_exclusion(new_nn, excluded)
 
-        nn_ut = MultiPath2()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 60)), exclude_names=excluded)
+        nn_ut = ToyMultiPath2()
+        new_nn = PIT(nn_ut, input_shape=(3, 60), exclude_names=excluded)
         # excluding conv0 and conv4, there are 4 convertible conv1d layers left
         self._check_target_layers(new_nn, exp_tgt=3)
         self._check_layers_exclusion(new_nn, excluded)
@@ -121,12 +121,12 @@ class TestPITConvert(unittest.TestCase):
     def test_import_simple(self):
         """Test the conversion of a simple sequential model that already contains a PIT layer"""
         nn_ut = SimplePitNN()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 40)))
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn._inner_model)
         # convert with autoconvert disabled. This is as if we exclude layers except the one already
         # in PIT form
         excluded = ('conv1')
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 40)), autoconvert_layers=False)
+        new_nn = PIT(nn_ut, input_shape=(3, 40), autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn._inner_model, exclude_names=excluded)
 
     def test_exclude_names_advanced(self):
@@ -134,7 +134,7 @@ class TestPITConvert(unittest.TestCase):
         config = self.tc_resnet_config
         nn_ut = TCResNet14(config)
         excluded = ['conv0', 'tcn.network.5.tcn1', 'tcn.network.3.tcn0']
-        new_nn = PIT(nn_ut, input_example=torch.rand((6, 50)), exclude_names=excluded)
+        new_nn = PIT(nn_ut, input_shape=(6, 50), exclude_names=excluded)
         self._compare_prepared(nn_ut, new_nn._inner_model, exclude_names=excluded)
         n_layers = 3 * len(config['num_channels'][1:]) + 1 - len(excluded)
         self._check_layers_exclusion(new_nn, excluded)
@@ -143,21 +143,21 @@ class TestPITConvert(unittest.TestCase):
     def test_export_initial_simple(self):
         """Test the export of a simple sequential model, just after import"""
         nn_ut = SimpleNN()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 40)))
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         exported_nn = new_nn.arch_export()
         self._compare_identical(nn_ut, exported_nn)
 
     def test_export_initial_advanced(self):
         """Test the conversion of a ResNet-like model, just after import"""
         nn_ut = TCResNet14(self.tc_resnet_config)
-        new_nn = PIT(nn_ut, input_example=torch.rand((6, 50)))
+        new_nn = PIT(nn_ut, input_shape=(6, 50))
         exported_nn = new_nn.arch_export()
         self._compare_identical(nn_ut, exported_nn)
 
     def test_export_with_masks(self):
         """Test the conversion of a simple model after forcing the mask values in some layers"""
         nn_ut = SimpleNN()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 40)))
+        new_nn = PIT(nn_ut, input_shape=(3, 40))
 
         conv0 = cast(PITConv1d, new_nn._inner_model.conv0)
         conv0.out_channel_masker.alpha = nn.parameter.Parameter(
@@ -205,7 +205,7 @@ class TestPITConvert(unittest.TestCase):
     def test_arch_summary(self):
         """Test the summary report for a simple sequential model"""
         nn_ut = SimpleNN()
-        new_nn = PIT(nn_ut, input_example=torch.rand((3, 40)))
+        new_nn = PIT(nn_ut, input_shape=(3, 40))
         summary = new_nn.arch_summary()
         self.assertEqual(summary['conv0']['in_channels'], 3, "Wrong in channels summary")
         self.assertEqual(summary['conv0']['out_channels'], 32, "Wrong out channels summary")

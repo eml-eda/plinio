@@ -259,7 +259,7 @@ class PITConv1d(nn.Conv1d):
         :return: the static (i.e., maximum) receptive field of this layer
         :rtype: int
         """
-        return self.kernel_size[0]
+        return (self.kernel_size[0] - 1) * self.dilation[0] + 1
 
     @property
     def train_channels(self) -> bool:

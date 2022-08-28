@@ -8,7 +8,7 @@ from flexnas.methods.pit.pit_dilation_masker import PITDilationMasker
 
 class SimplePitNN(nn.Module):
     """Defines a simple sequential DNN used within unit tests"""
-    def __init__(self, input_shape=(1, 3, 40), num_classes=3):
+    def __init__(self, input_shape=(3, 40), num_classes=3):
         super(SimplePitNN, self).__init__()
         self.input_shape = input_shape
         self.conv0 = PITConv1d(nn.Conv1d(3, 32, (3,), padding='same'),

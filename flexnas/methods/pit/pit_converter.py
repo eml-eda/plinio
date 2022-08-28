@@ -43,7 +43,7 @@ class PITTracer(fx.Tracer):
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
 
 
-def convert(model: nn.Module, input_example: torch.Tensor, conversion_type: str,
+def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             ) -> Tuple[nn.Module, List]:
@@ -51,9 +51,9 @@ def convert(model: nn.Module, input_example: torch.Tensor, conversion_type: str,
 
     :param model: the input nn.Module
     :type model: nn.Module
-    :param input_example: an example of input tensor, without batch size, required for symbolic
+    :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
-    :type input_example: torch.Tensor
+    :type input_shape: Tuple[int, ...]
     :param conversion_type: a string specifying the type of conversion. Supported types:
     ('import', 'autoimport', 'export')
     :type conversion_type: str
@@ -74,7 +74,7 @@ def convert(model: nn.Module, input_example: torch.Tensor, conversion_type: str,
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
     # create a "fake" minibatch of 32 inputs for shape prop
-    batch_example = torch.stack([input_example] * 32, 0)
+    batch_example = torch.stack([torch.rand(input_shape)] * 32, 0)
     ShapeProp(mod).propagate(batch_example)
     target_layers = convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):

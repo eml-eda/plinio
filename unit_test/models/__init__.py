@@ -20,8 +20,8 @@ from .tc_resnet_14 import TCResNet14
 from .simple_nn import SimpleNN
 from .simple_nn_pit import SimplePitNN
 from .toy_models import ToySequentialConv1d, ToyAdd, ToyTimeCat, ToyChannelsCat
-from .toy_models import ToyModel6, ToyModel7, ToyModel8, MultiPath1, MultiPath2
+from .toy_models import ToyFlatten, ToyMultiPath1, ToyMultiPath2, ToyRegression
 
-__all__ = ['TCResNet14', 'SimpleNN', 'SimplePitNN', 'MultiPath1', 'ToySequentialConv1d',
-           'MultiPath2', 'ToyAdd', 'ToyTimeCat', 'ToyChannelsCat', 'ToyModel6',
-           'ToyModel7', 'ToyModel8']
+__all__ = ['TCResNet14', 'SimpleNN', 'SimplePitNN', 'ToySequentialConv1d', 'ToyAdd',
+           'ToyTimeCat', 'ToyChannelsCat', 'ToyFlatten', 'ToyMultiPath1', 'ToyMultiPath2',
+           'ToyRegression']

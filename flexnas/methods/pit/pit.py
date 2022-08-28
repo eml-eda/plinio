@@ -29,9 +29,9 @@ class PIT(DNAS):
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
-    :param input_example: an example of input tensor, without batch size, required for symbolic
+    :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
-    :type input_example: torch.Tensor
+    :type input_shape: Tuple[int, ...]
     :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
     :type regularizer: Optional[str], optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
@@ -56,7 +56,7 @@ class PIT(DNAS):
     def __init__(
             self,
             model: nn.Module,
-            input_example: torch.Tensor,
+            input_shape: Tuple[int, ...],
             regularizer: str = 'size',
             autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
@@ -65,10 +65,10 @@ class PIT(DNAS):
             train_rf: bool = True,
             train_dilation: bool = True):
         super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
-        self._input_example = input_example
+        self._input_shape = input_shape
         self._inner_model, self._target_layers = convert(
             model,
-            input_example,
+            input_shape,
             'autoimport' if autoconvert_layers else 'import',
             exclude_names,
             exclude_types
@@ -77,10 +77,7 @@ class PIT(DNAS):
         self.train_channels = train_channels
         self.train_rf = train_rf
         self.train_dilation = train_dilation
-        if self.regularizer == 'size':
-            self.get_regularization_loss = self.get_size
-        elif self.regularizer == 'macs':
-            self.get_regularization_loss = self.get_macs
+        self._regularizer = regularizer
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -123,6 +120,26 @@ class PIT(DNAS):
             # macs += layer.get_macs()
             macs = macs + layer.get_macs()
         return macs
+
+    @property
+    def regularizer(self) -> str:
+        """Returns the regularizer type
+
+        :raises ValueError: for unsupported conversion types
+        :return: the string identifying the regularizer type
+        :rtype: str
+        """
+        return self._regularizer
+
+    @regularizer.setter
+    def regularizer(self, value: str):
+        if value == 'size':
+            self.get_regularization_loss = self.get_size
+        elif value == 'macs':
+            self.get_regularization_loss = self.get_macs
+        else:
+            raise ValueError(f"Invalid regularizer {value}")
+        self._regularizer = value
 
     @property
     def train_channels(self) -> bool:
@@ -202,7 +219,7 @@ class PIT(DNAS):
         :return: the architecture found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
-        mod, _ = convert(self._inner_model, self._input_example, 'export')
+        mod, _ = convert(self._inner_model, self._input_shape, 'export')
 
         return mod
 

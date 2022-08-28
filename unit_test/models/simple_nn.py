@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 class SimpleNN(nn.Module):
     """Defines a simple sequential DNN used within unit tests"""
-    def __init__(self, input_shape=(1, 3, 40), num_classes=3):
+    def __init__(self, input_shape=(3, 40), num_classes=3):
         super(SimpleNN, self).__init__()
         self.input_shape = input_shape
         self.conv0 = nn.Conv1d(3, 32, (3,), padding='same')
