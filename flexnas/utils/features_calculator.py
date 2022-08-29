@@ -85,7 +85,7 @@ class ModAttrFeaturesCalculator(FeaturesCalculator):
     instance.
 
     Used for NAS-able layers such as PITConv1D, where the number of output features is stored in
-    the `out_channels_eff` attribute.
+    the `out_features_eff` attribute.
 
     :param mod: the `nn.Module` instance.
     :type mod: nn.Module

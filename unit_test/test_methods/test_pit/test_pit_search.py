@@ -167,7 +167,7 @@ class TestPITSearch(unittest.TestCase):
         prev_theta_masks = []
         for layer in convs:
             prev_theta_masks.append({
-                'cout': layer.out_channel_masker().clone().detach(),
+                'cout': layer.out_features_masker().clone().detach(),
                 'rf': layer.timestep_masker().clone().detach(),
                 'dil': layer.dilation_masker().clone().detach(),
             })
@@ -182,7 +182,7 @@ class TestPITSearch(unittest.TestCase):
             theta_masks = []
             for layer in convs:
                 theta_masks.append({
-                    'cout': layer.out_channel_masker().clone().detach(),
+                    'cout': layer.out_features_masker().clone().detach(),
                     'rf': layer.timestep_masker().clone().detach(),
                     'dil': layer.dilation_masker().clone().detach(),
                 })
@@ -224,7 +224,7 @@ class TestPITSearch(unittest.TestCase):
         theta_masks = []
         for layer in convs:
             theta_masks.append({
-                'cout': layer.out_channel_masker().clone().detach(),
+                'cout': layer.out_features_masker().clone().detach(),
                 'rf': layer.timestep_masker().clone().detach(),
                 'dil': layer.dilation_masker().clone().detach(),
             })
@@ -240,22 +240,22 @@ class TestPITSearch(unittest.TestCase):
                     self.assertLess(mask_set['dil'][i], th,
                                     f"Mask value for dil not smaller than {th}")
         for layer, dil in zip(convs, max_dils):
-            self.assertEqual(layer.out_channels_opt, 1, "Wrong channels_opt")
+            self.assertEqual(layer.out_features_opt, 1, "Wrong channels_opt")
             self.assertEqual(layer.kernel_size_opt[0], 1, "Wrong kernel_size_opt")
             self.assertEqual(layer.dilation_opt[0], dil, "Wrong dilation_opt")
 
-    def test_no_train_channels(self):
-        """Test that alpha masks remain fixed (and others change) with train_channels=False"""
+    def test_no_train_features(self):
+        """Test that alpha masks remain fixed (and others change) with train_features=False"""
         nn_ut = ToyAdd()
         batch_size = 1
         steps = 6000
-        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_channels=False)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_features=False)
         optimizer = optim.Adam(pit_net.parameters())
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
         conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
         conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
         convs = [conv0, conv1, conv2]
-        initial_masks = [layer.out_channel_masker().clone().detach() for layer in convs]
+        initial_masks = [layer.out_features_masker().clone().detach() for layer in convs]
         max_dils = [2, 2, 4]
         ths = [layer._binarization_threshold for layer in convs]
         for i in range(steps):
@@ -267,7 +267,7 @@ class TestPITSearch(unittest.TestCase):
             optimizer.step()
         for layer, max_dil, th, initial in zip(convs, max_dils, ths, initial_masks):
             # theta alpha should be fixed at 1.
-            self.assertTrue(torch.all(layer.out_channel_masker() == initial),
+            self.assertTrue(torch.all(layer.out_features_masker() == initial),
                             "Channels mask changed unexpectedly")
             # theta beta and theta gamma should be below threshold (except kept-alive elements)
             self.assertTrue(torch.all(layer.timestep_masker()[1:] < th),
@@ -279,8 +279,8 @@ class TestPITSearch(unittest.TestCase):
                 if i % max_dil != 0:
                     self.assertLess(theta_gamma[i], th,
                                     "Dilation mask above threshold unexpectedly")
-            self.assertEqual(layer.out_channels_opt, layer.out_channels, "Wrong channels_opt")
-            self.assertEqual(layer.out_channels_eff, layer.out_channels, "Wrong channels_eff")
+            self.assertEqual(layer.out_features_opt, layer.out_channels, "Wrong features_opt")
+            self.assertEqual(layer.out_features_eff, layer.out_channels, "Wrong features_eff")
             self.assertEqual(layer.kernel_size_opt[0], 1, "Wrong kernel_size_opt")
             self.assertEqual(layer.dilation_opt[0], max_dil, "Wrong dilation_opt")
 
@@ -310,7 +310,7 @@ class TestPITSearch(unittest.TestCase):
             self.assertTrue(torch.all(layer.timestep_masker() == initial),
                             "RF mask changed unexpectedly")
             # theta alpha and theta gamma should be below threshold (except kept-alive elements)
-            self.assertTrue(torch.all(layer.out_channel_masker()[1:] < th),
+            self.assertTrue(torch.all(layer.out_features_masker()[1:] < th),
                             "channels mask above threshold unexpectedly")
             # for dilation, the check is a bit more complex, cause we need to esclude one every
             # max_dil elements
@@ -320,7 +320,7 @@ class TestPITSearch(unittest.TestCase):
                     self.assertLess(theta_gamma[i], th,
                                     "Dilation mask above threshold unexpectedly")
             exp_ks_opt = math.ceil(layer.rf / max_dil)
-            self.assertEqual(layer.out_channels_opt, 1, "Wrong channels_opt")
+            self.assertEqual(layer.out_features_opt, 1, "Wrong features")
             self.assertEqual(layer.kernel_size_opt[0], exp_ks_opt, "Wrong kernel_size_opt")
             self.assertEqual(layer.dilation_opt[0], max_dil, "Wrong dilation_opt")
 
@@ -351,11 +351,11 @@ class TestPITSearch(unittest.TestCase):
                             "Dilation mask changed unexpectedly")
             self.assertEqual(layer.dilation_opt[0], 1, "Wrong dilation opt")
             # theta alpha and theta beta should be below threshold (except kept-alive elements)
-            self.assertTrue(torch.all(layer.out_channel_masker()[1:] < th),
+            self.assertTrue(torch.all(layer.out_features_masker()[1:] < th),
                             "Channels mask above threshold unexpectedly")
             self.assertTrue(torch.all(layer.timestep_masker()[1:] < th),
                             "RF mask above threshold unexpectedly")
-            self.assertEqual(layer.out_channels_opt, 1, "Wrong out_channels_opt")
+            self.assertEqual(layer.out_features_opt, 1, "Wrong out_features_opt")
             self.assertEqual(layer.kernel_size_opt[0], 1, "Wrong kernel_size_opt")
             self.assertEqual(layer.dilation_opt[0], 1, "Wrong dilation_opt")
 
@@ -435,7 +435,7 @@ class TestPITSearch(unittest.TestCase):
             running_err = ((running_err * i) + err) / (i + 1)
         self.assertLess(running_err, 1, "Error not decreasing")
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
-        self.assertLess(conv0.out_channels_opt, conv0.out_channels, "Channels not decreasing")
+        self.assertLess(conv0.out_features_opt, conv0.out_channels, "Channels not decreasing")
 
     def _check_output_equal(self, nn: nn.Module, pit_nn: PIT, input_shape: Tuple[int, ...],
                             iterations=10):

@@ -171,7 +171,7 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     """
     if is_zero_or_one_input_op(n):
         return False
-    if is_concatenate(n, parent) and not is_channels_concatenate(n, parent):
+    if is_concatenate(n, parent) and not is_features_concatenate(n, parent):
         return True
     if n.op == 'call_function':
         if n.target == torch.add:
@@ -312,9 +312,9 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
     return False
 
 
-def is_channels_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
+def is_features_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` instance corresponds to a concat operation
-    over the channels axis.
+    over the features axis.
 
     :param n: the target node
     :type n: fx.Node

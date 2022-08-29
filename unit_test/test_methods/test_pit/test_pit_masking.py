@@ -189,7 +189,7 @@ class TestPITMasking(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # conv1 has a filter size of 5 and 57 output channels
         conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        ka_alpha = conv1.out_channel_masker._keep_alive
+        ka_alpha = conv1.out_features_masker._keep_alive
         exp_ka_alpha = torch.tensor([1.0] + [0.0] * 56, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_alpha, exp_ka_alpha),
                         "Wrong keep-alive mask for channels")
@@ -215,7 +215,7 @@ class TestPITMasking(unittest.TestCase):
         self._write_rf_mask(pit_net, 'conv1', torch.tensor([0.05] * 5))
         self._write_dilation_mask(pit_net, 'conv1', torch.tensor([0.05] * 3))
         pit_net(x)
-        chan_mask = conv1.out_channel_masker()
+        chan_mask = conv1.out_features_masker()
         rf_mask = conv1.timestep_masker()
         dil_mask = conv1.dilation_masker()
         # even if we set all mask values to 0.05, the first gamma element is always > 1
@@ -235,9 +235,9 @@ class TestPITMasking(unittest.TestCase):
         summ = conv1.summary()
         self.assertEqual(int(conv1.input_features_calculator.features), cout,
                          "Wrong number of input features retured by calculator")
-        self.assertEqual(conv1.in_channels_opt, cout,
+        self.assertEqual(conv1.in_features_opt, cout,
                          "Wrong number of opt input channels retured by layer")
-        self.assertEqual(summ['in_channels'], cout,
+        self.assertEqual(summ['in_features'], cout,
                          "Wrong number of opt input channels retured by summary")
 
     def test_input_features_add(self):
@@ -253,9 +253,9 @@ class TestPITMasking(unittest.TestCase):
         summ = conv2.summary()
         self.assertEqual(int(conv2.input_features_calculator.features), cout,
                          "Wrong number of input features retured by calculator")
-        self.assertEqual(conv2.in_channels_opt, cout,
+        self.assertEqual(conv2.in_features_opt, cout,
                          "Wrong number of opt input channels retured by layer")
-        self.assertEqual(summ['in_channels'], cout,
+        self.assertEqual(summ['in_features'], cout,
                          "Wrong number of opt input channels retured by summary")
 
     def test_input_features_cat(self):
@@ -273,9 +273,9 @@ class TestPITMasking(unittest.TestCase):
         summ = conv2.summary()
         self.assertEqual(int(conv2.input_features_calculator.features), cout0 + cout1,
                          "Wrong number of input features retured by calculator")
-        self.assertEqual(conv2.in_channels_opt, cout0 + cout1,
+        self.assertEqual(conv2.in_features_opt, cout0 + cout1,
                          "Wrong number of opt input channels retured by layer")
-        self.assertEqual(summ['in_channels'], cout0 + cout1,
+        self.assertEqual(summ['in_features'], cout0 + cout1,
                          "Wrong number of opt input channels retured by summary")
 
     def test_input_features_advanced(self):
@@ -293,9 +293,9 @@ class TestPITMasking(unittest.TestCase):
         summ = tcn0.summary()
         self.assertEqual(int(tcn0.input_features_calculator.features), cout0,
                          "Wrong number of input features retured by calculator")
-        self.assertEqual(tcn0.in_channels_opt, cout0,
+        self.assertEqual(tcn0.in_features_opt, cout0,
                          "Wrong number of opt input channels retured by layer")
-        self.assertEqual(summ['in_channels'], cout0,
+        self.assertEqual(summ['in_features'], cout0,
                          "Wrong number of opt input channels retured by summary")
 
         alpha1, cout1 = self._rand_binary_channel_mask(config['num_channels'][1])
@@ -307,9 +307,9 @@ class TestPITMasking(unittest.TestCase):
         summ = tcn1.summary()
         self.assertEqual(int(tcn1.input_features_calculator.features), cout1,
                          "Wrong number of input features retured by calculator")
-        self.assertEqual(tcn1.in_channels_opt, cout1,
+        self.assertEqual(tcn1.in_features_opt, cout1,
                          "Wrong number of opt input channels retured by layer")
-        self.assertEqual(summ['in_channels'], cout1,
+        self.assertEqual(summ['in_features'], cout1,
                          "Wrong number of opt input channels retured by summary")
 
     def _check_channel_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
@@ -318,12 +318,12 @@ class TestPITMasking(unittest.TestCase):
         for layer_name in check_layers:
             layer = converted_layer_names[layer_name]
             if isinstance(layer, PITConv1d):
-                alpha = layer.out_channel_masker.alpha
+                alpha = layer.out_features_masker.alpha
                 check = torch.ones((layer.out_channels,))
                 self.assertTrue(torch.all(alpha == check), "Wrong alpha values")
                 self.assertEqual(torch.sum(alpha), layer.out_channels, "Wrong alpha sum")
-                self.assertEqual(torch.sum(alpha), layer.out_channels_eff, "Wrong channels eff")
-                self.assertEqual(torch.sum(alpha), layer.out_channels_opt, "Wrong channels opt")
+                self.assertEqual(torch.sum(alpha), layer.out_features_eff, "Wrong channels eff")
+                self.assertEqual(torch.sum(alpha), layer.out_features_opt, "Wrong channels opt")
 
     def _check_rf_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
         """Check if the RF masks are initialized correctly"""
@@ -388,7 +388,7 @@ class TestPITMasking(unittest.TestCase):
         """Force a given value on the output channels mask"""
         converted_layer_names = dict(nn._inner_model.named_modules())
         layer = converted_layer_names[layer_name]
-        layer.out_channel_masker.alpha = Parameter(mask)  # type: ignore
+        layer.out_features_masker.alpha = Parameter(mask)  # type: ignore
 
     def _write_rf_mask(self, nn: PIT, layer_name: str, mask: torch.Tensor):
         """Force a given value on the rf mask"""
@@ -406,7 +406,7 @@ class TestPITMasking(unittest.TestCase):
         """Read a value from the output channels mask of a layer"""
         converted_layer_names = dict(nn._inner_model.named_modules())
         layer = converted_layer_names[layer_name]
-        return layer.out_channel_masker.alpha  # type: ignore
+        return layer.out_features_masker.alpha  # type: ignore
 
     def _read_rf_mask(self, nn: PIT, layer_name: str) -> torch.Tensor:
         """Read a value from the rf mask of a layer"""

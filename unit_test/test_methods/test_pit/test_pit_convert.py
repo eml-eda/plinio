@@ -160,13 +160,13 @@ class TestPITConvert(unittest.TestCase):
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
 
         conv0 = cast(PITConv1d, new_nn._inner_model.conv0)
-        conv0.out_channel_masker.alpha = nn.parameter.Parameter(
+        conv0.out_features_masker.alpha = nn.parameter.Parameter(
             torch.tensor([1, 1, 0, 1] * 8, dtype=torch.float))
         conv0.timestep_masker.beta = nn.parameter.Parameter(
             torch.tensor([1, 1, 0], dtype=torch.float))
 
         conv1 = cast(PITConv1d, new_nn._inner_model.conv1)
-        conv1.out_channel_masker.alpha = nn.parameter.Parameter(
+        conv1.out_features_masker.alpha = nn.parameter.Parameter(
             torch.tensor([1, ] * 56 + [0, ], dtype=torch.float))
         conv1.dilation_masker.gamma = nn.parameter.Parameter(
             torch.tensor([1, 0, 0], dtype=torch.float))
@@ -207,12 +207,12 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = SimpleNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         summary = new_nn.arch_summary()
-        self.assertEqual(summary['conv0']['in_channels'], 3, "Wrong in channels summary")
-        self.assertEqual(summary['conv0']['out_channels'], 32, "Wrong out channels summary")
+        self.assertEqual(summary['conv0']['in_features'], 3, "Wrong in features summary")
+        self.assertEqual(summary['conv0']['out_features'], 32, "Wrong out features summary")
         self.assertEqual(summary['conv0']['kernel_size'], (3,), "Wrong kernel size summary")
         self.assertEqual(summary['conv0']['dilation'], (1,), "Wrong dilation summary")
-        self.assertEqual(summary['conv1']['in_channels'], 32, "Wrong in channels summary")
-        self.assertEqual(summary['conv1']['out_channels'], 57, "Wrong out channels summary")
+        self.assertEqual(summary['conv1']['in_features'], 32, "Wrong in features summary")
+        self.assertEqual(summary['conv1']['out_features'], 57, "Wrong out features summary")
         self.assertEqual(summary['conv1']['kernel_size'], (5,), "Wrong kernel size summary")
         self.assertEqual(summary['conv1']['dilation'], (1,), "Wrong dilation summary")
         print(new_nn)
@@ -256,20 +256,20 @@ class TestPITConvert(unittest.TestCase):
             new_child = cast(nn.Module, new_mod._modules[name])
             self._compare_identical(child, new_child)
             if isinstance(child, nn.Conv1d):
-                assert isinstance(new_child, nn.Conv1d)
-                assert child.in_channels == new_child.in_channels
-                assert child.out_channels == new_child.out_channels
-                assert child.kernel_size == new_child.kernel_size
-                assert child.stride == new_child.stride
-                assert child.padding == new_child.padding
-                assert child.dilation == new_child.dilation
-                assert child.groups == new_child.groups
-                assert torch.all(child.weight == new_child.weight)
+                self.assertIsInstance(new_child, nn.Conv1d, "Wrong layer type")
+                self.assertTrue(child.in_channels == new_child.in_channels)
+                self.assertTrue(child.out_channels == new_child.out_channels)
+                self.assertTrue(child.kernel_size == new_child.kernel_size)
+                self.assertTrue(child.stride == new_child.stride)
+                self.assertTrue(child.padding == new_child.padding)
+                self.assertTrue(child.dilation == new_child.dilation)
+                self.assertTrue(child.groups == new_child.groups)
+                self.assertTrue(torch.all(child.weight == new_child.weight))
                 if child.bias is not None:
-                    assert torch.all(child.bias == new_child.bias)
+                    self.assertTrue(torch.all(child.bias == new_child.bias))
                 else:
-                    assert new_child.bias is None
-                assert child.padding_mode == new_child.padding_mode
+                    self.assertIsNone(new_child.bias)
+                self.assertTrue(child.padding_mode == new_child.padding_mode)
 
     def _check_target_layers(self, new_nn: PIT, exp_tgt: int):
         """Check if number of target layers is as expected"""
@@ -298,8 +298,8 @@ class TestPITConvert(unittest.TestCase):
         """
         converted_layer_names = dict(new_nn._inner_model.named_modules())
         for layer_1, layer_2, shared_flag in check_rules:
-            masker_1 = converted_layer_names[layer_1].out_channel_masker  # type: ignore
-            masker_2 = converted_layer_names[layer_2].out_channel_masker  # type: ignore
+            masker_1 = converted_layer_names[layer_1].out_features_masker  # type: ignore
+            masker_2 = converted_layer_names[layer_2].out_features_masker  # type: ignore
             if shared_flag:
                 msg = f"Layers {layer_1} and {layer_2} are expected to share a masker, but don't"
                 self.assertEqual(masker_1, masker_2, msg)

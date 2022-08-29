@@ -20,7 +20,7 @@
 from abc import abstractmethod
 from typing import Dict, Any, Optional
 import torch.fx as fx
-from .pit_channel_masker import PITChannelMasker
+from .pit_features_masker import PITFeaturesMasker
 from flexnas.utils.features_calculator import FeaturesCalculator
 
 
@@ -57,7 +57,7 @@ class PITLayer:
 
     @staticmethod
     @abstractmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]):
         """Create a new fx.Node relative to a PITLayer layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
 

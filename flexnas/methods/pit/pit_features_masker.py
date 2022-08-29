@@ -22,7 +22,7 @@ import torch.nn as nn
 from torch.nn.parameter import Parameter
 
 
-class PITChannelMasker(nn.Module):
+class PITFeaturesMasker(nn.Module):
     """A nn.Module implementing the creation of output channels in the layer to be masked
 
     :param out_channels: the static (i.e., maximum) number of output channels in the mask
@@ -37,7 +37,7 @@ class PITChannelMasker(nn.Module):
                  out_channels: int,
                  trainable: bool = True,
                  keep_alive_channels: int = 1):
-        super(PITChannelMasker, self).__init__()
+        super(PITFeaturesMasker, self).__init__()
         self.out_channels = out_channels
         self.alpha = Parameter(
             torch.empty(self.out_channels, dtype=torch.float32).fill_(1.0), requires_grad=True)

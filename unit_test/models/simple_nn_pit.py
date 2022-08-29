@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from flexnas.methods.pit.pit_conv1d import PITConv1d
-from flexnas.methods.pit.pit_channel_masker import PITChannelMasker
+from flexnas.methods.pit.pit_features_masker import PITFeaturesMasker
 from flexnas.methods.pit.pit_timestep_masker import PITTimestepMasker
 from flexnas.methods.pit.pit_dilation_masker import PITDilationMasker
 
@@ -13,7 +13,7 @@ class SimplePitNN(nn.Module):
         self.input_shape = input_shape
         self.conv0 = PITConv1d(nn.Conv1d(3, 32, (3,), padding='same'),
                                32,
-                               PITChannelMasker(32),
+                               PITFeaturesMasker(32),
                                PITTimestepMasker(3),
                                PITDilationMasker(1))
         # track_running_stats=False is important for testability, otherwise the DNAS Net and normal

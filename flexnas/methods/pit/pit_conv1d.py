@@ -23,7 +23,7 @@ import torch.fx as fx
 import torch.nn as nn
 import itertools
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
-from .pit_channel_masker import PITChannelMasker
+from .pit_features_masker import PITFeaturesMasker
 from .pit_timestep_masker import PITTimestepMasker
 from .pit_dilation_masker import PITDilationMasker
 from .pit_binarizer import PITBinarizer
@@ -38,8 +38,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
     :param out_length: the output length on the time axis (needed for timestep and dilation masking
     and to compute the number of MACs)
     :type out_length: int
-    :param out_channel_masker: the `nn.Module` that generates the output channels binary masks
-    :type out_channel_masker: PITChannelMasker
+    :param out_features_masker: the `nn.Module` that generates the output features binary masks
+    :type out_features_masker: PITChannelMasker
     :param timestep_masker: the `nn.Module` that generates the output timesteps binary masks
     :type timestep_masker: PITTimestepMasker
     :param dilation_masker: the `nn.Module` that generates the dilation binary masks
@@ -51,7 +51,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
     def __init__(self,
                  conv: nn.Conv1d,
                  out_length: int,
-                 out_channel_masker: PITChannelMasker,
+                 out_features_masker: PITFeaturesMasker,
                  timestep_masker: PITTimestepMasker,
                  dilation_masker: PITDilationMasker,
                  binarization_threshold: float = 0.5,
@@ -71,12 +71,12 @@ class PITConv1d(nn.Conv1d, PITLayer):
         self.out_length = out_length
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
-        self.out_channel_masker = out_channel_masker
+        self.out_features_masker = out_features_masker
         self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
         self._binarization_threshold = binarization_threshold
         self._beta_norm, self._gamma_norm = self._generate_norm_constants()
-        self.register_buffer('out_channels_eff', torch.tensor(self.out_channels,
+        self.register_buffer('out_features_eff', torch.tensor(self.out_channels,
                              dtype=torch.float32))
         self.register_buffer('k_eff', torch.tensor(self.rf, dtype=torch.float32))
 
@@ -85,8 +85,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
 
         In a nutshell, uses the various maskers to generate the binarized masks, then runs
         the convolution with the masked weights tensor.
-        This function has side effects, since it also saves the effective output channels and
-        effective filter size in `out_channels_eff` and `k_eff` respectively.
+        This function has side effects, since it also saves the effective output features and
+        effective filter size in `out_features_eff` and `k_eff` respectively.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
@@ -95,7 +95,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         """
         # for now we keep the same order of the old version (ch --> dil --> rf)
         # but it's probably more natural to do ch --> rf --> dil
-        alpha = self.out_channel_masker()
+        alpha = self.out_features_masker()
         bin_alpha = PITBinarizer.apply(alpha, self._binarization_threshold)
         # TODO: check that the result is correct after removing the two transposes present in
         # Matteo's original version
@@ -113,13 +113,13 @@ class PITConv1d(nn.Conv1d, PITLayer):
         # save info for regularization
         norm_theta_beta = torch.mul(theta_beta, self._beta_norm)
         norm_theta_gamma = torch.mul(theta_gamma, self._gamma_norm)
-        self.out_channels_eff = torch.sum(alpha)
+        self.out_features_eff = torch.sum(alpha)
         self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
 
         return y
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]):
         """Create a new fx.Node relative to a PITConv1d layer, starting from the fx.Node
         of a nn.Conv1d layer, and replace it into the parent fx.GraphModule
 
@@ -136,11 +136,11 @@ class PITConv1d(nn.Conv1d, PITLayer):
             raise TypeError(f"Trying to generate PITConv1d from layer of type{type(submodule)}")
         # here, this is guaranteed
         submodule = cast(nn.Conv1d, submodule)
-        chan_masker = sm if sm is not None else PITChannelMasker(submodule.out_channels)
+        chan_masker = sm if sm is not None else PITFeaturesMasker(submodule.out_channels)
         new_submodule = PITConv1d(
             submodule,
             out_length=n.meta['tensor_meta'].shape[2],
-            out_channel_masker=chan_masker,
+            out_features_masker=chan_masker,
             timestep_masker=PITTimestepMasker(submodule.kernel_size[0]),
             dilation_masker=PITDilationMasker(submodule.kernel_size[0]),
         )
@@ -166,8 +166,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
         cin_mask = submodule.input_features_calculator.features_mask.bool()
         time_mask = submodule.time_mask.bool()
         new_submodule = nn.Conv1d(
-            submodule.in_channels_opt,
-            submodule.out_channels_opt,
+            submodule.in_features_opt,
+            submodule.out_features_opt,
             submodule.kernel_size_opt,
             submodule.stride,
             submodule.padding,
@@ -191,17 +191,17 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :rtype: Dict[str, Any]
         """
         return {
-            'in_channels': self.in_channels_opt,
-            'out_channels': self.out_channels_opt,
+            'in_features': self.in_features_opt,
+            'out_features': self.out_features_opt,
             'kernel_size': self.kernel_size_opt,
             'dilation': self.dilation_opt
         }
 
     @property
-    def out_channels_opt(self) -> int:
-        """Get the number of output channels found during the search
+    def out_features_opt(self) -> int:
+        """Get the number of output features found during the search
 
-        :return: the number of output channels found during the search
+        :return: the number of output features found during the search
         :rtype: int
         """
         with torch.no_grad():
@@ -209,10 +209,10 @@ class PITConv1d(nn.Conv1d, PITLayer):
             return int(torch.sum(bin_alpha))
 
     @property
-    def in_channels_opt(self) -> int:
-        """Get the number of input channels found during the search
+    def in_features_opt(self) -> int:
+        """Get the number of input features found during the search
 
-        :return: the number of input channels found during the search
+        :return: the number of input features found during the search
         :rtype: int
         """
         with torch.no_grad():
@@ -254,7 +254,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            alpha = self.out_channel_masker()
+            alpha = self.out_features_masker()
             return PITBinarizer.apply(alpha, self._binarization_threshold)
 
     @property
@@ -281,7 +281,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :rtype: torch.Tensor
         """
         cin = self.input_features_calculator.features
-        cost = cin * self.out_channels_eff * self.k_eff
+        cost = cin * self.out_features_eff * self.k_eff
         return cost
 
     def get_macs(self) -> torch.Tensor:
@@ -343,22 +343,22 @@ class PITConv1d(nn.Conv1d, PITLayer):
         return (self.kernel_size[0] - 1) * self.dilation[0] + 1
 
     @property
-    def train_channels(self) -> bool:
-        """True if the output channels are being optimized by PIT for this layer
+    def train_features(self) -> bool:
+        """True if the output features are being optimized by PIT for this layer
 
-        :return: True if the output channels are being optimized by PIT for this layer
+        :return: True if the output features are being optimized by PIT for this layer
         :rtype: bool
         """
-        return self.out_channel_masker.trainable
+        return self.out_features_masker.trainable
 
-    @train_channels.setter
-    def train_channels(self, value: bool):
-        """Set to True in order to let PIT optimize the output channels for this layer
+    @train_features.setter
+    def train_features(self, value: bool):
+        """Set to True in order to let PIT optimize the output features for this layer
 
-        :param value: set to True in order to let PIT optimize the output channels for this layer
+        :param value: set to True in order to let PIT optimize the output features for this layer
         :type value: bool
         """
-        self.out_channel_masker.trainable = value
+        self.out_features_masker.trainable = value
 
     @property
     def train_rf(self) -> bool:

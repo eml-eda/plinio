@@ -44,9 +44,9 @@ class PIT(DNAS):
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     when auto-converting defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
-    :param train_channels: flag to control whether output channels are optimized by PIT or not,
+    :param train_features: flag to control whether output features are optimized by PIT or not,
     defaults to True
-    :type train_channels: bool, optional
+    :type train_features: bool, optional
     :param train_rf: flag to control whether receptive field is optimized by PIT or not, defaults
     to True
     :type train_rf: bool, optional
@@ -62,7 +62,7 @@ class PIT(DNAS):
             autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
-            train_channels: bool = True,
+            train_features: bool = True,
             train_rf: bool = True,
             train_dilation: bool = True):
         super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
@@ -75,7 +75,7 @@ class PIT(DNAS):
             exclude_types
         )
         # after conversion to make sure they are applied to all layers
-        self.train_channels = train_channels
+        self.train_features = train_features
         self.train_rf = train_rf
         self.train_dilation = train_dilation
         self._regularizer = regularizer
@@ -143,27 +143,27 @@ class PIT(DNAS):
         self._regularizer = value
 
     @property
-    def train_channels(self) -> bool:
-        """Returns True if PIT is training the output channels masks
+    def train_features(self) -> bool:
+        """Returns True if PIT is training the output features masks
 
-        :return: True if PIT is training the output channels masks
+        :return: True if PIT is training the output features masks
         :rtype: bool
         """
-        return self._train_channels
+        return self._train_features
 
-    @train_channels.setter
-    def train_channels(self, value: bool):
-        """Set to True to let PIT train the output channels masks
+    @train_features.setter
+    def train_features(self, value: bool):
+        """Set to True to let PIT train the output features masks
 
-        :param value: set to True to let PIT train the output channels masks
+        :param value: set to True to let PIT train the output features masks
         :type value: bool
         """
         for layer in self._target_layers:
-            if hasattr(layer, 'train_channels'):
-                layer.train_channels = value
+            if hasattr(layer, 'train_features'):
+                layer.train_features = value
             else:
-                print(f"Warning: layer {layer} does not support channels optimization")
-        self._train_channels = value
+                print(f"Warning: layer {layer} does not support features optimization")
+        self._train_features = value
 
     @property
     def train_rf(self) -> bool:
@@ -246,14 +246,4 @@ class PIT(DNAS):
         :rtype: str
         """
         arch = self.arch_summary()
-        s = ""
-        for name, layer in arch.items():
-            s += "{} ({}): Cin = {}, Cout = {}, K = {}, D = {}".format(
-                layer['type'],
-                name,
-                layer['in_channels'],
-                layer['out_channels'],
-                layer['kernel_size'],
-                layer['dilation']
-            ) + "\n"
-        return s
+        return str(arch)

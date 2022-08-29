@@ -26,7 +26,7 @@ from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.pit.pit_conv1d import PITConv1d
 from flexnas.methods.pit.pit_conv2d import PITConv2d
 from .pit_layer import PITLayer
-from .pit_channel_masker import PITChannelMasker
+from .pit_features_masker import PITFeaturesMasker
 from flexnas.utils import model_graph
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, \
     FlattenFeaturesCalculator, ConcatFeaturesCalculator, ModAttrFeaturesCalculator
@@ -115,7 +115,7 @@ def convert_layers(mod: fx.GraphModule,
     g = mod.graph
     queue = model_graph.get_output_nodes(g)
     # the shared_masker_queue is only used in 'autoimport' mode. Remains None otherwise
-    shared_masker_queue: List[Optional[PITChannelMasker]] = [None] * len(queue)
+    shared_masker_queue: List[Optional[PITFeaturesMasker]] = [None] * len(queue)
     # the list of target layers is only used in 'import' and 'autoimport' modes. Empty for export
     target_layers = []
     visited = []
@@ -165,7 +165,7 @@ def exclude(n: fx.Node, mod: fx.GraphModule,
     return exc_type or (str(n.target) in exclude_names)
 
 
-def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker],
+def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker],
                     exclude_names: Iterable[str],
                     exclude_types: Iterable[Type[nn.Module]]):
     """Rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a standard
@@ -175,8 +175,8 @@ def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMask
     :type n: fx.Node
     :param mod: the parent module, where the new node has to be optionally inserted
     :type mod: fx.GraphModule
-    :param sm: an optional shared channels mask derived from subsequent layers
-    :type sm: Optional[PITChannelMasker]
+    :param sm: an optional shared features mask derived from subsequent layers
+    :type sm: Optional[PITFeaturesMasker]
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
@@ -240,15 +240,15 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
 
 
 def update_shared_masker(n: fx.Node, mod: fx.GraphModule,
-                         sm: Optional[PITChannelMasker]) -> Optional[PITChannelMasker]:
+                         sm: Optional[PITFeaturesMasker]) -> Optional[PITFeaturesMasker]:
     """Determines if the currently processed node requires that its predecessor share a common
-    channels mask.
+    features mask.
 
     :param n: the target node
     :type n: fx.Node
     :param mod: the parent module
     :type mod: fx.GraphModule
-    :param sm: the optional input shared channels masker to propagate from subsequent layers
+    :param sm: the optional input shared features masker to propagate from subsequent layers
     :type sm: Optional[PITChannelMasker]
     :raises ValueError: for unsupported nodes, to avoid unexpected behaviors
     :return: the updated shared_masker
@@ -263,8 +263,8 @@ def update_shared_masker(n: fx.Node, mod: fx.GraphModule,
             return sm
     elif model_graph.is_untouchable_op(n):
         return None
-    elif model_graph.is_channels_concatenate(n, mod):
-        # if we concatenate over channels, we don't need to share the mask
+    elif model_graph.is_features_concatenate(n, mod):
+        # if we concatenate over features, we don't need to share the mask
         return None
     elif model_graph.is_shared_input_features_op(n, mod):
         # modules that require multiple inputs all of the same size
@@ -272,7 +272,7 @@ def update_shared_masker(n: fx.Node, mod: fx.GraphModule,
         # predecessors
         if sm is None or model_graph.is_features_defining_op(n, mod):
             input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
-            shared_masker = PITChannelMasker(input_size)
+            shared_masker = PITFeaturesMasker(input_size)
         else:
             shared_masker = sm
         return shared_masker
@@ -345,10 +345,10 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
     :raises ValueError: when the target node op is not supported
     """
     if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
-        # For PIT NAS-able layers, the "active" output features are stored in the out_channels_eff
+        # For PIT NAS-able layers, the "active" output features are stored in the out_features_eff
         # attribute, and the binary mask is in features_mask
         sub_mod = mod.get_submodule(str(n.target))
-        calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_channels_eff', 'features_mask')
+        calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_features_eff', 'features_mask')
     elif model_graph.is_flatten(n, mod):
         # For flatten ops, the output features are computed as: input_features * spatial_size
         # note that this is NOT simply equal to the output shape if the preceding layer is a
@@ -358,8 +358,8 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
         spatial_size = math.prod(input_shape[2:])
         calc_dict[n] = FlattenFeaturesCalculator(ifc, spatial_size)
     elif model_graph.is_concatenate(n, mod):
-        if model_graph.is_channels_concatenate(n, mod):
-            # for concatenation over the channels axis the number of output features is the sum
+        if model_graph.is_features_concatenate(n, mod):
+            # for concatenation over the features axis the number of output features is the sum
             # of the output features of preceding layers as for flatten, this is NOT equal to the
             # input shape of this layer, when one or more predecessors are NAS-able
             ifc = ConcatFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes])
