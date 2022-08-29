@@ -17,6 +17,8 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 from .pit import PIT
+from .pit_layer import PITLayer
 from .pit_conv1d import PITConv1d
+from .pit_conv2d import PITConv2d
 
-__all__ = ['PIT', 'PITConv1d']
+__all__ = ['PIT', 'PITLayer', 'PITConv1d', 'PITConv2d']

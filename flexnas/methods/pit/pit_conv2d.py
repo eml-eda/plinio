@@ -16,15 +16,17 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-
+from typing import Dict, Any, Optional, cast
 import torch
 import torch.nn as nn
+import torch.fx as fx
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
 from .pit_channel_masker import PITChannelMasker
 from .pit_binarizer import PITBinarizer
+from .pit_layer import PITLayer
 
 
-class PITConv2d(nn.Conv2d):
+class PITConv2d(nn.Conv2d, PITLayer):
     """A nn.Module implementing a Conv2D layer optimizable with the PIT NAS tool
 
     :param conv: the inner `torch.nn.Conv2D` layer to be optimized
@@ -91,6 +93,82 @@ class PITConv2d(nn.Conv2d):
         self.out_channels_eff = torch.sum(alpha)
 
         return y
+
+    @staticmethod
+    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
+        """Create a new fx.Node relative to a PITConv2d layer, starting from the fx.Node
+        of a nn.Conv2d layer, and replace it into the parent fx.GraphModule
+
+        :param n: a fx.Node corresponding to a nn.Conv1d layer, with shape annotations
+        :type n: fx.Node
+        :param mod: the parent fx.GraphModule
+        :type mod: fx.GraphModule
+        :param sm: An optional shared output channel masker derived from subsequent layers
+        :type sm: Optional[PITChannelMasker]
+        :raises TypeError: if the input fx.Node is not of the correct type
+        """
+        submodule = mod.get_submodule(str(n.target))
+        if type(submodule) != nn.Conv2d:
+            raise TypeError(f"Trying to generate PITConv1d from layer of type{type(submodule)}")
+        # here, this is guaranteed
+        submodule = cast(nn.Conv2d, submodule)
+        chan_masker = sm if sm is not None else PITChannelMasker(submodule.out_channels)
+        # note: kernel size and dilation are not optimized for conv2d
+        new_submodule = PITConv2d(
+            submodule,
+            out_height=n.meta['tensor_meta'].shape[2],
+            out_width=n.meta['tensor_meta'].shape[3],
+            out_channel_masker=chan_masker,
+        )
+        mod.add_submodule(str(n.target), new_submodule)
+        return
+
+    @staticmethod
+    def export(n: fx.Node, mod: fx.GraphModule):
+        """Replaces a fx.Node corresponding to a PITConv2D layer, with a standard nn.Conv2D layer
+        within a fx.GraphModule
+
+        :param n: the node to be rewritten, corresponds to a Conv1D layer
+        :type n: fx.Node
+        :param mod: the parent module, where the new node has to be inserted
+        :type mod: fx.GraphModule
+        """
+        submodule = mod.get_submodule(str(n.target))
+        if type(submodule) != PITConv2d:
+            raise TypeError(f"Trying to export a layer of type{type(submodule)}")
+        # here, this is guaranteed
+        submodule = cast(PITConv2d, submodule)
+        cout_mask = submodule.features_mask.bool()
+        cin_mask = submodule.input_features_calculator.features_mask.bool()
+        # note: kernel size and dilation are not optimized for conv2d
+        new_submodule = nn.Conv2d(
+            submodule.in_channels_opt,
+            submodule.out_channels_opt,
+            submodule.kernel_size,
+            submodule.stride,
+            submodule.padding,
+            submodule.dilation,
+            submodule.groups,
+            submodule.bias is not None,
+            submodule.padding_mode)
+        new_weights = submodule.weight[cout_mask, :, :]
+        new_weights = new_weights[:, cin_mask, :]
+        new_submodule.weight = nn.parameter.Parameter(new_weights)
+        if submodule.bias is not None:
+            new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
+        mod.add_submodule(str(n.target), new_submodule)
+        return
+
+    def summary(self) -> Dict[str, Any]:
+        """Export a dictionary with the optimized layer hyperparameters
+
+        :return: a dictionary containing the optimized layer hyperparameter values
+        :rtype: Dict[str, Any]
+        """
+        return {
+            'in_channels': self.in_channels_opt,
+            'out_channels': self.out_channels_opt,
+        }
 
     @property
     def out_channels_opt(self) -> int:

@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List, Type, Tuple
+from typing import List, Type, Tuple, Any
 import operator
 import torch
 import torch.nn as nn
@@ -88,7 +88,7 @@ def layer_type(n: fx.Node, parent: fx.GraphModule) -> Type:
 
 
 def is_layer(n: fx.Node, parent: fx.GraphModule,
-             layers: Tuple[Type[nn.Module], ...]) -> bool:
+             layers: Tuple[Type[Any], ...]) -> bool:
     """Checks if a `torch.fx.Node` corresponds to a specific layer type.
 
     :param n: the target node
@@ -96,7 +96,7 @@ def is_layer(n: fx.Node, parent: fx.GraphModule,
     :param parent: the parent `nn.Module`
     :type parent: fx.GraphModule
     :param layers: the layer types to be checked
-    :type layers: Union[Type[nn.Module], Tuple[Type[nn.Module], ...]]
+    :type layers: Tuple[Type[Any], ...]]
     :return: `True` if `n` is of type `layer`
     :rtype: bool
     """
@@ -106,7 +106,7 @@ def is_layer(n: fx.Node, parent: fx.GraphModule,
 
 
 def is_inherited_layer(n: fx.Node, parent: fx.GraphModule,
-                       layers: Tuple[Type[nn.Module], ...]) -> bool:
+                       layers: Tuple[Type[Any], ...]) -> bool:
     """Checks if a `torch.fx.Node` corresponds to a specific layer type or to
        a layer that inherits the class of the specified layer
        (for instance PITConv1d inherits from nn.Conv1d).
@@ -116,7 +116,7 @@ def is_inherited_layer(n: fx.Node, parent: fx.GraphModule,
     :param parent: the parent `nn.Module`
     :type parent: fx.GraphModule
     :param layers: the layer types to be checked
-    :type layers: Union[Type[nn.Module], Tuple[Type[nn.Module], ...]]
+    :type layers: Tuple[Type[Any], ...]
     :return: `True` if `n` is of type `layer` or if 'n' inherits from 'layer'
     :rtype: bool
     """

@@ -16,20 +16,28 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Any
+from typing import cast, List, Iterable, Type, Tuple, Optional, Dict
 import math
 import torch
 import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
-from .pit_conv1d import PITConv1d
-from .pit_conv2d import PITConv2d
+
+from flexnas.methods.pit.pit_conv1d import PITConv1d
+from flexnas.methods.pit.pit_conv2d import PITConv2d
+from .pit_layer import PITLayer
 from .pit_channel_masker import PITChannelMasker
-from .pit_timestep_masker import PITTimestepMasker
-from .pit_dilation_masker import PITDilationMasker
 from flexnas.utils import model_graph
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, \
     FlattenFeaturesCalculator, ConcatFeaturesCalculator, ModAttrFeaturesCalculator
+
+# add new supported layers here:
+# TODO: can we fill this automatically based on classes that inherit from PITLayer?
+pit_layer_map: Dict[Type[nn.Module], Type[PITLayer]] = {
+    nn.Conv1d: PITConv1d,
+    nn.Conv2d: PITConv2d,
+    # nn.Linear: nn.Linear,
+}
 
 
 class PITTracer(fx.Tracer):
@@ -37,7 +45,7 @@ class PITTracer(fx.Tracer):
         super().__init__()  # type: ignore
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-        if isinstance(m, tuple(export_rules.keys())):
+        if isinstance(m, PITLayer):
             return True
         else:
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
@@ -175,12 +183,11 @@ def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMask
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    possible_targets = tuple(autoimport_rules.keys())
-    if model_graph.is_layer(n, mod, possible_targets):
+    if model_graph.is_layer(n, mod, tuple(pit_layer_map.keys())):
         if exclude(n, mod, exclude_names, exclude_types):
             return
-        layer_type = model_graph.layer_type(n, mod)
-        autoimport_rules[layer_type](n, mod, sm)
+        conv_layer_type = pit_layer_map[type(mod.get_submodule(str(n.target)))]
+        conv_layer_type.autoimport(n, mod, sm)
 
 
 def export_node(n: fx.Node, mod: fx.GraphModule,
@@ -199,12 +206,11 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    possible_targets = tuple(export_rules.keys())
-    if model_graph.is_layer(n, mod, possible_targets):
+    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
-        layer_type = model_graph.layer_type(n, mod)
-        export_rules[layer_type](n, mod)
+        layer = cast(PITLayer, mod.get_submodule(str(n.target)))
+        layer.export(n, mod)
 
 
 def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Module],
@@ -227,8 +233,7 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    possible_targets = tuple(export_rules.keys())
-    if model_graph.is_layer(n, mod, possible_targets):
+    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         target_layers.append(mod.get_submodule(str(n.target)))
@@ -317,10 +322,9 @@ def set_input_features_calculator(n: fx.Node, mod: fx.GraphModule,
     nodes in the network
     :type calc_dict: Dict[fx.Node, FeaturesCalculator]
     """
-    possible_targets = tuple(export_rules.keys())
-    if model_graph.is_layer(n, mod, possible_targets):
+    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
         prev = n.all_input_nodes[0]  # our NAS-able layers always have a single input (for now)
-        sub_mod = cast(PITConv1d, mod.get_submodule(str(n.target)))
+        sub_mod = cast(PITLayer, mod.get_submodule(str(n.target)))
         sub_mod.input_features_calculator = calc_dict[prev]
 
 
@@ -337,8 +341,7 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
     :type calc_dict: Dict[fx.Node, FeaturesCalculator]
     :raises ValueError: when the target node op is not supported
     """
-    possible_targets = tuple(export_rules.keys())
-    if model_graph.is_layer(n, mod, possible_targets):
+    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
         # For PIT NAS-able layers, the "active" output features are stored in the out_channels_eff
         # attribute, and the binary mask is in features_mask
         sub_mod = mod.get_submodule(str(n.target))
@@ -375,160 +378,3 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
     else:
         raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
     return
-
-
-####################################################################################################
-# Modify below here to add new target layers. Define three functions (autoimport, export, summary)
-# and then add them to the rules dictionaries. The signatures should always be the same.
-####################################################################################################
-
-
-def autoimport_conv1d(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
-    """Rewrites a fx.GraphModule node corresponding to a Conv1D layer, replacing it with a
-    PITConv1D layer
-
-    :param n: the node to be rewritten, corresponds to a Conv1D layer
-    :type n: fx.Node
-    :param mod: the parent module, where the new node has to be inserted
-    :type mod: fx.GraphModule
-    :param shared_masker: an optional shared channels mask derived from subsequent layers
-    :type shared_masker: Optional[PITChannelMasker]
-    """
-    submodule = cast(nn.Conv1d, mod.get_submodule(str(n.target)))
-    if sm is not None:
-        chan_masker = sm
-    else:
-        chan_masker = PITChannelMasker(submodule.out_channels)
-    new_submodule = PITConv1d(
-        submodule,
-        out_length=n.meta['tensor_meta'].shape[2],
-        out_channel_masker=chan_masker,
-        timestep_masker=PITTimestepMasker(submodule.kernel_size[0]),
-        dilation_masker=PITDilationMasker(submodule.kernel_size[0]),
-    )
-    mod.add_submodule(str(n.target), new_submodule)
-    return
-
-
-def autoimport_conv2d(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITChannelMasker]):
-    """Rewrites a fx.GraphModule node corresponding to a Conv2D layer, replacing it with a
-    PITConv2D layer
-
-    :param n: the node to be rewritten, corresponds to a Conv2D layer
-    :type n: fx.Node
-    :param mod: the parent module, where the new node has to be inserted
-    :type mod: fx.GraphModule
-    :param shared_masker: an optional shared channels mask derived from subsequent layers
-    :type shared_masker: Optional[PITChannelMasker]
-    """
-    submodule = cast(nn.Conv2d, mod.get_submodule(str(n.target)))
-    chan_masker = sm if sm is not None else PITChannelMasker(submodule.out_channels)
-    # note: kernel sizse and dilation are not optimized for conv2d
-    new_submodule = PITConv2d(
-        submodule,
-        out_height=n.meta['tensor_meta'].shape[2],
-        out_width=n.meta['tensor_meta'].shape[3],
-        out_channel_masker=chan_masker,
-    )
-    mod.add_submodule(str(n.target), new_submodule)
-    return
-
-
-def export_conv1d(n: fx.Node, mod: fx.GraphModule):
-    """Rewrites a fx.GraphModule node corresponding to a PITConv1D layer, replacing it with a
-    Conv1D layer
-
-    :param n: the node to be rewritten, corresponds to a Conv1D layer
-    :type n: fx.Node
-    :param mod: the parent module, where the new node has to be inserted
-    :type mod: fx.GraphModule
-    """
-    submodule = cast(PITConv1d, mod.get_submodule(str(n.target)))
-    cout_mask = submodule.features_mask.bool()
-    cin_mask = submodule.input_features_calculator.features_mask.bool()
-    time_mask = submodule.time_mask.bool()
-    new_submodule = nn.Conv1d(
-        submodule.in_channels_opt,
-        submodule.out_channels_opt,
-        submodule.kernel_size_opt,
-        submodule.stride,
-        submodule.padding,
-        submodule.dilation_opt,
-        submodule.groups,
-        submodule.bias is not None,
-        submodule.padding_mode)
-    new_weights = submodule.weight[cout_mask, :, :]
-    new_weights = new_weights[:, cin_mask, :]
-    new_weights = new_weights[:, :, time_mask]
-    new_submodule.weight = nn.parameter.Parameter(new_weights)
-    if submodule.bias is not None:
-        new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
-    mod.add_submodule(str(n.target), new_submodule)
-    return
-
-
-def export_conv2d(n: fx.Node, mod: fx.GraphModule):
-    """Rewrites a fx.GraphModule node corresponding to a PITConv2D layer, replacing it with a
-    Conv2D layer
-
-    :param n: the node to be rewritten, corresponds to a Conv1D layer
-    :type n: fx.Node
-    :param mod: the parent module, where the new node has to be inserted
-    :type mod: fx.GraphModule
-    """
-    submodule = cast(PITConv2d, mod.get_submodule(str(n.target)))
-    cout_mask = submodule.features_mask.bool()
-    cin_mask = submodule.input_features_calculator.features_mask.bool()
-    # note: kernel size and dilation are not optimized for conv2d
-    new_submodule = nn.Conv2d(
-        submodule.in_channels_opt,
-        submodule.out_channels_opt,
-        submodule.kernel_size,
-        submodule.stride,
-        submodule.padding,
-        submodule.dilation,
-        submodule.groups,
-        submodule.bias is not None,
-        submodule.padding_mode)
-    new_weights = submodule.weight[cout_mask, :, :]
-    new_weights = new_weights[:, cin_mask, :]
-    new_submodule.weight = nn.parameter.Parameter(new_weights)
-    if submodule.bias is not None:
-        new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
-    mod.add_submodule(str(n.target), new_submodule)
-    return
-
-
-def summary_conv1d(layer: nn.Module) -> Dict[str, Any]:
-    return {
-        'in_channels': layer.in_channels_opt,
-        'out_channels': layer.out_channels_opt,
-        'kernel_size': layer.kernel_size_opt,
-        'dilation': layer.dilation_opt
-    }
-
-
-def summary_conv2d(layer: nn.Module) -> Dict[str, Any]:
-    return {
-        'in_channels': layer.in_channels_opt,
-        'out_channels': layer.out_channels_opt,
-    }
-
-
-autoimport_rules = {
-    nn.Conv1d: autoimport_conv1d,
-    nn.Conv2d: autoimport_conv2d,
-    # nn.Linear: autoimport_linear,
-}
-
-export_rules = {
-    PITConv1d: export_conv1d,
-    PITConv2d: export_conv2d,
-    # PITLinear: export_linear,
-}
-
-summary_rules = {
-    PITConv1d: summary_conv1d,
-    PITConv2d: export_conv2d,
-    # PITLinear: export_linear,
-}

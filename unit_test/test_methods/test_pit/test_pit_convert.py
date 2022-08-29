@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 from flexnas.methods import PIT
 from flexnas.methods.pit import PITConv1d
-from flexnas.methods.pit.pit_converter import export_rules
+from flexnas.methods.pit import PITLayer
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
@@ -310,11 +310,11 @@ class TestPITConvert(unittest.TestCase):
     def _check_layers_exclusion(self, new_nn: PIT, excluded: Iterable[str]):
         """Check that layers in "excluded" have not be converted to PIT form"""
         converted_layer_names = dict(new_nn._inner_model.named_modules())
-        nas_layers = tuple(export_rules.keys())
         for layer_name in excluded:
             layer = converted_layer_names[layer_name]
             # verify that the layer has not been converted to one of the NAS types
-            self.assertNotIn(type(layer), nas_layers, f"Layer {layer_name} should not be converted")
+            self.assertNotIsInstance(type(layer), PITLayer,
+                                     f"Layer {layer_name} should not be converted")
             # additionally, verify that there is no channel_masker (al PIT layers have it)
             # this is probably redundant
             try:

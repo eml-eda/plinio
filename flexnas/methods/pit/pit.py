@@ -17,11 +17,12 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Any, Tuple, Type, Iterable, Dict
+from typing import Any, Tuple, Type, Iterable, Dict, cast
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
-from .pit_converter import convert, summary_rules
+from .pit_converter import convert
+from .pit_layer import PITLayer
 
 
 class PIT(DNAS):
@@ -232,9 +233,9 @@ class PIT(DNAS):
         """
         arch = {}
         for name, layer in self._inner_model.named_modules():
-            summarizable_layers = tuple(summary_rules.keys())
-            if layer in self._target_layers and type(layer) in summarizable_layers:
-                arch[name] = summary_rules[type(layer)](layer)  # type: ignore
+            if layer in self._target_layers:
+                layer = cast(PITLayer, layer)
+                arch[name] = layer.summary()
                 arch[name]['type'] = layer.__class__.__name__
         return arch
 
