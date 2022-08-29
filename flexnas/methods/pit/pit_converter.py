@@ -300,10 +300,13 @@ def set_input_features(mod: fx.GraphModule):
         n = queue.pop(0)
         # skip nodes for which predecessors have not yet been processed completely, we'll come
         # back to them later
+        skip_flag = False
         if len(n.all_input_nodes) > 0:
             for i in n.all_input_nodes:
                 if i not in calc_dict:
-                    return
+                    skip_flag = True
+        if skip_flag:
+            continue
         set_input_features_calculator(n, mod, calc_dict)
         update_output_features_calculator(n, mod, calc_dict)
         for succ in nx_graph.successors(n):

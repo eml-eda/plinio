@@ -19,33 +19,44 @@
 from typing import Tuple, Dict, cast
 import unittest
 import math
+import random
 import torch
 from flexnas.methods import PIT
 from flexnas.methods.pit import PITConv1d
 from flexnas.methods.pit.pit_binarizer import PITBinarizer
-from unit_test.models import SimpleNN
+from unit_test.models import SimpleNN, TCResNet14
 from unit_test.models import ToyAdd, ToyChannelsCat
 from torch.nn.parameter import Parameter
 
-from unit_test.models.toy_models import ToySequentialConv1d
+from unit_test.models.toy_models import ToySequentialConv1d, ToySequentialSeparated
 
 
 class TestPITMasking(unittest.TestCase):
     """Test masking operations in PIT"""
 
+    def setUp(self):
+        self.tc_resnet_config = {
+            "input_channels": 6,
+            "output_size": 12,
+            "num_channels": [24, 36, 36, 48, 48, 72, 72],
+            "kernel_size": 9,
+            "dropout": 0.5,
+            "grad_clip": -1,
+            "use_bias": True,
+            "avg_pool": True,
+        }
+
     def test_channel_mask_init(self):
         """Test initialization of channel masks"""
         nn_ut = ToySequentialConv1d()
-        input_shape = (3, 15)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # check that the original channel mask is set with all 1
         self._check_channel_mask_init(pit_net, ('conv0', 'conv1'))
 
     def test_channel_mask_sharing(self):
         """Test that channel masks sharing works correctly"""
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # check that the original channel mask is set with all 1
         self._check_channel_mask_init(pit_net, ('conv0', 'conv1'))
         mask0 = torch.Tensor([1, 1, 1, 1, 1, 1, 0, 0, 1, 1])
@@ -54,23 +65,40 @@ class TestPITMasking(unittest.TestCase):
         mask1 = self._read_channel_mask(pit_net, 'conv1')
         self.assertTrue(torch.all(mask0 == mask1), "Masks not correctly shared")
         # after a forward step, they should remain identical
-        _ = pit_net(torch.rand(input_shape))
+        _ = pit_net(torch.rand(nn_ut.input_shape))
         mask0 = self._read_channel_mask(pit_net, 'conv0')
         mask1 = self._read_channel_mask(pit_net, 'conv1')
+        self.assertTrue(torch.all(mask0 == mask1), "Masks no longer equal after forward")
+
+    def test_channel_mask_sharing_advanced(self):
+        """Test that channel masks sharing works correctly for a more advanced model"""
+        config = self.tc_resnet_config
+        nn_ut = TCResNet14(config)
+        pit_net = PIT(nn_ut, input_shape=(6, 50))
+        # check that the original channel mask is set with all 1
+        self._check_channel_mask_init(pit_net, ('tcn.network.0.tcn1', 'tcn.network.0.downsample'))
+        mask0, _ = self._rand_binary_channel_mask(config['num_channels'][1])
+        self._write_channel_mask(pit_net, 'tcn.network.0.tcn1', mask0)
+        # since the two layers share their maskers, we should see it also on the second one
+        mask1 = self._read_channel_mask(pit_net, 'tcn.network.0.downsample')
+        self.assertTrue(torch.all(mask0 == mask1), "Masks not correctly shared")
+        # after a forward step, they should remain identical
+        _ = pit_net(torch.rand((32, 6, 50)))
+        mask0 = self._read_channel_mask(pit_net, 'tcn.network.0.tcn1')
+        mask1 = self._read_channel_mask(pit_net, 'tcn.network.0.downsample')
         self.assertTrue(torch.all(mask0 == mask1), "Masks no longer equal after forward")
 
     def test_channel_mask_cat(self):
         """Test that layers fed into a cat operation over the channels axis have correct input
         features"""
         nn_ut = ToyChannelsCat()
-        input_shape = (3, 15)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         mask0 = (torch.rand((10,)) > 0.5).float()
         self._write_channel_mask(pit_net, 'conv0', mask0)
         mask1 = (torch.rand((15,)) > 0.5).float()  # float but only 0 and 1
         self._write_channel_mask(pit_net, 'conv1', mask1)
         # execute model to propagate input features
-        _ = pit_net(torch.stack([torch.rand(input_shape)] * 32, 0))
+        _ = pit_net(torch.stack([torch.rand(nn_ut.input_shape)] * 32, 0))
         exp_features = int(torch.sum(mask0)) + int(torch.sum(mask1))
         # first channels are always alive
         exp_features += 1 if mask0[0] == 0 else 0
@@ -80,18 +108,16 @@ class TestPITMasking(unittest.TestCase):
     def test_rf_mask_init(self):
         """Test a pit layer receptive field masks at initialization"""
         nn_ut = ToySequentialConv1d()
-        input_shape = (3, 15)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._check_rf_mask_init(pit_net, ('conv0', 'conv1'))
 
     def test_rf_mask_forced(self):
         """Test a pit layer receptive field masks forcing some beta values"""
         nn_ut = ToySequentialConv1d()
-        input_shape = (3, 15)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # first try
         self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.4, 0.4, 0.25]))
-        pit_net(torch.rand(input_shape))
+        pit_net(torch.rand(nn_ut.input_shape))
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
         theta_beta = conv0.timestep_masker()
         bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
@@ -107,7 +133,7 @@ class TestPITMasking(unittest.TestCase):
         self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
         # second try
         self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.4, 0.1, 0]))
-        pit_net(torch.rand(input_shape))
+        pit_net(torch.rand(nn_ut.input_shape))
         theta_beta = conv0.timestep_masker()
         bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
         theta_beta_exp = torch.tensor([1 + 0.1, 0.1, 0])
@@ -121,18 +147,16 @@ class TestPITMasking(unittest.TestCase):
     def test_dilation_mask_init(self):
         """Test a pit layer dilation masks"""
         nn_ut = ToySequentialConv1d()
-        input_shape = (3, 15)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._check_dilation_mask_init(pit_net, ('conv0', 'conv1'))
 
     def test_dilation_mask_forced(self):
         """Test a pit layer receptive field masks forcing some beta values"""
         nn_ut = ToySequentialConv1d()
-        input_shape = (3, 15)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # first try
         self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.5, 0.2]))
-        pit_net(torch.rand(input_shape))
+        pit_net(torch.rand(nn_ut.input_shape))
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
         theta_gamma = conv0.dilation_masker()
         bin_theta_gamma = PITBinarizer.apply(theta_gamma, 0.5)
@@ -148,7 +172,7 @@ class TestPITMasking(unittest.TestCase):
         self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
         # second try
         self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.4, 0.6]))
-        pit_net(torch.rand(input_shape))
+        pit_net(torch.rand(nn_ut.input_shape))
         theta_beta = conv0.dilation_masker()
         bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
         theta_beta_exp = torch.tensor([1 + 0.6, 0.6, 1 + 0.6])
@@ -162,8 +186,7 @@ class TestPITMasking(unittest.TestCase):
     def test_keep_alive_masks(self):
         """Test the correctness of keep alive masks"""
         nn_ut = SimpleNN()
-        input_shape = (3, 40)
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # conv1 has a filter size of 5 and 57 output channels
         conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
         ka_alpha = conv1.out_channel_masker._keep_alive
@@ -199,6 +222,95 @@ class TestPITMasking(unittest.TestCase):
         self.assertGreaterEqual(chan_mask[0], 1.0)
         self.assertGreaterEqual(rf_mask[0], 1.0)
         self.assertGreaterEqual(dil_mask[0], 1.0)
+
+    def test_input_features_sequential(self):
+        """Test that layers read correctly their input features when channel masks are applied"""
+        net = ToySequentialSeparated()
+        pit_net = PIT(net, input_shape=net.input_shape)
+        alpha, cout = self._rand_binary_channel_mask(10)
+        self._write_channel_mask(pit_net, 'conv0', alpha)
+        # run an inference to update channels_eff
+        pit_net(torch.rand((32,) + net.input_shape))
+        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
+        summ = conv1.summary()
+        self.assertEqual(int(conv1.input_features_calculator.features), cout,
+                         "Wrong number of input features retured by calculator")
+        self.assertEqual(conv1.in_channels_opt, cout,
+                         "Wrong number of opt input channels retured by layer")
+        self.assertEqual(summ['in_channels'], cout,
+                         "Wrong number of opt input channels retured by summary")
+
+    def test_input_features_add(self):
+        """Test that layers read correctly their input features when channel masks are applied,
+        with sharing"""
+        net = ToyAdd()
+        pit_net = PIT(net, input_shape=net.input_shape)
+        alpha, cout = self._rand_binary_channel_mask(10)
+        self._write_channel_mask(pit_net, 'conv0', alpha)
+        # run an inference to update channels_eff
+        pit_net(torch.rand((32,) + net.input_shape))
+        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        summ = conv2.summary()
+        self.assertEqual(int(conv2.input_features_calculator.features), cout,
+                         "Wrong number of input features retured by calculator")
+        self.assertEqual(conv2.in_channels_opt, cout,
+                         "Wrong number of opt input channels retured by layer")
+        self.assertEqual(summ['in_channels'], cout,
+                         "Wrong number of opt input channels retured by summary")
+
+    def test_input_features_cat(self):
+        """Test that layers read correctly their input features when channel masks are applied,
+        with concatenation"""
+        net = ToyChannelsCat()
+        pit_net = PIT(net, input_shape=net.input_shape)
+        alpha0, cout0 = self._rand_binary_channel_mask(10)
+        self._write_channel_mask(pit_net, 'conv0', alpha0)
+        alpha1, cout1 = self._rand_binary_channel_mask(15)
+        self._write_channel_mask(pit_net, 'conv1', alpha1)
+        # run an inference to update channels_eff
+        pit_net(torch.rand((32,) + net.input_shape))
+        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        summ = conv2.summary()
+        self.assertEqual(int(conv2.input_features_calculator.features), cout0 + cout1,
+                         "Wrong number of input features retured by calculator")
+        self.assertEqual(conv2.in_channels_opt, cout0 + cout1,
+                         "Wrong number of opt input channels retured by layer")
+        self.assertEqual(summ['in_channels'], cout0 + cout1,
+                         "Wrong number of opt input channels retured by summary")
+
+    def test_input_features_advanced(self):
+        """Test that layers read correctly their input features when channel masks are applied,
+        with a complex network"""
+        config = self.tc_resnet_config
+        nn_ut = TCResNet14(config)
+        pit_net = PIT(nn_ut, input_shape=(6, 50))
+        alpha0, cout0 = self._rand_binary_channel_mask(config['num_channels'][0])
+        self._write_channel_mask(pit_net, 'conv0', alpha0)
+        converted_layer_names = dict(pit_net._inner_model.named_modules())
+        # run an inference to update channels_eff
+        pit_net(torch.rand((32, 6, 50)))
+        tcn0 = cast(PITConv1d, converted_layer_names['tcn.network.0.tcn0'])
+        summ = tcn0.summary()
+        self.assertEqual(int(tcn0.input_features_calculator.features), cout0,
+                         "Wrong number of input features retured by calculator")
+        self.assertEqual(tcn0.in_channels_opt, cout0,
+                         "Wrong number of opt input channels retured by layer")
+        self.assertEqual(summ['in_channels'], cout0,
+                         "Wrong number of opt input channels retured by summary")
+
+        alpha1, cout1 = self._rand_binary_channel_mask(config['num_channels'][1])
+        self._write_channel_mask(pit_net, 'tcn.network.0.tcn1', alpha1)
+        converted_layer_names = dict(pit_net._inner_model.named_modules())
+        # run an inference to update channels_eff
+        pit_net(torch.rand((32, 6, 50)))
+        tcn1 = cast(PITConv1d, converted_layer_names['tcn.network.1.tcn0'])
+        summ = tcn1.summary()
+        self.assertEqual(int(tcn1.input_features_calculator.features), cout1,
+                         "Wrong number of input features retured by calculator")
+        self.assertEqual(tcn1.in_channels_opt, cout1,
+                         "Wrong number of opt input channels retured by layer")
+        self.assertEqual(summ['in_channels'], cout1,
+                         "Wrong number of opt input channels retured by summary")
 
     def _check_channel_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
         """Check if the channel masks are initialized correctly"""
@@ -320,6 +432,15 @@ class TestPITMasking(unittest.TestCase):
             in_features = layer.input_features_calculator.features  # type: ignore
             self.assertEqual(in_features, exp,
                              f"Layer {name} has {in_features} input features, expected {exp}")
+
+    def _rand_binary_channel_mask(self, max_n_channels: int) -> Tuple[torch.Tensor, int]:
+        """Generate a random binary (0.0 or 1.0) mask of channels"""
+        # randomize activation of N-1 channels (the first one is always kept-alive)
+        cout = random.randint(1, max_n_channels - 1)
+        alpha = torch.tensor([1.0] * cout + [0.0] * (max_n_channels - 1 - cout))
+        alpha = alpha[torch.randperm(max_n_channels - 1)]
+        alpha = torch.cat((torch.ones((1,)), alpha))
+        return alpha, cout + 1
 
 
 if __name__ == '__main__':

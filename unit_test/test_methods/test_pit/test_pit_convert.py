@@ -47,7 +47,7 @@ class TestPITConvert(unittest.TestCase):
     def test_autoimport_simple(self):
         """Test the conversion of a simple sequential model with layer autoconversion"""
         nn_ut = SimpleNN()
-        new_nn = PIT(nn_ut, input_shape=(3, 40))
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn._inner_model)
         self._check_target_layers(new_nn, exp_tgt=2)
         self._check_input_features(new_nn, {'conv0': 3, 'conv1': 32})
@@ -113,7 +113,7 @@ class TestPITConvert(unittest.TestCase):
         self._check_layers_exclusion(new_nn, excluded)
 
         nn_ut = ToyMultiPath2()
-        new_nn = PIT(nn_ut, input_shape=(3, 60), exclude_names=excluded)
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
         # excluding conv0 and conv4, there are 4 convertible conv1d layers left
         self._check_target_layers(new_nn, exp_tgt=3)
         self._check_layers_exclusion(new_nn, excluded)
@@ -126,7 +126,7 @@ class TestPITConvert(unittest.TestCase):
         # convert with autoconvert disabled. This is as if we exclude layers except the one already
         # in PIT form
         excluded = ('conv1')
-        new_nn = PIT(nn_ut, input_shape=(3, 40), autoconvert_layers=False)
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn._inner_model, exclude_names=excluded)
 
     def test_exclude_names_advanced(self):
@@ -157,7 +157,7 @@ class TestPITConvert(unittest.TestCase):
     def test_export_with_masks(self):
         """Test the conversion of a simple model after forcing the mask values in some layers"""
         nn_ut = SimpleNN()
-        new_nn = PIT(nn_ut, input_shape=(3, 40))
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
 
         conv0 = cast(PITConv1d, new_nn._inner_model.conv0)
         conv0.out_channel_masker.alpha = nn.parameter.Parameter(
@@ -205,7 +205,7 @@ class TestPITConvert(unittest.TestCase):
     def test_arch_summary(self):
         """Test the summary report for a simple sequential model"""
         nn_ut = SimpleNN()
-        new_nn = PIT(nn_ut, input_shape=(3, 40))
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         summary = new_nn.arch_summary()
         self.assertEqual(summary['conv0']['in_channels'], 3, "Wrong in channels summary")
         self.assertEqual(summary['conv0']['out_channels'], 32, "Wrong out channels summary")

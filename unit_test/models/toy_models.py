@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ToySequentialConv1d(nn.Module):
     def __init__(self):
         super(ToySequentialConv1d, self).__init__()
-        self.input_shape = (3, None)  # fully-convolutional
+        self.input_shape = (3, 12)
         self.conv0 = nn.Conv1d(3, 10, (3,), padding='same')
         self.conv1 = nn.Conv1d(10, 20, (9,), padding='same')
 
@@ -13,10 +14,23 @@ class ToySequentialConv1d(nn.Module):
         return self.conv1(self.conv0(x))
 
 
+class ToySequentialSeparated(nn.Module):
+    def __init__(self):
+        super(ToySequentialSeparated, self).__init__()
+        self.input_shape = (3, 10)
+        self.conv0 = nn.Conv1d(3, 10, (3,), padding='same')
+        self.bn0 = nn.BatchNorm1d(10, track_running_stats=False)
+        self.pool0 = nn.MaxPool1d(2)
+        self.conv1 = nn.Conv1d(10, 20, (9,), padding='same')
+
+    def forward(self, x):
+        return self.conv1(F.relu6(self.pool0(self.bn0(self.conv0(x)))))
+
+
 class ToyAdd(nn.Module):
     def __init__(self):
         super(ToyAdd, self).__init__()
-        self.input_shape = (3, None)  # fully-convolutional
+        self.input_shape = (3, 15)
         self.conv0 = nn.Conv1d(3, 10, (3,), padding='same')
         self.conv1 = nn.Conv1d(3, 10, (3,), padding='same')
         self.conv2 = nn.Conv1d(10, 20, (5,), padding='same')
@@ -34,7 +48,7 @@ class ToyAdd(nn.Module):
 class ToyTimeCat(nn.Module):
     def __init__(self):
         super(ToyTimeCat, self).__init__()
-        self.input_shape = (3, None)  # fully-convolutional
+        self.input_shape = (3, 20)
         self.conv0 = nn.Conv1d(3, 10, (3,), padding='same')
         self.conv1 = nn.Conv1d(3, 10, (3,), padding='same')
         self.conv2 = nn.Conv1d(10, 32, (3,), padding='same')
@@ -50,7 +64,7 @@ class ToyTimeCat(nn.Module):
 class ToyChannelsCat(nn.Module):
     def __init__(self):
         super(ToyChannelsCat, self).__init__()
-        self.input_shape = (3, None)  # fully-convolutional
+        self.input_shape = (3, 24)  # fully-convolutional
         self.conv0 = nn.Conv1d(3, 10, (3,), padding='same')
         self.conv1 = nn.Conv1d(3, 15, (3,), padding='same')
         self.conv2 = nn.Conv1d(25, 32, (3,), padding='same')

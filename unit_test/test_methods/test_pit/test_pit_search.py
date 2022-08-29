@@ -66,7 +66,7 @@ class TestPITSearch(unittest.TestCase):
         # we use ToyAdd to make sure that mask sharing does not create errors on regloss
         # computation
         net = ToyAdd()
-        input_shape = (3, 15)
+        input_shape = net.input_shape
         pit_net = PIT(net, input_shape=input_shape, regularizer='macs')
         # Check the number of weights for a single conv layer
         # conv1 has Cin=3, Cout=10, K=3
@@ -101,15 +101,14 @@ class TestPITSearch(unittest.TestCase):
         without other loss components"""
         # we use ToyAdd to make sure that mask sharing does not create errors
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
         batch_size = 8
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         optimizer = optim.Adam(pit_net.parameters())
         n_steps = 10
         prev_loss = pit_net.get_regularization_loss()
         print("Initial Reg. Loss:", prev_loss.item())
         for i in range(n_steps):
-            x = torch.rand((batch_size,) + input_shape)
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_regularization_loss()
             print("Reg. Loss:", loss.item())
@@ -123,9 +122,8 @@ class TestPITSearch(unittest.TestCase):
         """Check that the weights remain equal using only the regularization loss"""
         # we use ToyAdd to verify that mask sharing does not create problems
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
         batch_size = 8
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         optimizer = optim.Adam(pit_net.parameters())
         n_steps = 10
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
@@ -135,7 +133,7 @@ class TestPITSearch(unittest.TestCase):
         init_conv1_weights = conv1.weight.clone().detach()
         init_conv2_weights = conv2.weight.clone().detach()
         for i in range(n_steps):
-            x = torch.rand((batch_size,) + input_shape)
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_regularization_loss()
             optimizer.zero_grad()
@@ -156,9 +154,8 @@ class TestPITSearch(unittest.TestCase):
         # TODO: understand why this is not verified
         # as usual, we use ToyAdd to verify mask sharing is not problematic
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
         batch_size = 8
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # we must use SGD to be sure we only consider gradients
         optimizer = optim.SGD(pit_net.parameters(), lr=0.001)
         pit_net.eval()
@@ -176,7 +173,7 @@ class TestPITSearch(unittest.TestCase):
             })
 
         for i in range(max_steps):
-            x = torch.rand((batch_size,) + input_shape)
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_regularization_loss()
             optimizer.zero_grad()
@@ -201,9 +198,8 @@ class TestPITSearch(unittest.TestCase):
         regularization loss"""
         # as usual, we use ToyAdd to verify mask sharing is not problematic
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
         batch_size = 1
-        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # we must use SGD to be sure we only consider gradients
         optimizer = optim.SGD(pit_net.parameters(), lr=0.001)
         pit_net.eval()
@@ -216,7 +212,7 @@ class TestPITSearch(unittest.TestCase):
         max_dils = [2, 2, 4]
         ths = [layer._binarization_threshold for layer in convs]
         for i in range(max_steps):
-            x = torch.rand((batch_size,) + input_shape)
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_regularization_loss()
             optimizer.zero_grad()
@@ -251,10 +247,9 @@ class TestPITSearch(unittest.TestCase):
     def test_no_train_channels(self):
         """Test that alpha masks remain fixed (and others change) with train_channels=False"""
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
         batch_size = 1
         steps = 6000
-        pit_net = PIT(nn_ut, input_shape=input_shape, train_channels=False)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_channels=False)
         optimizer = optim.Adam(pit_net.parameters())
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
         conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
@@ -264,7 +259,7 @@ class TestPITSearch(unittest.TestCase):
         max_dils = [2, 2, 4]
         ths = [layer._binarization_threshold for layer in convs]
         for i in range(steps):
-            x = torch.rand((batch_size,) + input_shape)
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_regularization_loss()
             optimizer.zero_grad()
@@ -292,10 +287,9 @@ class TestPITSearch(unittest.TestCase):
     def test_no_train_rf(self):
         """Test that beta masks remain fixed (and others change) with train_rf=False"""
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
         batch_size = 1
         steps = 6000
-        pit_net = PIT(nn_ut, input_shape=input_shape, train_rf=False)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_rf=False)
         optimizer = optim.Adam(pit_net.parameters())
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
         conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
@@ -305,7 +299,7 @@ class TestPITSearch(unittest.TestCase):
         max_dils = [2, 2, 4]
         ths = [layer._binarization_threshold for layer in convs]
         for i in range(steps):
-            x = torch.rand((batch_size,) + input_shape)
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_regularization_loss()
             optimizer.zero_grad()
@@ -333,10 +327,9 @@ class TestPITSearch(unittest.TestCase):
     def test_no_train_dilation(self):
         """Test that gamma masks remain fixed at 1 (and others change) with train_rf=False"""
         nn_ut = ToyAdd()
-        input_shape = (3, 15)
         batch_size = 1
         steps = 6000
-        pit_net = PIT(nn_ut, input_shape=input_shape, train_dilation=False)
+        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_dilation=False)
         optimizer = optim.Adam(pit_net.parameters())
         conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
         conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
@@ -346,7 +339,7 @@ class TestPITSearch(unittest.TestCase):
         max_dils = [2, 2, 4]
         ths = [layer._binarization_threshold for layer in convs]
         for i in range(steps):
-            x = torch.rand((batch_size,) + input_shape)
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_regularization_loss()
             optimizer.zero_grad()
