@@ -80,12 +80,16 @@ class TestPITSearch(unittest.TestCase):
 
         # Check the number of weights for the whole net
         # conv0 is identical to conv1, and conv2 has Cin=10, Cout=20, K=5
+        # the final FC has 140 input features and 2 output features
         exp_size_conv2 = (10 * 20 * 5)
-        exp_size_net = 2 * exp_size_conv1 + exp_size_conv2
+        exp_size_fc = (140 * 2)
+        exp_size_net = 2 * exp_size_conv1 + exp_size_conv2 + exp_size_fc
         self.assertEqual(pit_net.get_size(), exp_size_net, "Wrong net size ")
         # Check the number of MACs for the whole net
         # conv2 has half the output length due to pooling
         exp_macs_net = 2 * exp_macs_conv1 + (exp_size_conv2 * (input_shape[1] // 2))
+        # for FC, macs and size are equal
+        exp_macs_net = exp_macs_net + exp_size_fc
         self.assertEqual(pit_net.get_macs(), exp_macs_net, "Wrong net MACs")
 
         # Check that get_regularization_loss and get_macs give the same result

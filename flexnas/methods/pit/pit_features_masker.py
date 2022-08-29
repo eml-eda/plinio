@@ -88,3 +88,25 @@ class PITFeaturesMasker(nn.Module):
         :type value: bool
         """
         self.alpha.requires_grad = value
+
+
+class PITFrozenFeaturesMasker(PITFeaturesMasker):
+    """A special case for the above masker used only for output nodes. Can never be trainable"""
+    def __init__(self,
+                 out_channels: int,
+                 trainable: bool = True,
+                 keep_alive_channels: int = 1):
+        super(PITFrozenFeaturesMasker, self).__init__(
+            out_channels,
+            trainable=False,
+            keep_alive_channels=keep_alive_channels,
+        )
+        self.alpha.requires_grad = False
+
+    @property
+    def trainable(self) -> bool:
+        return self.alpha.requires_grad
+
+    @trainable.setter
+    def trainable(self, value: bool):
+        pass

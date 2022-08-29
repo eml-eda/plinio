@@ -25,8 +25,9 @@ from torch.fx.passes.shape_prop import ShapeProp
 
 from flexnas.methods.pit.pit_conv1d import PITConv1d
 from flexnas.methods.pit.pit_conv2d import PITConv2d
+from flexnas.methods.pit.pit_linear import PITLinear
 from .pit_layer import PITLayer
-from .pit_features_masker import PITFeaturesMasker
+from .pit_features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from flexnas.utils import model_graph
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, \
     FlattenFeaturesCalculator, ConcatFeaturesCalculator, ModAttrFeaturesCalculator
@@ -36,7 +37,7 @@ from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesC
 pit_layer_map: Dict[Type[nn.Module], Type[PITLayer]] = {
     nn.Conv1d: PITConv1d,
     nn.Conv2d: PITConv2d,
-    # nn.Linear: nn.Linear,
+    nn.Linear: PITLinear,
 }
 
 
@@ -114,8 +115,10 @@ def convert_layers(mod: fx.GraphModule,
     """
     g = mod.graph
     queue = model_graph.get_output_nodes(g)
-    # the shared_masker_queue is only used in 'autoimport' mode. Remains None otherwise
-    shared_masker_queue: List[Optional[PITFeaturesMasker]] = [None] * len(queue)
+    # the shared_masker_queue is only used in 'autoimport' mode.
+    # initialied with Frozen maskers to ensure output layers are never trainable
+    shared_masker_queue: List[Optional[PITFeaturesMasker]] = [
+        PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1]) for n in queue]
     # the list of target layers is only used in 'import' and 'autoimport' modes. Empty for export
     target_layers = []
     visited = []

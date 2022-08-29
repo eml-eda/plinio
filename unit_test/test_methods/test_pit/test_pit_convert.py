@@ -49,8 +49,8 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = SimpleNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn._inner_model)
-        self._check_target_layers(new_nn, exp_tgt=2)
-        self._check_input_features(new_nn, {'conv0': 3, 'conv1': 32})
+        self._check_target_layers(new_nn, exp_tgt=3)
+        self._check_input_features(new_nn, {'conv0': 3, 'conv1': 32, 'fc': 570})
 
     def test_autoimport_advanced(self):
         """Test the conversion of a ResNet-like model"""
@@ -58,13 +58,15 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = TCResNet14(config)
         new_nn = PIT(nn_ut, input_shape=(6, 50))
         self._compare_prepared(nn_ut, new_nn._inner_model)
-        self._check_target_layers(new_nn, exp_tgt=3 * len(config['num_channels'][1:]) + 1)
+        self._check_target_layers(new_nn, exp_tgt=3 * len(config['num_channels'][1:]) + 2)
         # check some random layers input features
+        fc_in_feats = config['num_channels'][-1] * (3 if config['avg_pool'] else 6)
         expected_features = {
             'conv0': 6,
             'tcn.network.0.tcn0': config['num_channels'][0],
             'tcn.network.2.downsample': config['num_channels'][1],
             'tcn.network.5.tcn1': config['num_channels'][-1],
+            'out': fc_in_feats,
         }
         self._check_input_features(new_nn, expected_features)
 
@@ -73,8 +75,8 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = ToyMultiPath1()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn._inner_model)
-        self._check_target_layers(new_nn, exp_tgt=6)
-        self._check_input_features(new_nn, {'conv2': 3, 'conv4': 50, 'conv5': 64})
+        self._check_target_layers(new_nn, exp_tgt=7)
+        self._check_input_features(new_nn, {'conv2': 3, 'conv4': 50, 'conv5': 64, 'fc': 640})
         shared_masker_rules = (
             ('conv2', 'conv4', True),   # inputs to add must share the masker
             ('conv2', 'conv5', True),   # inputs to add must share the masker
@@ -87,8 +89,7 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = ToyMultiPath2()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn._inner_model)
-        self._check_target_layers(new_nn, exp_tgt=5)
-        # self._check_input_features(new_nn, {'conv2': 3, 'conv4': 40, 'fc1': 30})
+        self._check_target_layers(new_nn, exp_tgt=6)
         self._check_input_features(new_nn, {'conv2': 3, 'conv4': 40})
         shared_masker_rules = (
             ('conv0', 'conv1', True),   # inputs to add
@@ -99,8 +100,8 @@ class TestPITConvert(unittest.TestCase):
     def test_exclude_types_simple(self):
         nn_ut = ToyMultiPath1()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv1d,))
-        # excluding Conv1D, nothing should be converted to PIT format
-        self._check_target_layers(new_nn, exp_tgt=0)
+        # excluding Conv1D, only the final FC should be converted to PIT format
+        self._check_target_layers(new_nn, exp_tgt=1)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
 
@@ -108,14 +109,14 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = ToyMultiPath1()
         excluded = ('conv0', 'conv4')
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
-        # excluding conv0 and conv4, there are 4 convertible conv1d layers left
-        self._check_target_layers(new_nn, exp_tgt=4)
+        # excluding conv0 and conv4, there are 5 convertible conv1d and linear layers left
+        self._check_target_layers(new_nn, exp_tgt=5)
         self._check_layers_exclusion(new_nn, excluded)
 
         nn_ut = ToyMultiPath2()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
-        # excluding conv0 and conv4, there are 4 convertible conv1d layers left
-        self._check_target_layers(new_nn, exp_tgt=3)
+        # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
+        self._check_target_layers(new_nn, exp_tgt=4)
         self._check_layers_exclusion(new_nn, excluded)
 
     def test_import_simple(self):
@@ -136,7 +137,7 @@ class TestPITConvert(unittest.TestCase):
         excluded = ['conv0', 'tcn.network.5.tcn1', 'tcn.network.3.tcn0']
         new_nn = PIT(nn_ut, input_shape=(6, 50), exclude_names=excluded)
         self._compare_prepared(nn_ut, new_nn._inner_model, exclude_names=excluded)
-        n_layers = 3 * len(config['num_channels'][1:]) + 1 - len(excluded)
+        n_layers = 3 * len(config['num_channels'][1:]) + 2 - len(excluded)
         self._check_layers_exclusion(new_nn, excluded)
         self._check_target_layers(new_nn, exp_tgt=n_layers)
 

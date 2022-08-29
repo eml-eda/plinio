@@ -27,7 +27,7 @@ from .pit_features_masker import PITFeaturesMasker
 from .pit_binarizer import PITBinarizer
 
 
-class PITLinear(nn.Linear):
+class PITLinear(nn.Linear, PITLayer):
     """A nn.Module implementing a Linear layer optimizable with the PIT NAS tool
 
     :param conv: the inner `torch.nn.Linear` layer to be optimized
@@ -126,8 +126,8 @@ class PITLinear(nn.Linear):
             submodule.in_features_opt,
             submodule.out_features_opt,
             submodule.bias is not None)
-        new_weights = submodule.weight[cout_mask, :, :]
-        new_weights = new_weights[:, cin_mask, :]
+        new_weights = submodule.weight[cout_mask, :]
+        new_weights = new_weights[:, cin_mask]
         new_submodule.weight = nn.parameter.Parameter(new_weights)
         if submodule.bias is not None:
             new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])

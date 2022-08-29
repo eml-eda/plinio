@@ -36,12 +36,15 @@ class ToyAdd(nn.Module):
         self.conv2 = nn.Conv1d(10, 20, (5,), padding='same')
         self.reluadd = nn.ReLU()
         self.pool = nn.MaxPool1d((2,))
+        self.fc = nn.Linear(20 * 7, 2)
 
     def forward(self, x):
         a = self.conv0(x)
         b = self.conv1(x)
         x = self.reluadd(a + b)
         y = self.conv2(self.pool(x))
+        y = torch.flatten(y, 1)
+        y = self.fc(y)
         return y
 
 
@@ -135,11 +138,10 @@ class ToyMultiPath2(nn.Module):
         self.conv3 = nn.Conv1d(3, 20, (3,), padding='same')
         self.bn1 = nn.BatchNorm1d(20, track_running_stats=False)
         self.pool1 = nn.AvgPool1d(2)
-        self.fc1 = nn.Linear(30, 40)
-        self.fc2 = nn.Linear(40, 30)
         self.relu = nn.ReLU()
         self.reluadd = nn.ReLU()
         self.conv4 = nn.Conv1d(40, 15, (3,), padding='same')
+        self.fc = nn.Linear(450, 10)
 
     def forward(self, x):
         a = self.conv0(x)
@@ -150,9 +152,10 @@ class ToyMultiPath2(nn.Module):
         w = self.pool1(self.bn1(self.conv3(x)))
         y = torch.cat((y, w), dim=1)
         y = self.relu(y)
-        y = self.fc2(self.fc1(y))
         x = self.reluadd(y + z)
         x = self.conv4(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
         return x
 
 
