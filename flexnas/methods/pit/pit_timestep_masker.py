@@ -31,8 +31,6 @@ class PITTimestepMasker(nn.Module):
     :type rf: int
     :param trainable: should the masks be trained, defaults to True
     :type trainable: bool, optional
-    :param binarization_threshold: the binarization threshold, defaults to 0.5
-    :type binarization_threshold: float, optional
     """
     def __init__(self,
                  rf: int,

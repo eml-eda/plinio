@@ -90,6 +90,8 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITLayer):
             submodule.track_running_stats)
         new_submodule.weight = nn.parameter.Parameter(submodule.weight[cout_mask])
         new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
+        new_submodule.running_mean = submodule.running_mean
+        new_submodule.running_var = submodule.running_var
         mod.add_submodule(str(n.target), new_submodule)
         return
 
