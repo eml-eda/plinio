@@ -40,6 +40,8 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITLayer):
             bn.momentum,
             bn.affine,
             bn.track_running_stats)
+        self.running_mean = bn.running_mean
+        self.running_var = bn.running_var
         self.weight = bn.weight
         self.bias = bn.bias
 
