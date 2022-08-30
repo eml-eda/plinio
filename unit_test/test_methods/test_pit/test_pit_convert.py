@@ -41,6 +41,7 @@ class TestPITConvert(unittest.TestCase):
             "dropout": 0.5,
             "grad_clip": -1,
             "use_bias": True,
+            "use_dilation": True,
             "avg_pool": True,
         }
 
