@@ -26,6 +26,8 @@ from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.pit.pit_conv1d import PITConv1d
 from flexnas.methods.pit.pit_conv2d import PITConv2d
 from flexnas.methods.pit.pit_linear import PITLinear
+from flexnas.methods.pit.pit_batchnorm_1d import PITBatchNorm1d
+from flexnas.methods.pit.pit_batchnorm_2d import PITBatchNorm2d
 from .pit_layer import PITLayer
 from .pit_features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from flexnas.utils import model_graph
@@ -38,6 +40,8 @@ pit_layer_map: Dict[Type[nn.Module], Type[PITLayer]] = {
     nn.Conv1d: PITConv1d,
     nn.Conv2d: PITConv2d,
     nn.Linear: PITLinear,
+    nn.BatchNorm1d: PITBatchNorm1d,
+    nn.BatchNorm2d: PITBatchNorm2d,
 }
 
 
@@ -236,10 +240,13 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
-        if exclude(n, mod, exclude_names, exclude_types):
-            return
-        target_layers.append(mod.get_submodule(str(n.target)))
+    # TODO: for now, batchnorm layers are excluded from targets (cost implicit in preceding conv)
+    # but we can easily add them removing the first if condition here
+    if model_graph.is_features_defining_op(n, mod):
+        if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+            if exclude(n, mod, exclude_names, exclude_types):
+                return
+            target_layers.append(mod.get_submodule(str(n.target)))
 
 
 def update_shared_masker(n: fx.Node, mod: fx.GraphModule,
@@ -347,12 +354,7 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
     :type calc_dict: Dict[fx.Node, FeaturesCalculator]
     :raises ValueError: when the target node op is not supported
     """
-    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
-        # For PIT NAS-able layers, the "active" output features are stored in the out_features_eff
-        # attribute, and the binary mask is in features_mask
-        sub_mod = mod.get_submodule(str(n.target))
-        calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_features_eff', 'features_mask')
-    elif model_graph.is_flatten(n, mod):
+    if model_graph.is_flatten(n, mod):
         # For flatten ops, the output features are computed as: input_features * spatial_size
         # note that this is NOT simply equal to the output shape if the preceding layer is a
         # NAS-able one, for which some features # could be de-activated
@@ -374,12 +376,20 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
         # this is enforced for NAS-able layers by the use of shared maskers (see above)
         calc_dict[n] = calc_dict[n.all_input_nodes[0]]
     elif model_graph.is_features_defining_op(n, mod):
-        # these are "static" (i.e., non NAS-able) nodes that alter the number of output
-        # features, and hence the number of input features of subsequent layers
-        calc_dict[n] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
+        # this is the case fo PITConv1d, PITConv2d, PITLinear
+        if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+            # For PIT NAS-able layers, the "active" output features are stored in the
+            # out_features_eff attribute, and the binary mask is in features_mask
+            sub_mod = mod.get_submodule(str(n.target))
+            calc_dict[n] = ModAttrFeaturesCalculator(sub_mod, 'out_features_eff', 'features_mask')
+        else:
+            # these are "static" (i.e., non NAS-able) nodes that alter the number of output
+            # features, and hence the number of input features of subsequent layers
+            calc_dict[n] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
     elif model_graph.is_features_propagating_op(n, mod):
         # these are nodes that have a single input and n. output features == n. input features
         # so, we just propagate forward the features calculator of the input
+        # this also includes PITBatchNorm1d and PITBatchNorm2d
         calc_dict[n] = calc_dict[n.all_input_nodes[0]]  # they all have a single input
     else:
         raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))

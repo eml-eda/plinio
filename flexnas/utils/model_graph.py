@@ -246,29 +246,29 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     if n.op == 'call_module':
         submodule = parent.get_submodule(str(n.target))
-        if type(submodule) == nn.BatchNorm1d:
+        if isinstance(submodule, nn.BatchNorm1d):
             return True
-        if type(submodule) == nn.BatchNorm2d:
+        if isinstance(submodule, nn.BatchNorm2d):
             return True
-        if type(submodule) == nn.AvgPool1d:
+        if isinstance(submodule, nn.AvgPool1d):
             return True
-        if type(submodule) == nn.AvgPool2d:
+        if isinstance(submodule, nn.AvgPool2d):
             return True
-        if type(submodule) == nn.MaxPool1d:
+        if isinstance(submodule, nn.MaxPool1d):
             return True
-        if type(submodule) == nn.BatchNorm2d:
+        if isinstance(submodule, nn.BatchNorm2d):
             return True
-        if type(submodule) == nn.Dropout:
+        if isinstance(submodule, nn.Dropout):
             return True
-        if type(submodule) == nn.ReLU:
+        if isinstance(submodule, nn.ReLU):
             return True
-        if type(submodule) == nn.ReLU6:
+        if isinstance(submodule, nn.ReLU6):
             return True
-        if type(submodule) == nn.ConstantPad1d:
+        if isinstance(submodule, nn.ConstantPad1d):
             return True
-        if type(submodule) == nn.ConstantPad2d:
+        if isinstance(submodule, nn.ConstantPad2d):
             return True
-        if type(submodule) == nn.AdaptiveAvgPool1d:
+        if isinstance(submodule, nn.AdaptiveAvgPool1d):
             return True
         # TODO: add others
     if n.op == 'call_function':
