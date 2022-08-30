@@ -65,7 +65,7 @@ class TestPITMasking(unittest.TestCase):
         mask1 = self._read_channel_mask(pit_net, 'conv1')
         self.assertTrue(torch.all(mask0 == mask1), "Masks not correctly shared")
         # after a forward step, they should remain identical
-        _ = pit_net(torch.rand(nn_ut.input_shape))
+        _ = pit_net(torch.rand((32,) + nn_ut.input_shape))
         mask0 = self._read_channel_mask(pit_net, 'conv0')
         mask1 = self._read_channel_mask(pit_net, 'conv1')
         self.assertTrue(torch.all(mask0 == mask1), "Masks no longer equal after forward")

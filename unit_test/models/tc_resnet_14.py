@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 import torch.nn as nn
 import torch.nn.functional as F
-# from math import ceil
+from math import ceil
 
 
 class TCResNet14(nn.Module):
@@ -97,15 +97,14 @@ class TempNet(nn.Module):
         for i in range(num_levels):
             dilation_size = list()
             k = list()
-            # dilation_size.append(2 ** i)
-            # dilation_size.append(2 ** i)
-            # k.append(ceil(original_rf[i] / dilation_size[0]))
-            # k.append(ceil(original_rf[i] / dilation_size[1]))
-            # init with dil=1
-            dilation_size.append(1)
-            dilation_size.append(1)
-            k.append(original_rf[i])
-            k.append(original_rf[i])
+            dilation_size.append(2 ** i)
+            dilation_size.append(2 ** i)
+            k.append(ceil(original_rf[i] / dilation_size[0]))
+            k.append(ceil(original_rf[i] / dilation_size[1]))
+            # dilation_size.append(1)
+            # dilation_size.append(1)
+            # k.append(original_rf[i])
+            # k.append(original_rf[i])
 
             in_channels = [
                 num_inputs, num_channels[0]] if i == 0 else [num_channels[i - 1], num_channels[i]]

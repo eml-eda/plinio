@@ -78,7 +78,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         self._beta_norm, self._gamma_norm = self._generate_norm_constants()
         self.register_buffer('out_features_eff', torch.tensor(self.out_channels,
                              dtype=torch.float32))
-        self.register_buffer('k_eff', torch.tensor(self.rf, dtype=torch.float32))
+        self.register_buffer('k_eff', torch.tensor(self.kernel_size[0], dtype=torch.float32))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the NAS-able layer.
@@ -301,9 +301,12 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :return: A tuple of (beta, gamma) normalization constants.
         :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
-        beta_norm = torch.tensor([1.0 / (self.rf - i) for i in range(self.rf)], dtype=torch.float32)
+        beta_norm = torch.tensor(
+            [1.0 / (self.kernel_size[0] - i) for i in range(self.kernel_size[0])],
+            dtype=torch.float32
+        )
         gamma_norm = []
-        for i in range(self.rf):
+        for i in range(self.kernel_size[0]):
             k_i = 0
             for p in range(self.dilation_masker._gamma_len):
                 k_i += 0 if i % 2**p == 0 else 1
