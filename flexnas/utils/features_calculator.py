@@ -39,10 +39,10 @@ class FeaturesCalculator:
     @property
     @abstractmethod
     def features(self) -> torch.Tensor:
-        """Returns the number of active (unmasked) features/channels.
+        """Returns the number of effective features/channels.
 
         :raises NotImplementedError: on the base FeaturesCalculator class
-        :return: the number of active (unmasked) features/channels.
+        :return: the number of effective features/channels.
         :rtype: int
         """
         raise NotImplementedError
@@ -50,10 +50,10 @@ class FeaturesCalculator:
     @property
     @abstractmethod
     def features_mask(self) -> torch.Tensor:
-        """Returns the input features mask
+        """Returns the binarized input features mask
 
         :raises NotImplementedError: on the base FeaturesCalculator class
-        :return: the number of active (unmasked) features/channels.
+        :return: the binarized features mask
         :rtype: int
         """
         raise NotImplementedError

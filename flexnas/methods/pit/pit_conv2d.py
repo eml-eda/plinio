@@ -189,7 +189,8 @@ class PITConv2d(nn.Conv2d, PITLayer):
         :rtype: int
         """
         with torch.no_grad():
-            return int(self.input_features_calculator.features)
+            bin_alpha = self.input_features_calculator.features_mask
+            return int(torch.sum(bin_alpha))
 
     @property
     def features_mask(self) -> torch.Tensor:

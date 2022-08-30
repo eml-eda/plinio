@@ -216,7 +216,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :rtype: int
         """
         with torch.no_grad():
-            return int(self.input_features_calculator.features)
+            bin_alpha = self.input_features_calculator.features_mask
+            return int(torch.sum(bin_alpha))
 
     @property
     def dilation_opt(self) -> Tuple[int]:
