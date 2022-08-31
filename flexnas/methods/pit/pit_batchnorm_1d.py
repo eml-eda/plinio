@@ -92,8 +92,14 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITLayer):
             submodule.track_running_stats)
         new_submodule.weight = nn.parameter.Parameter(submodule.weight[cout_mask])
         new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
-        new_submodule.running_mean = submodule.running_mean
-        new_submodule.running_var = submodule.running_var
+        if submodule.running_mean is None:
+            new_submodule.running_mean = None
+        else:
+            new_submodule.running_mean = submodule.running_mean[cout_mask]
+        if submodule.running_var is None:
+            new_submodule.running_var = None
+        else:
+            new_submodule.running_var = submodule.running_var[cout_mask]
         mod.add_submodule(str(n.target), new_submodule)
         return
 
