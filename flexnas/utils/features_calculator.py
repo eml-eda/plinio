@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import List
+from typing import List, cast
 import torch
 import torch.nn as nn
 
@@ -58,6 +58,9 @@ class FeaturesCalculator(nn.Module):
         """
         raise NotImplementedError
 
+    def __str__(self):
+        return self.__class__.__name__
+
 
 class ConstFeaturesCalculator(FeaturesCalculator):
     """A `FeaturesCalculator` that simply returns a constant.
@@ -74,11 +77,11 @@ class ConstFeaturesCalculator(FeaturesCalculator):
 
     @property
     def features(self) -> torch.Tensor:
-        return self.const
+        return cast(torch.Tensor, self.const)
 
     @property
     def features_mask(self) -> torch.Tensor:
-        return self.mask
+        return cast(torch.Tensor, self.mask)
 
 
 class ModAttrFeaturesCalculator(FeaturesCalculator):
@@ -123,7 +126,7 @@ class FlattenFeaturesCalculator(FeaturesCalculator):
         super(FlattenFeaturesCalculator, self).__init__()
         self.prev = prev
         self.register_buffer('multiplier', torch.tensor(multiplier))
-        self.register_buffer('mask_expander', torch.ones((self.multiplier,)))
+        self.register_buffer('mask_expander', torch.ones((multiplier,)))
 
     @property
     def features(self) -> torch.Tensor:

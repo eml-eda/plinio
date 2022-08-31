@@ -190,15 +190,15 @@ class TestPITMasking(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # conv1 has a filter size of 5 and 57 output channels
         conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        ka_alpha = conv1.out_features_masker._keep_alive
+        ka_alpha = cast(torch.Tensor, conv1.out_features_masker._keep_alive)
         exp_ka_alpha = torch.tensor([1.0] + [0.0] * 56, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_alpha, exp_ka_alpha),
                         "Wrong keep-alive mask for channels")
-        ka_beta = conv1.timestep_masker._keep_alive
+        ka_beta = cast(torch.Tensor, conv1.timestep_masker._keep_alive)
         exp_ka_beta = torch.tensor([1.0] + [0.0] * 4, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_beta, exp_ka_beta),
                         "Wrong keep-alive mask for rf")
-        ka_gamma = conv1.dilation_masker._keep_alive
+        ka_gamma = cast(torch.Tensor, conv1.dilation_masker._keep_alive)
         exp_ka_gamma = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
         self.assertTrue(torch.equal(ka_gamma, exp_ka_gamma),
                         "Wrong keep-alive mask for dilation")
@@ -340,7 +340,7 @@ class TestPITMasking(unittest.TestCase):
                 for i in range(kernel_size):
                     c_check.append([0] * i + [1] * (kernel_size - i))
                 c_check = torch.tensor(c_check)
-                c_beta = layer.timestep_masker._c_beta
+                c_beta = cast(torch.Tensor, layer.timestep_masker._c_beta)
                 self.assertTrue(torch.all(c_beta == c_check), "Wrong C beta matrix")
                 gamma_beta = layer.timestep_masker()
                 gamma_check = torch.tensor(list(range(1, kernel_size + 1))[::-1])

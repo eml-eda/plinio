@@ -17,6 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
+from typing import cast
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
@@ -54,7 +55,8 @@ class PITFeaturesMasker(nn.Module):
         """
         # this makes sure that the first "keep_alive" channels are always binarized at 1, without
         # using ifs
-        keep_alive_alpha = torch.abs(self.alpha) * (1 - self._keep_alive) + self._keep_alive
+        ka = cast(torch.Tensor, self._keep_alive)
+        keep_alive_alpha = torch.abs(self.alpha) * (1 - ka) + ka
         return keep_alive_alpha
 
     def _generate_keep_alive_mask(self, keep_alive_channels: int) -> torch.Tensor:

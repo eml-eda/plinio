@@ -17,6 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
+from typing import cast
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
@@ -53,8 +54,10 @@ class PITTimestepMasker(nn.Module):
         :return: the binary masks
         :rtype: torch.Tensor
         """
-        keep_alive_beta = torch.abs(self.beta) * (1 - self._keep_alive) + self._keep_alive
-        theta_beta = torch.matmul(self._c_beta, keep_alive_beta)
+        ka = cast(torch.Tensor, self._keep_alive)
+        c_beta = cast(torch.Tensor, self._c_beta)
+        keep_alive_beta = torch.abs(self.beta) * (1 - ka) + ka
+        theta_beta = torch.matmul(c_beta, keep_alive_beta)
         return theta_beta
 
     def _generate_keep_alive_mask(self) -> torch.Tensor:

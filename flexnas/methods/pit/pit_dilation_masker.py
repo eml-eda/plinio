@@ -17,6 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
+from typing import cast
 import math
 import torch
 import torch.nn as nn
@@ -54,8 +55,10 @@ class PITDilationMasker(nn.Module):
         """
         # this makes sure that the first "keep_alive" timestep is always binarized at 1, without
         # using ifs
-        keep_alive_gamma = torch.abs(self.gamma) * (1 - self._keep_alive) + self._keep_alive
-        theta_gamma = torch.matmul(self._c_gamma, keep_alive_gamma)
+        ka = cast(torch.Tensor, self._keep_alive)
+        c_gamma = cast(torch.Tensor, self._c_gamma)
+        keep_alive_gamma = torch.abs(self.gamma) * (1 - ka) + ka
+        theta_gamma = torch.matmul(c_gamma, keep_alive_gamma)
         return theta_gamma
 
     def _generate_keep_alive_mask(self) -> torch.Tensor:

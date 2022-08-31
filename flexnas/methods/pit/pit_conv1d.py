@@ -113,8 +113,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
         y = self._conv_forward(input, pruned_weight, self.bias)
 
         # save info for regularization
-        norm_theta_beta = torch.mul(theta_beta, self._beta_norm)
-        norm_theta_gamma = torch.mul(theta_gamma, self._gamma_norm)
+        norm_theta_beta = torch.mul(theta_beta, cast(torch.Tensor, self._beta_norm))
+        norm_theta_gamma = torch.mul(theta_gamma, cast(torch.Tensor, self._gamma_norm))
         self.out_features_eff = torch.sum(alpha)
         self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
 
