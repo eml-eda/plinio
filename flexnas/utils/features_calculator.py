@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 
-class FeaturesCalculator(nn.Module):
+class FeaturesCalculator:
     """Abstract class computing the number of features (or channels) for a layer.
 
     This is needed because we cannot rely on (static) tensor shapes to compute the computational
@@ -34,7 +34,7 @@ class FeaturesCalculator(nn.Module):
     """
     @abstractmethod
     def __init__(self):
-        super(FeaturesCalculator, self).__init__()
+        pass
 
     @property
     @abstractmethod
@@ -58,6 +58,20 @@ class FeaturesCalculator(nn.Module):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def register(self, mod: nn.Module, prefix: str = ""):
+        """Register the (optional) buffers required by the features calculator within a nn.Module
+
+        :param mod: the target module
+        :type mod: nn.Module
+        :param prefix: a string prefix for the buffer name
+        :type prefix: str
+        :raises NotImplementedError: on the base FeaturesCalculator class
+        :return: the binarized features mask
+        :rtype: int
+        """
+        raise NotImplementedError
+
     def __str__(self):
         return self.__class__.__name__
 
@@ -72,16 +86,23 @@ class ConstFeaturesCalculator(FeaturesCalculator):
     """
     def __init__(self, const: int):
         super(ConstFeaturesCalculator, self).__init__()
-        self.register_buffer('const', torch.tensor(const))
-        self.register_buffer('mask', torch.ones((const,)))
+        self.const = torch.tensor(const)
+        self.mask = torch.ones((const,))
+        self.mod = None
 
     @property
     def features(self) -> torch.Tensor:
-        return cast(torch.Tensor, self.const)
+        return cast(torch.Tensor, cast(nn.Module, self.mod).feat_calc_const)
 
     @property
     def features_mask(self) -> torch.Tensor:
-        return cast(torch.Tensor, self.mask)
+        return cast(torch.Tensor, cast(nn.Module, self.mod).feat_calc_mask)
+
+    def register(self, mod: nn.Module, prefix: str = ""):
+        if self.mod is None:
+            self.mod = mod
+            mod.register_buffer('feat_calc_const', self.const)
+            mod.register_buffer('feat_calc_mask', self.mask)
 
 
 class ModAttrFeaturesCalculator(FeaturesCalculator):
@@ -112,6 +133,10 @@ class ModAttrFeaturesCalculator(FeaturesCalculator):
     def features_mask(self) -> torch.Tensor:
         return getattr(self.mod, self.mask_attr_name)
 
+    def register(self, mod: nn.Module, prefix: str = ""):
+        # nothing to do here. we assume the mod attr is always a registered buffer
+        pass
+
 
 class FlattenFeaturesCalculator(FeaturesCalculator):
     """A `FeaturesCalculator` that computes the number of features for a flatten operation
@@ -125,21 +150,32 @@ class FlattenFeaturesCalculator(FeaturesCalculator):
     def __init__(self, prev: FeaturesCalculator, multiplier: int):
         super(FlattenFeaturesCalculator, self).__init__()
         self.prev = prev
-        self.register_buffer('multiplier', torch.tensor(multiplier))
-        self.register_buffer('mask_expander', torch.ones((multiplier,)))
+        self.mod = None
+        self.multiplier = torch.tensor(multiplier)
+        self.mask_expander = torch.ones((multiplier,))
 
     @property
     def features(self) -> torch.Tensor:
-        return self.multiplier * self.prev.features
+        mul = cast(nn.Module, self.mod).feat_calc_multiplier
+        return mul * self.prev.features
 
     @property
     def features_mask(self) -> torch.Tensor:
         prev_mask = self.prev.features_mask
         mask_list = []
         for elm in prev_mask:
-            mask_list.append(elm * self.mask_expander)
+            mask_list.append(elm * cast(nn.Module, self.mod).feat_calc_mask_expander)
         mask = torch.cat(mask_list, dim=0)
         return mask
+
+    def register(self, mod: nn.Module, prefix: str = ""):
+        # recursively ensure that predecessors are registers
+        prefix = "prev_" + prefix
+        self.prev.register(mod, prefix)
+        if self.mod is None:
+            self.mod = mod
+            mod.register_buffer('feat_calc_multiplier', self.multiplier)
+            mod.register_buffer('feat_calc_mask_expander', self.mask_expander)
 
 
 class ConcatFeaturesCalculator(FeaturesCalculator):
@@ -166,3 +202,9 @@ class ConcatFeaturesCalculator(FeaturesCalculator):
             mask_list.append(prev.features_mask)
         mask = torch.cat(mask_list, dim=0)
         return mask
+
+    def register(self, mod: nn.Module, prefix: str = ""):
+        # recursively ensure that predecessors are registers
+        for i, fc in enumerate(self.inputs):
+            prefix = f"prev_{i}" + prefix
+            fc.register(mod, prefix)

@@ -174,4 +174,5 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITLayer):
         for this layer
         :type calc: FeaturesCalculator
         """
+        calc.register(self)
         self._input_features_calculator = calc
