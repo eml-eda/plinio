@@ -43,7 +43,7 @@ class PITFeaturesMasker(nn.Module):
             torch.empty(self.out_channels, dtype=torch.float32).fill_(1.0), requires_grad=True)
         # this should be done after creating alpha
         self.trainable = trainable
-        self._keep_alive = self._generate_keep_alive_mask(keep_alive_channels)
+        self.register_buffer('_keep_alive', self._generate_keep_alive_mask(keep_alive_channels))
 
     def forward(self) -> torch.Tensor:
         """The forward function that generates the binary masks from the trainable floating point

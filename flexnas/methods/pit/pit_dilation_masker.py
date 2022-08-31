@@ -38,10 +38,10 @@ class PITDilationMasker(nn.Module):
         self.rf = rf
         self.gamma = Parameter(
             torch.empty(self._gamma_len, dtype=torch.float32).fill_(1.0), requires_grad=True)
-        # this must be done after creating beta and gamma
+        # this must be done after creating gamma
         self.trainable = trainable
-        self._keep_alive = self._generate_keep_alive_mask()
-        self._c_gamma = self._generate_c_matrix()
+        self.register_buffer('_keep_alive', self._generate_keep_alive_mask())
+        self.register_buffer('_c_gamma', self._generate_c_matrix())
 
     def forward(self) -> torch.Tensor:
         """The forward function that generates the binary masks from the trainable floating point

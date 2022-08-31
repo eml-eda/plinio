@@ -75,7 +75,9 @@ class PITConv1d(nn.Conv1d, PITLayer):
         self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
         self._binarization_threshold = binarization_threshold
-        self._beta_norm, self._gamma_norm = self._generate_norm_constants()
+        _beta_norm, _gamma_norm = self._generate_norm_constants()
+        self.register_buffer('_beta_norm', _beta_norm)
+        self.register_buffer('_gamma_norm', _gamma_norm)
         self.register_buffer('out_features_eff', torch.tensor(self.out_channels,
                              dtype=torch.float32))
         self.register_buffer('k_eff', torch.tensor(self.kernel_size[0], dtype=torch.float32))

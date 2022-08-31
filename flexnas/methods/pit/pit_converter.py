@@ -88,7 +88,9 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     mod = fx.GraphModule(tracer.root, graph, name)
     # create a "fake" minibatch of 32 inputs for shape prop
     batch_example = torch.stack([torch.rand(input_shape)] * 32, 0)
-    ShapeProp(mod).propagate(batch_example)
+    # TODO: this is not very robust. Find a better way
+    device = next(model.parameters()).device
+    ShapeProp(mod).propagate(batch_example.to(device))
     target_layers = convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
         set_input_features(mod)

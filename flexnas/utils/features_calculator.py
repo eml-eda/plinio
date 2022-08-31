@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 
 
-class FeaturesCalculator:
+class FeaturesCalculator(nn.Module):
     """Abstract class computing the number of features (or channels) for a layer.
 
     This is needed because we cannot rely on (static) tensor shapes to compute the computational
@@ -34,7 +34,7 @@ class FeaturesCalculator:
     """
     @abstractmethod
     def __init__(self):
-        pass
+        super(FeaturesCalculator, self).__init__()
 
     @property
     @abstractmethod
@@ -69,7 +69,8 @@ class ConstFeaturesCalculator(FeaturesCalculator):
     """
     def __init__(self, const: int):
         super(ConstFeaturesCalculator, self).__init__()
-        self.const = torch.tensor(const)
+        self.register_buffer('const', torch.tensor(const))
+        self.register_buffer('mask', torch.ones((const,)))
 
     @property
     def features(self) -> torch.Tensor:
@@ -77,7 +78,7 @@ class ConstFeaturesCalculator(FeaturesCalculator):
 
     @property
     def features_mask(self) -> torch.Tensor:
-        return torch.ones((int(self.const),))
+        return self.mask
 
 
 class ModAttrFeaturesCalculator(FeaturesCalculator):
@@ -121,7 +122,8 @@ class FlattenFeaturesCalculator(FeaturesCalculator):
     def __init__(self, prev: FeaturesCalculator, multiplier: int):
         super(FlattenFeaturesCalculator, self).__init__()
         self.prev = prev
-        self.multiplier = torch.tensor(multiplier)
+        self.register_buffer('multiplier', torch.tensor(multiplier))
+        self.register_buffer('mask_expander', torch.ones((self.multiplier,)))
 
     @property
     def features(self) -> torch.Tensor:
@@ -132,7 +134,7 @@ class FlattenFeaturesCalculator(FeaturesCalculator):
         prev_mask = self.prev.features_mask
         mask_list = []
         for elm in prev_mask:
-            mask_list.append(elm * torch.ones((int(self.multiplier),)))
+            mask_list.append(elm * self.mask_expander)
         mask = torch.cat(mask_list, dim=0)
         return mask
 
