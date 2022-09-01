@@ -84,7 +84,7 @@ class PITConv2d(nn.Conv2d, PITLayer):
         bin_alpha = PITBinarizer.apply(alpha, self._binarization_threshold)
         # TODO: check that the result is correct after removing the two transposes present in
         # Matteo's original version
-        pruned_weight = torch.mul(self.weight, bin_alpha.unsqueeze(1).unsqueeze(1))
+        pruned_weight = torch.mul(self.weight, bin_alpha.view(-1, 1, 1, 1))
 
         # conv operation
         y = self._conv_forward(input, pruned_weight, self.bias)
