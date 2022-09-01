@@ -20,5 +20,11 @@ from .pit import PIT
 from .pit_layer import PITLayer
 from .pit_conv1d import PITConv1d
 from .pit_conv2d import PITConv2d
+from .pit_linear import PITLinear
+from .pit_batchnorm_1d import PITBatchNorm1d
+from .pit_batchnorm_2d import PITBatchNorm2d
 
-__all__ = ['PIT', 'PITLayer', 'PITConv1d', 'PITConv2d']
+__all__ = [
+    'PIT', 'PITLayer', 'PITConv1d', 'PITConv2d', 'PITLinear',
+    'PITBatchNorm1d', 'PITBatchNorm2d',
+]
