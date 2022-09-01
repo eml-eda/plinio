@@ -67,7 +67,7 @@ class PIT(DNAS):
             train_dilation: bool = True):
         super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_shape = input_shape
-        self.inner_model, self._target_layers = convert(
+        self.seed, self._target_layers = convert(
             model,
             input_shape,
             'autoimport' if autoconvert_layers else 'import',
@@ -86,7 +86,7 @@ class PIT(DNAS):
         :return: the output tensor
         :rtype: torch.Tensor
         """
-        return self.inner_model.forward(*args)
+        return self.seed.forward(*args)
 
     def supported_regularizers(self) -> Tuple[str, ...]:
         """Returns a list of names of supported regularizers
@@ -220,7 +220,7 @@ class PIT(DNAS):
         :return: the architecture found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
-        mod, _ = convert(self.inner_model, self._input_shape, 'export')
+        mod, _ = convert(self.seed, self._input_shape, 'export')
 
         return mod
 
@@ -232,7 +232,7 @@ class PIT(DNAS):
         :rtype: Dict[str, Dict[str, Any]]
         """
         arch = {}
-        for name, layer in self.inner_model.named_modules():
+        for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
                 layer = cast(PITLayer, layer)
                 arch[name] = layer.summary()

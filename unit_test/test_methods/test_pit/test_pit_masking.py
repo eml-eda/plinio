@@ -119,7 +119,7 @@ class TestPITMasking(unittest.TestCase):
         # first try
         self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.25, 0.4, 0.4]))
         pit_net(torch.rand(nn_ut.input_shape))
-        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv0 = cast(PITConv1d, pit_net.seed.conv0)
         theta_beta = conv0.timestep_masker()
         bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
         # note: first beta element is converted to 1 regardless of value due to "keep-alive"
@@ -158,7 +158,7 @@ class TestPITMasking(unittest.TestCase):
         # first try
         self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.2, 0.5]))
         pit_net(torch.rand(nn_ut.input_shape))
-        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv0 = cast(PITConv1d, pit_net.seed.conv0)
         theta_gamma = conv0.dilation_masker()
         bin_theta_gamma = PITBinarizer.apply(theta_gamma, 0.5)
         # note: first gamma elm is converted to 1 regardless of value due to "keep-alive"
@@ -189,7 +189,7 @@ class TestPITMasking(unittest.TestCase):
         nn_ut = SimpleNN()
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # conv1 has a filter size of 5 and 57 output channels
-        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv1 = cast(PITConv1d, pit_net.seed.conv1)
         ka_alpha = cast(torch.Tensor, conv1.out_features_masker._keep_alive)
         exp_ka_alpha = torch.tensor([0.0] * 56 + [1.0], dtype=torch.float32)
         self.assertTrue(torch.equal(ka_alpha, exp_ka_alpha),
@@ -211,7 +211,7 @@ class TestPITMasking(unittest.TestCase):
         pit_net = PIT(net, input_shape=input_shape)
         x = torch.stack([torch.rand(input_shape)] * batch_size)
         # conv1 has a filter size of 5 and 57 output channels
-        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv1 = cast(PITConv1d, pit_net.seed.conv1)
         self._write_channel_mask(pit_net, 'conv1', torch.tensor([0.05] * 57))
         self._write_rf_mask(pit_net, 'conv1', torch.tensor([0.05] * 5))
         self._write_dilation_mask(pit_net, 'conv1', torch.tensor([0.05] * 3))
@@ -232,7 +232,7 @@ class TestPITMasking(unittest.TestCase):
         self._write_channel_mask(pit_net, 'conv0', alpha)
         # run an inference to update channels_eff
         pit_net(torch.rand((32,) + net.input_shape))
-        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv1 = cast(PITConv1d, pit_net.seed.conv1)
         summ = conv1.summary()
         self.assertEqual(int(conv1.input_features_calculator.features), cout,
                          "Wrong number of input features retured by calculator")
@@ -250,7 +250,7 @@ class TestPITMasking(unittest.TestCase):
         self._write_channel_mask(pit_net, 'conv0', alpha)
         # run an inference to update channels_eff
         pit_net(torch.rand((32,) + net.input_shape))
-        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
+        conv2 = cast(PITConv1d, pit_net.seed.conv2)
         summ = conv2.summary()
         self.assertEqual(int(conv2.input_features_calculator.features), cout,
                          "Wrong number of input features retured by calculator")
@@ -270,7 +270,7 @@ class TestPITMasking(unittest.TestCase):
         self._write_channel_mask(pit_net, 'conv1', alpha1)
         # run an inference to update channels_eff
         pit_net(torch.rand((32,) + net.input_shape))
-        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
+        conv2 = cast(PITConv1d, pit_net.seed.conv2)
         summ = conv2.summary()
         self.assertEqual(int(conv2.input_features_calculator.features), cout0 + cout1,
                          "Wrong number of input features retured by calculator")
@@ -287,7 +287,7 @@ class TestPITMasking(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=(6, 50))
         alpha0, cout0 = self._rand_binary_channel_mask(config['num_channels'][0])
         self._write_channel_mask(pit_net, 'conv0', alpha0)
-        converted_layer_names = dict(pit_net.inner_model.named_modules())
+        converted_layer_names = dict(pit_net.seed.named_modules())
         # run an inference to update channels_eff
         pit_net(torch.rand((32, 6, 50)))
         tcn0 = cast(PITConv1d, converted_layer_names['tcn.network.0.tcn0'])
@@ -301,7 +301,7 @@ class TestPITMasking(unittest.TestCase):
 
         alpha1, cout1 = self._rand_binary_channel_mask(config['num_channels'][1])
         self._write_channel_mask(pit_net, 'tcn.network.0.tcn1', alpha1)
-        converted_layer_names = dict(pit_net.inner_model.named_modules())
+        converted_layer_names = dict(pit_net.seed.named_modules())
         # run an inference to update channels_eff
         pit_net(torch.rand((32, 6, 50)))
         tcn1 = cast(PITConv1d, converted_layer_names['tcn.network.1.tcn0'])
@@ -315,7 +315,7 @@ class TestPITMasking(unittest.TestCase):
 
     def _check_channel_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
         """Check if the channel masks are initialized correctly"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         for layer_name in check_layers:
             layer = converted_layer_names[layer_name]
             if isinstance(layer, PITConv1d):
@@ -328,7 +328,7 @@ class TestPITMasking(unittest.TestCase):
 
     def _check_rf_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
         """Check if the RF masks are initialized correctly"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         for layer_name in check_layers:
             layer = converted_layer_names[layer_name]
             if isinstance(layer, PITConv1d):
@@ -348,7 +348,7 @@ class TestPITMasking(unittest.TestCase):
 
     def _check_dilation_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
         """Check if the dilation masks are initialized correctly"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         for layer_name in check_layers:
             layer = converted_layer_names[layer_name]
             if isinstance(layer, PITConv1d):
@@ -388,37 +388,37 @@ class TestPITMasking(unittest.TestCase):
 
     def _write_channel_mask(self, nn: PIT, layer_name: str, mask: torch.Tensor):
         """Force a given value on the output channels mask"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         layer = converted_layer_names[layer_name]
         layer.out_features_masker.alpha = Parameter(mask)  # type: ignore
 
     def _write_rf_mask(self, nn: PIT, layer_name: str, mask: torch.Tensor):
         """Force a given value on the rf mask"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         layer = converted_layer_names[layer_name]
         layer.timestep_masker.beta = Parameter(mask)  # type: ignore
 
     def _write_dilation_mask(self, nn: PIT, layer_name: str, mask: torch.Tensor):
         """Force a given value on the dilation mask"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         layer = converted_layer_names[layer_name]
         layer.dilation_masker.gamma = Parameter(mask)  # type: ignore
 
     def _read_channel_mask(self, nn: PIT, layer_name: str) -> torch.Tensor:
         """Read a value from the output channels mask of a layer"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         layer = converted_layer_names[layer_name]
         return layer.out_features_masker.alpha  # type: ignore
 
     def _read_rf_mask(self, nn: PIT, layer_name: str) -> torch.Tensor:
         """Read a value from the rf mask of a layer"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         layer = converted_layer_names[layer_name]
         return layer.timestep_masker.beta  # type: ignore
 
     def _read_dilation_mask(self, nn: PIT, layer_name: str) -> torch.Tensor:
         """Read a value from the dilation mask of a layer"""
-        converted_layer_names = dict(nn.inner_model.named_modules())
+        converted_layer_names = dict(nn.seed.named_modules())
         layer = converted_layer_names[layer_name]
         return layer.dilation_masker.gamma  # type: ignore
 
@@ -428,7 +428,7 @@ class TestPITMasking(unittest.TestCase):
         input_features_dict is a dictionary containing: {layer_name, expected_input_features}
         """
         # TODO: avoid duplicate definition from test_pit_convert.
-        converted_layer_names = dict(new_nn.inner_model.named_modules())
+        converted_layer_names = dict(new_nn.seed.named_modules())
         for name, exp in input_features_dict.items():
             layer = converted_layer_names[name]
             in_features = layer.input_features_calculator.features  # type: ignore
