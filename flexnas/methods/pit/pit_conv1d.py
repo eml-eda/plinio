@@ -24,8 +24,8 @@ import torch.nn as nn
 import itertools
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
 from .pit_features_masker import PITFeaturesMasker
-from .pit_timestep_masker import PITTimestepMasker
-from .pit_dilation_masker import PITDilationMasker
+from .pit_timestep_masker import PITTimestepMasker, PITFrozenTimestepMasker
+from .pit_dilation_masker import PITDilationMasker, PITFrozenDilationMasker
 from .pit_binarizer import PITBinarizer
 from .pit_layer import PITLayer
 
@@ -139,12 +139,16 @@ class PITConv1d(nn.Conv1d, PITLayer):
         # here, this is guaranteed
         submodule = cast(nn.Conv1d, submodule)
         chan_masker = sm if sm is not None else PITFeaturesMasker(submodule.out_channels)
+        rf = submodule.kernel_size[0]
+        stride = submodule.stride if isinstance(submodule.stride, int) else submodule.stride[0]
+        time_masker = PITFrozenTimestepMasker(rf) if stride != 1 else PITTimestepMasker(rf)
+        dil_masker = PITFrozenDilationMasker(rf) if stride != 1 else PITDilationMasker(rf)
         new_submodule = PITConv1d(
             submodule,
             out_length=n.meta['tensor_meta'].shape[2],
             out_features_masker=chan_masker,
-            timestep_masker=PITTimestepMasker(submodule.kernel_size[0]),
-            dilation_masker=PITDilationMasker(submodule.kernel_size[0]),
+            timestep_masker=time_masker,
+            dilation_masker=dil_masker,
         )
         mod.add_submodule(str(n.target), new_submodule)
         return
@@ -330,15 +334,17 @@ class PITConv1d(nn.Conv1d, PITLayer):
         """
         beta_norm = torch.tensor(
             [1.0 / (self.kernel_size[0] - i) for i in range(self.kernel_size[0])],
-            dtype=torch.float32
         )
+        # everything on the time-axis is flipped with respect to the paper
+        beta_norm = torch.flip(beta_norm, (0,))
         gamma_norm = []
         for i in range(self.kernel_size[0]):
             k_i = 0
             for p in range(self.dilation_masker._gamma_len):
                 k_i += 0 if i % 2**p == 0 else 1
             gamma_norm.append(1.0 / (self.dilation_masker._gamma_len - k_i))
-        gamma_norm = torch.tensor(gamma_norm, dtype=torch.float32)
+        # everything on the time-axis is flipped with respect to the paper
+        gamma_norm = torch.flip(torch.tensor(gamma_norm, dtype=torch.float32), (0,))
         return beta_norm, gamma_norm
 
     @property

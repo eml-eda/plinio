@@ -70,6 +70,8 @@ class PITTimestepMasker(nn.Module):
         :rtype: torch.Tensor
         """
         ka_beta = torch.tensor([1.0] + [0.0] * (self.rf - 1), dtype=torch.float32)
+        # everything on the time-axis is flipped with respect to the paper
+        ka_beta = torch.flip(ka_beta, (0,))
         return ka_beta
 
     def _generate_c_matrix(self) -> torch.Tensor:
@@ -82,6 +84,8 @@ class PITTimestepMasker(nn.Module):
         :rtype: torch.Tensor
         """
         c_beta = torch.triu(torch.ones((self.rf, self.rf), dtype=torch.float32))
+        # everything on the time-axis is flipped with respect to the paper
+        c_beta = torch.transpose(c_beta, 0, 1)
         return c_beta
 
     @property
@@ -101,3 +105,23 @@ class PITTimestepMasker(nn.Module):
         :type value: bool
         """
         self.beta.requires_grad = value
+
+
+class PITFrozenTimestepMasker(PITTimestepMasker):
+    """A special case for the above masker that can never be trainable"""
+    def __init__(self,
+                 rf: int,
+                 trainable: bool = False):
+        super(PITFrozenTimestepMasker, self).__init__(
+            rf,
+            trainable=False,
+        )
+        self.beta.requires_grad = False
+
+    @property
+    def trainable(self) -> bool:
+        return self.beta.requires_grad
+
+    @trainable.setter
+    def trainable(self, value: bool):
+        pass

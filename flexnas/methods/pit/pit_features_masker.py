@@ -69,8 +69,9 @@ class PITFeaturesMasker(nn.Module):
         never be masked
         :rtype: torch.Tensor
         """
+        # keep alive the last channel for consistency with rf and dilation
         return torch.tensor(
-            [1.0] * keep_alive_channels + [0.0] * (self.out_channels - keep_alive_channels),
+            [0.0] * (self.out_channels - keep_alive_channels) + [1.0] * keep_alive_channels,
             dtype=torch.float32)
 
     @property

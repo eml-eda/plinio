@@ -165,13 +165,13 @@ class TestPITConvert(unittest.TestCase):
         conv0.out_features_masker.alpha = nn.parameter.Parameter(
             torch.tensor([1, 1, 0, 1] * 8, dtype=torch.float))
         conv0.timestep_masker.beta = nn.parameter.Parameter(
-            torch.tensor([1, 1, 0], dtype=torch.float))
+            torch.tensor([0, 1, 1], dtype=torch.float))
 
         conv1 = cast(PITConv1d, new_nn.inner_model.conv1)
         conv1.out_features_masker.alpha = nn.parameter.Parameter(
-            torch.tensor([1, ] * 56 + [0, ], dtype=torch.float))
+            torch.tensor([1, ] * 55 + [0, 1], dtype=torch.float))
         conv1.dilation_masker.gamma = nn.parameter.Parameter(
-            torch.tensor([1, 0, 0], dtype=torch.float))
+            torch.tensor([0, 0, 1], dtype=torch.float))
         exported_nn = new_nn.arch_export()
 
         for name, child in exported_nn.named_children():
@@ -183,10 +183,10 @@ class TestPITConvert(unittest.TestCase):
                 self.assertEqual(child.kernel_size, (2,), "Wrong kernel size exported")
                 self.assertEqual(child.dilation, (1,), "Wrong dilation exported")
                 # check that first two timesteps of channel 0 are identical
-                self.assertTrue(torch.all(child.weight[0, :, 0:2] == pit_child.weight[0, :, 0:2]),
+                self.assertTrue(torch.all(child.weight[0, :, 0:2] == pit_child.weight[0, :, 1:3]),
                                 "Wrong weight values in channel 0")
                 # check that PIT's 4th channel weights are now stored in the 3rd channel
-                self.assertTrue(torch.all(child.weight[2, :, 0:2] == pit_child.weight[3, :, 0:2]),
+                self.assertTrue(torch.all(child.weight[2, :, 0:2] == pit_child.weight[3, :, 1:3]),
                                 "Wrong weight values in channel 2")
             if name == 'conv1':
                 child = cast(nn.Conv1d, child)
@@ -198,10 +198,10 @@ class TestPITConvert(unittest.TestCase):
                 # check that weights are correctly saved with dilation. In this case the
                 # number of input channels changed, so we can only check one Cin at a time
                 self.assertTrue(
-                    torch.all(child.weight[0:56, 0, 0:2] == pit_child.weight[0:56, 0, 0:6:4]),
+                    torch.all(child.weight[0:55, 0, 0:2] == pit_child.weight[0:55, 0, 0:6:4]),
                     "Wrong weight values for Cin=0")
                 self.assertTrue(
-                    torch.all(child.weight[0:56, 2, 0:2] == pit_child.weight[0:56, 3, 0:6:4]),
+                    torch.all(child.weight[0:55, 2, 0:2] == pit_child.weight[0:55, 3, 0:6:4]),
                     "Wrong weight values for Cin=2")
 
     def test_arch_summary(self):

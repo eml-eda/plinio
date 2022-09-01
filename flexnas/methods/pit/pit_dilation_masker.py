@@ -71,6 +71,8 @@ class PITDilationMasker(nn.Module):
         :rtype: torch.Tensor
         """
         ka_gamma = torch.tensor([1.0] + [0.0] * (self._gamma_len - 1), dtype=torch.float32)
+        # everything on the time-axis is flipped with respect to the paper
+        ka_gamma = torch.flip(ka_gamma, (0,))
         return ka_gamma
 
     def _generate_c_matrix(self) -> torch.Tensor:
@@ -94,7 +96,8 @@ class PITDilationMasker(nn.Module):
         c_gamma = torch.tensor(c_gamma, dtype=torch.float32)
         # transpose & flip
         c_gamma = torch.transpose(c_gamma, 0, 1)
-        c_gamma = torch.fliplr(c_gamma)
+        # everything on the time-axis is flipped with respect to the paper
+        # c_gamma = torch.fliplr(c_gamma)
         return c_gamma
 
     @property
@@ -123,3 +126,23 @@ class PITDilationMasker(nn.Module):
         :type value: bool
         """
         self.gamma.requires_grad = value
+
+
+class PITFrozenDilationMasker(PITDilationMasker):
+    """A special case for the above masker that can never be trainable"""
+    def __init__(self,
+                 rf: int,
+                 trainable: bool = False):
+        super(PITFrozenDilationMasker, self).__init__(
+            rf,
+            trainable=False,
+        )
+        self.gamma.requires_grad = False
+
+    @property
+    def trainable(self) -> bool:
+        return self.gamma.requires_grad
+
+    @trainable.setter
+    def trainable(self, value: bool):
+        pass

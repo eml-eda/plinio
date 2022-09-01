@@ -102,8 +102,8 @@ class TestPITMasking(unittest.TestCase):
         _ = pit_net(torch.stack([torch.rand(nn_ut.input_shape)] * 32, 0))
         exp_features = int(torch.sum(mask0)) + int(torch.sum(mask1))
         # first channels are always alive
-        exp_features += 1 if mask0[0] == 0 else 0
-        exp_features += 1 if mask1[0] == 0 else 0
+        exp_features += 1 if mask0[-1] == 0 else 0
+        exp_features += 1 if mask1[-1] == 0 else 0
         self._check_input_features(pit_net, {'conv2': exp_features})
 
     def test_rf_mask_init(self):
@@ -117,28 +117,28 @@ class TestPITMasking(unittest.TestCase):
         nn_ut = ToySequentialConv1d()
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # first try
-        self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.4, 0.4, 0.25]))
+        self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.25, 0.4, 0.4]))
         pit_net(torch.rand(nn_ut.input_shape))
         conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
         theta_beta = conv0.timestep_masker()
         bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
         # note: first beta element is converted to 1 regardless of value due to "keep-alive"
-        theta_beta_exp = torch.tensor([1 + 0.4 + 0.25, 0.4 + 0.25, 0.25])
-        bin_theta_beta_exp = torch.tensor([1, 1, 0])
+        theta_beta_exp = torch.tensor([0.25, 0.4 + 0.25, 1 + 0.4 + 0.25])
+        bin_theta_beta_exp = torch.tensor([0, 1, 1])
         self.assertTrue(torch.all(theta_beta == theta_beta_exp))
         self.assertTrue(torch.all(bin_theta_beta == bin_theta_beta_exp))
         k_eff = conv0.k_eff
         # obtained from the paper formulas
-        exp_norm_factors = torch.tensor([(1 / 3), (1 / 2), 1])
+        exp_norm_factors = torch.tensor([1, (1 / 2), (1 / 3)])
         k_eff_exp = torch.sum(torch.mul(theta_beta_exp, exp_norm_factors))
         self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
         # second try
-        self._write_rf_mask(pit_net, 'conv0', torch.tensor([0.4, 0.1, 0]))
+        self._write_rf_mask(pit_net, 'conv0', torch.tensor([0, 0.1, 0.4]))
         pit_net(torch.rand(nn_ut.input_shape))
         theta_beta = conv0.timestep_masker()
         bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
-        theta_beta_exp = torch.tensor([1 + 0.1, 0.1, 0])
-        bin_theta_beta_exp = torch.tensor([1, 0, 0])
+        theta_beta_exp = torch.tensor([0, 0.1, 1 + 0.1])
+        bin_theta_beta_exp = torch.tensor([0, 0, 1])
         self.assertTrue(torch.all(theta_beta == theta_beta_exp))
         self.assertTrue(torch.all(bin_theta_beta == bin_theta_beta_exp))
         k_eff = conv0.k_eff
@@ -156,7 +156,7 @@ class TestPITMasking(unittest.TestCase):
         nn_ut = ToySequentialConv1d()
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         # first try
-        self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.5, 0.2]))
+        self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.2, 0.5]))
         pit_net(torch.rand(nn_ut.input_shape))
         conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
         theta_gamma = conv0.dilation_masker()
@@ -172,7 +172,7 @@ class TestPITMasking(unittest.TestCase):
         k_eff_exp = torch.sum(torch.mul(theta_gamma_exp, exp_norm_factors))
         self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
         # second try
-        self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.4, 0.6]))
+        self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.6, 0.4]))
         pit_net(torch.rand(nn_ut.input_shape))
         theta_beta = conv0.dilation_masker()
         bin_theta_beta = PITBinarizer.apply(theta_beta, 0.5)
@@ -191,15 +191,15 @@ class TestPITMasking(unittest.TestCase):
         # conv1 has a filter size of 5 and 57 output channels
         conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
         ka_alpha = cast(torch.Tensor, conv1.out_features_masker._keep_alive)
-        exp_ka_alpha = torch.tensor([1.0] + [0.0] * 56, dtype=torch.float32)
+        exp_ka_alpha = torch.tensor([0.0] * 56 + [1.0], dtype=torch.float32)
         self.assertTrue(torch.equal(ka_alpha, exp_ka_alpha),
                         "Wrong keep-alive mask for channels")
         ka_beta = cast(torch.Tensor, conv1.timestep_masker._keep_alive)
-        exp_ka_beta = torch.tensor([1.0] + [0.0] * 4, dtype=torch.float32)
+        exp_ka_beta = torch.tensor([0.0] * 4 + [1.0], dtype=torch.float32)
         self.assertTrue(torch.equal(ka_beta, exp_ka_beta),
                         "Wrong keep-alive mask for rf")
         ka_gamma = cast(torch.Tensor, conv1.dilation_masker._keep_alive)
-        exp_ka_gamma = torch.tensor([1.0] + [0.0] * 2, dtype=torch.float32)
+        exp_ka_gamma = torch.tensor([0.0] * 2 + [1.0], dtype=torch.float32)
         self.assertTrue(torch.equal(ka_gamma, exp_ka_gamma),
                         "Wrong keep-alive mask for dilation")
 
@@ -220,9 +220,9 @@ class TestPITMasking(unittest.TestCase):
         rf_mask = conv1.timestep_masker()
         dil_mask = conv1.dilation_masker()
         # even if we set all mask values to 0.05, the first gamma element is always > 1
-        self.assertGreaterEqual(chan_mask[0], 1.0)
-        self.assertGreaterEqual(rf_mask[0], 1.0)
-        self.assertGreaterEqual(dil_mask[0], 1.0)
+        self.assertGreaterEqual(chan_mask[-1], 1.0)
+        self.assertGreaterEqual(rf_mask[-1], 1.0)
+        self.assertGreaterEqual(dil_mask[-1], 1.0)
 
     def test_input_features_sequential(self):
         """Test that layers read correctly their input features when channel masks are applied"""
@@ -338,12 +338,12 @@ class TestPITMasking(unittest.TestCase):
                 self.assertTrue(torch.all(beta == check), "Wrong beta values")
                 c_check = []
                 for i in range(kernel_size):
-                    c_check.append([0] * i + [1] * (kernel_size - i))
+                    c_check.append([1] * (i + 1) + [0] * (kernel_size - i - 1))
                 c_check = torch.tensor(c_check)
                 c_beta = cast(torch.Tensor, layer.timestep_masker._c_beta)
                 self.assertTrue(torch.all(c_beta == c_check), "Wrong C beta matrix")
                 gamma_beta = layer.timestep_masker()
-                gamma_check = torch.tensor(list(range(1, kernel_size + 1))[::-1])
+                gamma_check = torch.tensor(list(range(1, kernel_size + 1)))
                 self.assertTrue(torch.all(gamma_beta == gamma_check), "Wrong theta beta array")
 
     def _check_dilation_mask_init(self, nn: PIT, check_layers: Tuple[str, ...]):
@@ -373,6 +373,7 @@ class TestPITMasking(unittest.TestCase):
                     c_check_tr.append(row)
                     max_dilation //= 2
                 c_check = torch.transpose(torch.tensor(c_check_tr), 1, 0)
+                c_check = torch.fliplr(c_check)
                 c_gamma = layer.dilation_masker._c_gamma
                 self.assertTrue(torch.all(c_check == c_gamma), "Wrong C gamma matrix")
 
@@ -436,11 +437,11 @@ class TestPITMasking(unittest.TestCase):
 
     def _rand_binary_channel_mask(self, max_n_channels: int) -> Tuple[torch.Tensor, int]:
         """Generate a random binary (0.0 or 1.0) mask of channels"""
-        # randomize activation of N-1 channels (the first one is always kept-alive)
+        # randomize activation of N-1 channels (the last one is always kept-alive)
         cout = random.randint(1, max_n_channels - 1)
         alpha = torch.tensor([1.0] * cout + [0.0] * (max_n_channels - 1 - cout))
         alpha = alpha[torch.randperm(max_n_channels - 1)]
-        alpha = torch.cat((torch.ones((1,)), alpha))
+        alpha = torch.cat((alpha, torch.ones((1,))))
         return alpha, cout + 1
 
 

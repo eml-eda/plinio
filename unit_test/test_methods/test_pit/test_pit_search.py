@@ -67,6 +67,7 @@ class TestPITSearch(unittest.TestCase):
         # we use ToyAdd to make sure that mask sharing does not create errors on regloss
         # computation
         net = ToyAdd()
+
         input_shape = net.input_shape
         pit_net = PIT(net, input_shape=input_shape, regularizer='macs')
         # Check the number of weights for a single conv layer
@@ -176,7 +177,7 @@ class TestPITSearch(unittest.TestCase):
                 'rf': layer.timestep_masker().clone().detach(),
                 'dil': layer.dilation_masker().clone().detach(),
             })
-
+        print()
         for i in range(max_steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
@@ -236,7 +237,7 @@ class TestPITSearch(unittest.TestCase):
 
         for mask_set, th, max_dil in zip(theta_masks, ths, max_dils):
             for type in ('cout', 'rf'):
-                self.assertTrue(torch.all(mask_set[type][1:] <= th),
+                self.assertTrue(torch.all(mask_set[type][:-1] <= th),
                                 f"Mask value for {type} not smaller than {th}")
             # for dilation, the check is a bit more complex, cause we need to esclude one every
             # max_dil elements
@@ -275,7 +276,7 @@ class TestPITSearch(unittest.TestCase):
             self.assertTrue(torch.all(layer.out_features_masker() == initial),
                             "Channels mask changed unexpectedly")
             # theta beta and theta gamma should be below threshold (except kept-alive elements)
-            self.assertTrue(torch.all(layer.timestep_masker()[1:] < th),
+            self.assertTrue(torch.all(layer.timestep_masker()[:-1] < th),
                             "RF mask above threshold unexpectedly")
             # for dilation, the check is a bit more complex, cause we need to esclude one every
             # max_dil elements
@@ -315,7 +316,7 @@ class TestPITSearch(unittest.TestCase):
             self.assertTrue(torch.all(layer.timestep_masker() == initial),
                             "RF mask changed unexpectedly")
             # theta alpha and theta gamma should be below threshold (except kept-alive elements)
-            self.assertTrue(torch.all(layer.out_features_masker()[1:] < th),
+            self.assertTrue(torch.all(layer.out_features_masker()[:-1] < th),
                             "channels mask above threshold unexpectedly")
             # for dilation, the check is a bit more complex, cause we need to esclude one every
             # max_dil elements
@@ -356,9 +357,9 @@ class TestPITSearch(unittest.TestCase):
                             "Dilation mask changed unexpectedly")
             self.assertEqual(layer.dilation_opt[0], 1, "Wrong dilation opt")
             # theta alpha and theta beta should be below threshold (except kept-alive elements)
-            self.assertTrue(torch.all(layer.out_features_masker()[1:] < th),
+            self.assertTrue(torch.all(layer.out_features_masker()[:-1] < th),
                             "Channels mask above threshold unexpectedly")
-            self.assertTrue(torch.all(layer.timestep_masker()[1:] < th),
+            self.assertTrue(torch.all(layer.timestep_masker()[:-1] < th),
                             "RF mask above threshold unexpectedly")
             self.assertEqual(layer.out_features_opt, 1, "Wrong out_features_opt")
             self.assertEqual(layer.kernel_size_opt[0], 1, "Wrong kernel_size_opt")
