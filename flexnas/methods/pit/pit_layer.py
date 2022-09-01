@@ -18,8 +18,9 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Iterator, Tuple
 import torch.fx as fx
+import torch.nn as nn
 from .pit_features_masker import PITFeaturesMasker
 from flexnas.utils.features_calculator import FeaturesCalculator
 
@@ -91,3 +92,29 @@ class PITLayer:
         :rtype: Dict[str, Any]
         """
         raise NotImplementedError("Calling summary on base abstract PITLayer class")
+
+    @abstractmethod
+    def named_nas_parameters(
+            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the architectural parameters (masks) of this layer, yielding
+        both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters (masks) of this layer
+        :rtype: Iterator[nn.Parameter]
+        """
+        raise NotImplementedError("Calling arch_parameters on base abstract PITLayer class")
+
+    def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
+        """Returns an iterator over the architectural parameters (masks) of this layer
+
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters (masks) of this layer
+        :rtype: Iterator[nn.Parameter]
+        """
+        for name, param in self.named_nas_parameters(recurse=recurse):
+            yield param

@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Tuple, Dict, Any, Optional, cast
+from typing import Tuple, Dict, Any, Optional, cast, Iterator
 import torch
 import torch.fx as fx
 import torch.nn as nn
@@ -198,6 +198,30 @@ class PITConv1d(nn.Conv1d, PITLayer):
             'kernel_size': self.kernel_size_opt,
             'dilation': self.dilation_opt
         }
+
+    def named_nas_parameters(
+            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the architectural parameters (masks) of this layer, yielding
+        both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters (masks) of this layer
+        :rtype: Iterator[nn.Parameter]
+        """
+        prfx = prefix
+        prfx += "." if len(prefix) > 0 else ""
+        for name, param in self.out_features_masker.named_parameters(
+                prfx + "out_features_masker", recurse):
+            yield name, param
+        for name, param in self.timestep_masker.named_parameters(
+                prfx + "timestep_masker", recurse):
+            yield name, param
+        for name, param in self.dilation_masker.named_parameters(
+                prfx + "dilation_masker", recurse):
+            yield name, param
 
     @property
     def out_features_opt(self) -> int:

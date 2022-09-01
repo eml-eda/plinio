@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Any, Tuple, Type, Iterable, Dict, cast
+from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
@@ -67,7 +67,7 @@ class PIT(DNAS):
             train_dilation: bool = True):
         super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_shape = input_shape
-        self._inner_model, self._target_layers = convert(
+        self.inner_model, self._target_layers = convert(
             model,
             input_shape,
             'autoimport' if autoconvert_layers else 'import',
@@ -86,7 +86,7 @@ class PIT(DNAS):
         :return: the output tensor
         :rtype: torch.Tensor
         """
-        return self._inner_model.forward(*args)
+        return self.inner_model.forward(*args)
 
     def supported_regularizers(self) -> Tuple[str, ...]:
         """Returns a list of names of supported regularizers
@@ -220,7 +220,7 @@ class PIT(DNAS):
         :return: the architecture found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
-        mod, _ = convert(self._inner_model, self._input_shape, 'export')
+        mod, _ = convert(self.inner_model, self._input_shape, 'export')
 
         return mod
 
@@ -232,12 +232,54 @@ class PIT(DNAS):
         :rtype: Dict[str, Dict[str, Any]]
         """
         arch = {}
-        for name, layer in self._inner_model.named_modules():
+        for name, layer in self.inner_model.named_modules():
             if layer in self._target_layers:
                 layer = cast(PITLayer, layer)
                 arch[name] = layer.summary()
                 arch[name]['type'] = layer.__class__.__name__
         return arch
+
+    def named_nas_parameters(
+            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the architectural parameters of the NAS, yielding
+        both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters of the NAS
+        :rtype: Iterator[nn.Parameter]
+        """
+        included = set()
+        for lname, layer in self.named_modules():
+            if layer in self._target_layers:
+                layer = cast(PITLayer, layer)
+                prfx = prefix
+                prfx += "." if len(prefix) > 0 else ""
+                prfx += lname
+                for name, param in layer.named_nas_parameters(prefix=lname, recurse=recurse):
+                    # avoid duplicates (e.g. shared channels masks)
+                    if param not in included:
+                        included.add(param)
+                        yield name, param
+
+    def named_net_parameters(
+            self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the inner network parameters, EXCEPT the NAS architectural
+        parameters, yielding both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, not actually used
+        :type recurse: bool
+        :return: an iterator over the inner network parameters
+        :rtype: Iterator[nn.Parameter]
+        """
+        exclude = set(_[0] for _ in self.named_nas_parameters())
+        for name, param in self.named_parameters():
+            if name not in exclude:
+                yield name, param
 
     def __str__(self):
         """Prints the architecture found by the NAS to screen

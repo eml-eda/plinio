@@ -72,7 +72,7 @@ class TestPITSearch(unittest.TestCase):
         # Check the number of weights for a single conv layer
         # conv1 has Cin=3, Cout=10, K=3
         exp_size_conv1 = 3 * 10 * 3
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
         self.assertEqual(conv1.get_size(), exp_size_conv1, "Wrong layer size")
         # Check the number of MACs for a single conv layer
         # all convs have "same" padding
@@ -131,9 +131,9 @@ class TestPITSearch(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         optimizer = optim.Adam(pit_net.parameters())
         n_steps = 10
-        conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
         init_conv0_weights = conv0.weight.clone().detach()
         init_conv1_weights = conv1.weight.clone().detach()
         init_conv2_weights = conv2.weight.clone().detach()
@@ -165,9 +165,9 @@ class TestPITSearch(unittest.TestCase):
         optimizer = optim.SGD(pit_net.parameters(), lr=0.001)
         pit_net.eval()
         max_steps = 1000
-        conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
         convs = [conv0, conv1, conv2]
         prev_theta_masks = []
         for layer in convs:
@@ -210,9 +210,9 @@ class TestPITSearch(unittest.TestCase):
         pit_net.eval()
         # required number of steps varies with lr, but 6000 gives a sufficient margin
         max_steps = 6000
-        conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
         convs = [conv0, conv1, conv2]
         max_dils = [2, 2, 4]
         ths = [layer._binarization_threshold for layer in convs]
@@ -256,9 +256,9 @@ class TestPITSearch(unittest.TestCase):
         steps = 6000
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_features=False)
         optimizer = optim.Adam(pit_net.parameters())
-        conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
         convs = [conv0, conv1, conv2]
         initial_masks = [layer.out_features_masker().clone().detach() for layer in convs]
         max_dils = [2, 2, 4]
@@ -296,9 +296,9 @@ class TestPITSearch(unittest.TestCase):
         steps = 6000
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_rf=False)
         optimizer = optim.Adam(pit_net.parameters())
-        conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
         convs = [conv0, conv1, conv2]
         initial_masks = [layer.timestep_masker().clone().detach() for layer in convs]
         max_dils = [2, 2, 4]
@@ -336,9 +336,9 @@ class TestPITSearch(unittest.TestCase):
         steps = 6000
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape, train_dilation=False)
         optimizer = optim.Adam(pit_net.parameters())
-        conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
-        conv2 = cast(PITConv1d, pit_net._inner_model.conv2)
+        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
+        conv2 = cast(PITConv1d, pit_net.inner_model.conv2)
         convs = [conv0, conv1, conv2]
         initial_masks = [layer.dilation_masker().clone().detach() for layer in convs]
         max_dils = [2, 2, 4]
@@ -373,7 +373,7 @@ class TestPITSearch(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(pit_net.parameters())
-        conv1 = cast(PITConv1d, pit_net._inner_model.conv1)
+        conv1 = cast(PITConv1d, pit_net.inner_model.conv1)
         prev_conv1_weight = torch.zeros_like(conv1.weight)
         for i in range(n_steps):
             input = torch.stack([torch.rand(nn_ut.input_shape)] * batch_size)
@@ -439,7 +439,7 @@ class TestPITSearch(unittest.TestCase):
             err = float(torch.abs(target - output).detach().numpy().mean())
             running_err = ((running_err * i) + err) / (i + 1)
         self.assertLess(running_err, 1, "Error not decreasing")
-        conv0 = cast(PITConv1d, pit_net._inner_model.conv0)
+        conv0 = cast(PITConv1d, pit_net.inner_model.conv0)
         self.assertLess(conv0.out_features_opt, conv0.out_channels, "Channels not decreasing")
 
     def _check_output_equal(self, nn: nn.Module, pit_nn: PIT, input_shape: Tuple[int, ...],

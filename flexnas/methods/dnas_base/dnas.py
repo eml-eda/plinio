@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Any, Iterable, Tuple, Type
+from typing import Any, Iterable, Tuple, Type, Iterator
 import torch
 import torch.nn as nn
 
@@ -80,3 +80,56 @@ class DNAS(nn.Module):
         :rtype: torch.Tensor
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def named_nas_parameters(
+            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the architectural parameters of the NAS, yielding
+        both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters of the NAS
+        :rtype: Iterator[nn.Parameter]
+        """
+        raise NotImplementedError("Calling arch_parameters on base abstract DNAS class")
+
+    def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
+        """Returns an iterator over the architectural parameters of the NAS
+
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters of the NAS
+        :rtype: Iterator[nn.Parameter]
+        """
+        for name, param in self.named_nas_parameters(recurse=recurse):
+            yield param
+
+    @abstractmethod
+    def named_net_parameters(
+            self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the inner network parameters, EXCEPT the NAS architectural
+        parameters, yielding both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, not actually used
+        :type recurse: bool
+        :return: an iterator over the inner network parameters
+        :rtype: Iterator[nn.Parameter]
+        """
+        raise NotImplementedError("Calling arch_parameters on base abstract DNAS class")
+
+    def net_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
+        """Returns an iterator over the inner network parameters, EXCEPT the NAS architectural
+        parameters
+
+        :param recurse: kept for uniformity with pytorch API, not actually used
+        :type recurse: bool
+        :return: an iterator over the architectural parameters (masks) of the NAS
+        :rtype: Iterator[nn.Parameter]
+        """
+        for name, param in self.named_net_parameters(recurse=recurse):
+            yield param

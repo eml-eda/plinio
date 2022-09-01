@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Dict, Any, Optional, cast
+from typing import Dict, Any, Optional, cast, Iterator, Tuple
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -169,6 +169,24 @@ class PITConv2d(nn.Conv2d, PITLayer):
             'in_features': self.in_features_opt,
             'out_features': self.out_features_opt,
         }
+
+    def named_nas_parameters(
+            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the architectural parameters (masks) of this layer, yielding
+        both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters (masks) of this layer
+        :rtype: Iterator[nn.Parameter]
+        """
+        prfx = prefix
+        prfx += "." if len(prefix) > 0 else ""
+        for name, param in self.out_features_masker.named_parameters(
+                prfx + "out_features_masker", recurse):
+            yield name, param
 
     @property
     def out_features_opt(self) -> int:
