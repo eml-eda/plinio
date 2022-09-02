@@ -80,17 +80,15 @@ class PITConv2d(nn.Conv2d, PITLayer):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        alpha = self.out_features_masker()
-        bin_alpha = PITBinarizer.apply(alpha, self._binarization_threshold)
-        # TODO: check that the result is correct after removing the two transposes present in
-        # Matteo's original version
-        pruned_weight = torch.mul(self.weight, bin_alpha.view(-1, 1, 1, 1))
+        theta_alpha = self.out_features_masker.theta
+        bin_theta_alpha = PITBinarizer.apply(theta_alpha, self._binarization_threshold)
+        pruned_weight = torch.mul(self.weight, bin_theta_alpha.view(-1, 1, 1, 1))
 
         # conv operation
         y = self._conv_forward(input, pruned_weight, self.bias)
 
         # save info for regularization
-        self.out_features_eff = torch.sum(alpha)
+        self.out_features_eff = torch.sum(theta_alpha)
 
         return y
 
@@ -219,8 +217,8 @@ class PITConv2d(nn.Conv2d, PITLayer):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            alpha = self.out_features_masker()
-            return PITBinarizer.apply(alpha, self._binarization_threshold)
+            theta_alpha = self.out_features_masker.theta
+            return PITBinarizer.apply(theta_alpha, self._binarization_threshold)
 
     def get_size(self) -> torch.Tensor:
         """Method that computes the number of weights for the layer

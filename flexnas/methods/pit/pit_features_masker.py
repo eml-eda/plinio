@@ -46,7 +46,8 @@ class PITFeaturesMasker(nn.Module):
         self.trainable = trainable
         self.register_buffer('_keep_alive', self._generate_keep_alive_mask(keep_alive_channels))
 
-    def forward(self) -> torch.Tensor:
+    @property
+    def theta(self) -> torch.Tensor:
         """The forward function that generates the binary masks from the trainable floating point
         shadow copies.
 

@@ -44,7 +44,8 @@ class PITDilationMasker(nn.Module):
         self.register_buffer('_keep_alive', self._generate_keep_alive_mask())
         self.register_buffer('_c_gamma', self._generate_c_matrix())
 
-    def forward(self) -> torch.Tensor:
+    @property
+    def theta(self) -> torch.Tensor:
         """The forward function that generates the binary masks from the trainable floating point
         shadow copies
 

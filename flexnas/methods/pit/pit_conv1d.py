@@ -97,15 +97,13 @@ class PITConv1d(nn.Conv1d, PITLayer):
         """
         # for now we keep the same order of the old version (ch --> dil --> rf)
         # but it's probably more natural to do ch --> rf --> dil
-        alpha = self.out_features_masker()
-        bin_alpha = PITBinarizer.apply(alpha, self._binarization_threshold)
-        # TODO: check that the result is correct after removing the two transposes present in
-        # Matteo's original version
-        pruned_weight = torch.mul(self.weight, bin_alpha.unsqueeze(1).unsqueeze(1))
-        theta_gamma = self.dilation_masker()
+        theta_alpha = self.out_features_masker.theta
+        bin_theta_alpha = PITBinarizer.apply(theta_alpha, self._binarization_threshold)
+        pruned_weight = torch.mul(self.weight, bin_theta_alpha.unsqueeze(1).unsqueeze(1))
+        theta_gamma = self.dilation_masker.theta
         bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
         pruned_weight = torch.mul(bin_theta_gamma, pruned_weight)
-        theta_beta = self.timestep_masker()
+        theta_beta = self.timestep_masker.theta
         bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
         pruned_weight = torch.mul(bin_theta_beta, pruned_weight)
 
@@ -115,7 +113,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         # save info for regularization
         norm_theta_beta = torch.mul(theta_beta, cast(torch.Tensor, self._beta_norm))
         norm_theta_gamma = torch.mul(theta_gamma, cast(torch.Tensor, self._gamma_norm))
-        self.out_features_eff = torch.sum(alpha)
+        self.out_features_eff = torch.sum(theta_alpha)
         self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
 
         return y
@@ -257,7 +255,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :rtype: Tuple[int]
         """
         with torch.no_grad():
-            theta_gamma = self.dilation_masker()
+            theta_gamma = self.dilation_masker.theta
             bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
             # find the longest sequence of 0s in the bin_theta_gamma mask
             dil = max((sum(1 for _ in group) for value, group in itertools.groupby(bin_theta_gamma)
@@ -285,8 +283,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            alpha = self.out_features_masker()
-            return PITBinarizer.apply(alpha, self._binarization_threshold)
+            theta_alpha = self.out_features_masker.theta
+            return PITBinarizer.apply(theta_alpha, self._binarization_threshold)
 
     @property
     def time_mask(self) -> torch.Tensor:
@@ -298,9 +296,9 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            theta_gamma = self.dilation_masker()
+            theta_gamma = self.dilation_masker.theta
             bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
-            theta_beta = self.timestep_masker()
+            theta_beta = self.timestep_masker.theta
             bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
             bg_prod = torch.mul(bin_theta_gamma, bin_theta_beta)
             return bg_prod
