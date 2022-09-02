@@ -362,8 +362,29 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
         # NAS-able one, for which some features # could be de-activated
         ifc = calc_dict[n.all_input_nodes[0]]
         input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
-        spatial_size = math.prod(input_shape[2:])
-        calc_dict[n] = FlattenFeaturesCalculator(ifc, spatial_size)
+        start_dim = model_graph.try_get_args(n, 1, 'start_dim', 0)
+        end_dim = model_graph.try_get_args(n, 2, 'end_dim', -1)
+        assert start_dim > 0 and len(input_shape) - start_dim > 0, \
+            "Flattening the batch not supported by PIT"
+        # if flatten includes the channels
+        if start_dim == 1 or len(input_shape) - start_dim == 1:
+            flattened_size = math.prod(input_shape[2:end_dim if end_dim != -1 else None])
+            calc_dict[n] = FlattenFeaturesCalculator(ifc, flattened_size)
+        else:
+            calc_dict[n] = calc_dict[n.all_input_nodes[0]]  # just propagate the features
+    elif model_graph.is_squeeze(n, mod):
+        # Squeeze is similar to flatten but the pytorch operation is slightly different
+        ifc = calc_dict[n.all_input_nodes[0]]
+        input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
+        dim = model_graph.try_get_args(n, 1, 'dim', None)
+        if dim is None:
+            raise ValueError("Squeeze without dim not supported by PIT")
+        assert dim > 0 and len(input_shape) - dim > 0, "Squeezing the batch is not supported by PIT"
+        if dim == 1 or len(input_shape) - dim == 1:
+            flattened_size = input_shape[2]
+            calc_dict[n] = FlattenFeaturesCalculator(ifc, flattened_size)
+        else:
+            calc_dict[n] = calc_dict[n.all_input_nodes[0]]  # just propagate the features
     elif model_graph.is_concatenate(n, mod):
         if model_graph.is_features_concatenate(n, mod):
             # for concatenation over the features axis the number of output features is the sum

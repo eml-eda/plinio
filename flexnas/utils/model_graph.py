@@ -305,6 +305,19 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     if n.op == 'call_function' and n.target == torch.flatten:
         return True
+    return False
+
+
+def is_squeeze(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` instance corresponds to a squeeze operation.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a squeeze op.
+    :rtype: bool
+    """
     if n.op == 'call_method' and n.target == 'squeeze':
         return True
     if n.op == 'call_function' and n.target == torch.squeeze:
@@ -323,7 +336,8 @@ def is_features_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
     :return: `True` if `n` corresponds to a concat op.
     :rtype: bool
     """
-    if n.op == 'call_function' and n.target == torch.cat and n.kwargs['dim'] == 1:
+    dim = try_get_args(n, 1, 'dim', 0)
+    if n.op == 'call_function' and n.target == torch.cat and dim == 1:
         return True
     return False
 
@@ -341,3 +355,13 @@ def is_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
     if n.op == 'call_function' and n.target == torch.cat:
         return True
     return False
+
+
+def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> Any:
+    """Look for an argument in a fx.Node. First looks within n.args, then n.kwargs.
+    If not found, returns a default.
+    """
+    if len(n.args) > args_idx:
+        return n.args[args_idx]
+    arg = n.kwargs.get(kwargs_str)
+    return arg if arg is not None else default
