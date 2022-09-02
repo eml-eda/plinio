@@ -364,7 +364,7 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
         input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
         start_dim = model_graph.try_get_args(n, 1, 'start_dim', 0)
         end_dim = model_graph.try_get_args(n, 2, 'end_dim', -1)
-        assert start_dim > 0 and len(input_shape) - start_dim > 0, \
+        assert start_dim != 0 and len(input_shape) - start_dim != 0, \
             "Flattening the batch not supported by PIT"
         # if flatten includes the channels
         if start_dim == 1 or len(input_shape) - start_dim == 1:
@@ -379,7 +379,8 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
         dim = model_graph.try_get_args(n, 1, 'dim', None)
         if dim is None:
             raise ValueError("Squeeze without dim not supported by PIT")
-        assert dim > 0 and len(input_shape) - dim > 0, "Squeezing the batch is not supported by PIT"
+        assert dim != 0 and len(input_shape) - dim != 0, \
+            "Squeezing the batch is not supported by PIT"
         if dim == 1 or len(input_shape) - dim == 1:
             flattened_size = input_shape[2]
             calc_dict[n] = FlattenFeaturesCalculator(ifc, flattened_size)
