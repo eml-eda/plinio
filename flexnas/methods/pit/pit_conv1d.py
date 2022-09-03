@@ -139,6 +139,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         chan_masker = sm if sm is not None else PITFeaturesMasker(submodule.out_channels)
         rf = submodule.kernel_size[0]
         stride = submodule.stride if isinstance(submodule.stride, int) else submodule.stride[0]
+        # PIT cannot optimize rf and dilation with stride != 1
         time_masker = PITFrozenTimestepMasker(rf) if stride != 1 else PITTimestepMasker(rf)
         dil_masker = PITFrozenDilationMasker(rf) if stride != 1 else PITDilationMasker(rf)
         new_submodule = PITConv1d(
