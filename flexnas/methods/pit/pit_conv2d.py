@@ -58,8 +58,12 @@ class PITConv2d(nn.Conv2d, PITLayer):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode)
-        self.weight = conv.weight
-        self.bias = conv.bias
+        with torch.no_grad():
+            self.weight.copy_(conv.weight)
+            if conv.bias is not None:
+                cast(torch.nn.parameter.Parameter, self.bias).copy_(conv.bias)
+            else:
+                self.bias = None
         self.out_height = out_height
         self.out_width = out_width
         # this will be overwritten later when we process the model graph
@@ -151,9 +155,10 @@ class PITConv2d(nn.Conv2d, PITLayer):
             submodule.padding_mode)
         new_weights = submodule.weight[cout_mask, :, :]
         new_weights = new_weights[:, cin_mask, :]
-        new_submodule.weight = nn.parameter.Parameter(new_weights)
-        if submodule.bias is not None:
-            new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
+        with torch.no_grad():
+            new_submodule.weight.copy_(new_weights)
+            if submodule.bias is not None:
+                cast(nn.parameter.Parameter, new_submodule.bias).copy_(submodule.bias[cout_mask])
         mod.add_submodule(str(n.target), new_submodule)
         return
 

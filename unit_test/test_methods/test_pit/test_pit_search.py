@@ -62,6 +62,41 @@ class TestPITSearch(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=input_shape)
         self._check_output_equal(nn_ut, pit_net, input_shape)
 
+    def test_gradients_advanced(self):
+        pass
+        # input_shape = (6, 50)
+        # nn_ut = TCResNet14(self.tc_resnet_config)
+        # pit_net = PIT(nn_ut, input_shape=input_shape)
+        # self._check_output_equal(nn_ut, pit_net, input_shape)
+        # pit_net.train()
+        # # pit_net = nn_ut
+        # def my_hook(self, grad_input, grad_output):
+        #     print(grad_output)
+        #     print(grad_input)
+        # pit_net.seed.tcn.network._modules['5'].tcn0.register_full_backward_hook(my_hook)
+        # # pit_net.tcn.network._modules['5'].tcn0.register_full_backward_hook(my_hook)
+        # opt = torch.optim.SGD(pit_net.parameters(), lr=1e-3)
+        # crt = torch.torch.nn.CrossEntropyLoss()
+        # opt.zero_grad()
+        # x = []
+        # y = []
+        # for i in range(32):
+        #     xi = (i % 10) * torch.ones((6, 50))
+        #     yi = torch.tensor((i % 10), dtype=torch.long)
+        #     x.append(xi)
+        #     y.append(yi)
+        # x = torch.stack(x, dim=0)
+        # y = torch.stack(y, dim=0)
+        # y_pred = pit_net(x)
+        # task_loss = crt(y_pred, y)
+        # # loss = task_loss
+        # reg_loss = pit_net.get_regularization_loss()
+        # loss = task_loss + 1e-8 * reg_loss
+        # loss.backward()
+        # pit_net.get_regularization_loss()
+        # opt.step()
+        # pit_net.get_regularization_loss()
+
     def test_regularization_loss_init(self):
         """Test the regularization loss computation on an initialized model"""
         # we use ToyAdd to make sure that mask sharing does not create errors on regloss

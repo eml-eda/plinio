@@ -40,10 +40,13 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITLayer):
             bn.momentum,
             bn.affine,
             bn.track_running_stats)
-        self.running_mean = bn.running_mean
-        self.running_var = bn.running_var
-        self.weight = bn.weight
-        self.bias = bn.bias
+        with torch.no_grad():
+            if bn.running_mean is not None:
+                cast(torch.Tensor, self.running_mean).copy_(bn.running_mean)
+            if bn.running_var is not None:
+                cast(torch.Tensor, self.running_var).copy_(bn.running_var)
+            self.weight.copy_(bn.weight)
+            self.bias.copy_(bn.bias)
 
     @staticmethod
     def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]):
@@ -90,16 +93,19 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITLayer):
             submodule.momentum,
             submodule.affine,
             submodule.track_running_stats)
-        new_submodule.weight = nn.parameter.Parameter(submodule.weight[cout_mask])
-        new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
-        if submodule.running_mean is None:
-            new_submodule.running_mean = None
-        else:
-            new_submodule.running_mean = submodule.running_mean[cout_mask]
-        if submodule.running_var is None:
-            new_submodule.running_var = None
-        else:
-            new_submodule.running_var = submodule.running_var[cout_mask]
+        with torch.no_grad():
+            new_submodule.weight.copy_(submodule.weight[cout_mask])
+            new_submodule.bias.copy_(submodule.bias[cout_mask])
+            if submodule.running_mean is None:
+                new_submodule.running_mean = None
+            else:
+                cast(torch.Tensor, new_submodule.running_mean).copy_(
+                    submodule.running_mean[cout_mask])
+            if submodule.running_var is None:
+                new_submodule.running_var = None
+            else:
+                cast(torch.Tensor, new_submodule.running_var).copy_(
+                    submodule.running_var[cout_mask])
         mod.add_submodule(str(n.target), new_submodule)
         return
 

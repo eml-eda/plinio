@@ -47,8 +47,12 @@ class PITLinear(nn.Linear, PITLayer):
             linear.in_features,
             linear.out_features,
             linear.bias is not None)
-        self.weight = linear.weight
-        self.bias = linear.bias
+        with torch.no_grad():
+            self.weight.copy_(linear.weight)
+            if linear.bias is not None:
+                cast(torch.nn.parameter.Parameter, self.bias).copy_(linear.bias)
+            else:
+                self.bias = None
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
         self.out_features_masker = out_features_masker
@@ -128,9 +132,10 @@ class PITLinear(nn.Linear, PITLayer):
             submodule.bias is not None)
         new_weights = submodule.weight[cout_mask, :]
         new_weights = new_weights[:, cin_mask]
-        new_submodule.weight = nn.parameter.Parameter(new_weights)
-        if submodule.bias is not None:
-            new_submodule.bias = nn.parameter.Parameter(submodule.bias[cout_mask])
+        with torch.no_grad():
+            new_submodule.weight.copy_(new_weights)
+            if submodule.bias is not None:
+                new_submodule.bias.copy_(submodule.bias[cout_mask])
         mod.add_submodule(str(n.target), new_submodule)
         return
 
