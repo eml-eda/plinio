@@ -62,41 +62,6 @@ class TestPITSearch(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=input_shape)
         self._check_output_equal(nn_ut, pit_net, input_shape)
 
-    def test_gradients_advanced(self):
-        pass
-        # input_shape = (6, 50)
-        # nn_ut = TCResNet14(self.tc_resnet_config)
-        # pit_net = PIT(nn_ut, input_shape=input_shape)
-        # self._check_output_equal(nn_ut, pit_net, input_shape)
-        # pit_net.train()
-        # # pit_net = nn_ut
-        # def my_hook(self, grad_input, grad_output):
-        #     print(grad_output)
-        #     print(grad_input)
-        # pit_net.seed.tcn.network._modules['5'].tcn0.register_full_backward_hook(my_hook)
-        # # pit_net.tcn.network._modules['5'].tcn0.register_full_backward_hook(my_hook)
-        # opt = torch.optim.SGD(pit_net.parameters(), lr=1e-3)
-        # crt = torch.torch.nn.CrossEntropyLoss()
-        # opt.zero_grad()
-        # x = []
-        # y = []
-        # for i in range(32):
-        #     xi = (i % 10) * torch.ones((6, 50))
-        #     yi = torch.tensor((i % 10), dtype=torch.long)
-        #     x.append(xi)
-        #     y.append(yi)
-        # x = torch.stack(x, dim=0)
-        # y = torch.stack(y, dim=0)
-        # y_pred = pit_net(x)
-        # task_loss = crt(y_pred, y)
-        # # loss = task_loss
-        # reg_loss = pit_net.get_regularization_loss()
-        # loss = task_loss + 1e-8 * reg_loss
-        # loss.backward()
-        # pit_net.get_regularization_loss()
-        # opt.step()
-        # pit_net.get_regularization_loss()
-
     def test_regularization_loss_init(self):
         """Test the regularization loss computation on an initialized model"""
         # we use ToyAdd to make sure that mask sharing does not create errors on regloss
@@ -190,51 +155,7 @@ class TestPITSearch(unittest.TestCase):
             self.assertTrue(torch.all(init_conv2_weights == conv2_weights),
                             "Conv2 weights changing")
 
-    def test_regularization_loss_theta_descent_progressive(self):
-        """Check that theta masks always decrease using only the regularization loss"""
-        # TODO: understand why this is not verified
-        # as usual, we use ToyAdd to verify mask sharing is not problematic
-        nn_ut = ToyAdd()
-        batch_size = 8
-        pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        # we must use SGD to be sure we only consider gradients
-        optimizer = optim.SGD(pit_net.parameters(), lr=0.0001)
-        pit_net.eval()
-        max_steps = 1000
-        conv0 = cast(PITConv1d, pit_net.seed.conv0)
-        conv1 = cast(PITConv1d, pit_net.seed.conv1)
-        conv2 = cast(PITConv1d, pit_net.seed.conv2)
-        convs = [conv0, conv1, conv2]
-        prev_theta_masks = []
-        for layer in convs:
-            prev_theta_masks.append({
-                'cout': layer.out_features_masker.theta.clone().detach(),
-                'rf': layer.timestep_masker.theta.clone().detach(),
-                'dil': layer.dilation_masker.theta.clone().detach(),
-            })
-        for i in range(max_steps):
-            x = torch.rand((batch_size,) + nn_ut.input_shape)
-            pit_net(x)
-            loss = pit_net.get_regularization_loss()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            theta_masks = []
-            for layer in convs:
-                theta_masks.append({
-                    'cout': layer.out_features_masker.theta.clone().detach(),
-                    'rf': layer.timestep_masker.theta.clone().detach(),
-                    'dil': layer.dilation_masker.theta.clone().detach(),
-                })
-            print()
-            for mask_set1, mask_set2 in zip(theta_masks, prev_theta_masks):
-                for type in ('cout', 'rf', 'dil'):
-                    # check that masks are always decreasing or equal
-                    self.assertTrue(torch.all(mask_set1[type] <= mask_set2[type]),
-                                    f"Mask value for {type} not decreasing")
-            prev_theta_masks = theta_masks
-
-    def test_regularization_loss_theta_descent_final(self):
+    def test_regularization_loss_theta_descent(self):
         """Check that theta masks eventually go to 0 (except kept-alive values) using only the
         regularization loss"""
         # as usual, we use ToyAdd to verify mask sharing is not problematic
@@ -489,7 +410,7 @@ class TestPITSearch(unittest.TestCase):
             pit_nn.eval()
             y = nn(x)
             pit_y = pit_nn(x)
-            self.assertTrue(torch.all(torch.eq(y, pit_y)), "Wrong output of PIT model")
+            self.assertTrue(torch.allclose(y, pit_y), "Wrong output of PIT model")
 
 
 if __name__ == '__main__':

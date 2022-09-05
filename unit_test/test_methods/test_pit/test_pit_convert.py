@@ -226,6 +226,9 @@ class TestPITConvert(unittest.TestCase):
                           exclude_types: Tuple[Type[nn.Module], ...] = ()):
         """Compare a nn.Module and its PIT-converted version"""
         for name, child in old_mod.named_children():
+            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                # BN cannot be compared due to folding
+                continue
             new_child = cast(nn.Module, new_mod._modules[name])
             self._compare_prepared(child, new_child, base_name + name + ".",
                                    exclude_names, exclude_types)
@@ -246,15 +249,19 @@ class TestPITConvert(unittest.TestCase):
                                      f"Layer {name} wrong stride")
                     self.assertEqual(child.groups, new_child.groups,
                                      f"Layer {name} wrong groups")
-                    self.assertTrue(torch.all(child.weight == new_child.weight),
-                                    f"Layer {name} wrong weight values")
-                    self.assertTrue(torch.all(child.bias == new_child.bias),
-                                    f"Layer {name} wrong bias values")
                     # TODO: add other layers
+                    # TODO: removed checks on weights due to BN folding
+                    # self.assertTrue(torch.all(child.weight == new_child.weight),
+                    #                 f"Layer {name} wrong weight values")
+                    # self.assertTrue(torch.all(child.bias == new_child.bias),
+                    #                 f"Layer {name} wrong bias values")
 
     def _compare_identical(self, old_mod: nn.Module, new_mod: nn.Module):
         """Compare two nn.Modules, where one has been imported and exported by PIT"""
         for name, child in old_mod.named_children():
+            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                # BN cannot be compared due to folding
+                continue
             new_child = cast(nn.Module, new_mod._modules[name])
             self._compare_identical(child, new_child)
             if isinstance(child, nn.Conv1d):
@@ -266,12 +273,13 @@ class TestPITConvert(unittest.TestCase):
                 self.assertTrue(child.padding == new_child.padding)
                 self.assertTrue(child.dilation == new_child.dilation)
                 self.assertTrue(child.groups == new_child.groups)
-                self.assertTrue(torch.all(child.weight == new_child.weight))
-                if child.bias is not None:
-                    self.assertTrue(torch.all(child.bias == new_child.bias))
-                else:
-                    self.assertIsNone(new_child.bias)
                 self.assertTrue(child.padding_mode == new_child.padding_mode)
+                # Removed due to BN folding
+                # self.assertTrue(torch.all(child.weight == new_child.weight))
+                # if child.bias is not None:
+                #     self.assertTrue(torch.all(child.bias == new_child.bias))
+                # else:
+                #     self.assertIsNone(new_child.bias)
 
     def _check_target_layers(self, new_nn: PIT, exp_tgt: int):
         """Check if number of target layers is as expected"""

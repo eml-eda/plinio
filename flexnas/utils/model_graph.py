@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List, Type, Tuple, Any
+from typing import List, Type, Tuple, Any, Dict
 import operator
 import torch
 import torch.nn as nn
@@ -365,3 +365,24 @@ def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> An
         return n.args[args_idx]
     arg = n.kwargs.get(kwargs_str)
     return arg if arg is not None else default
+
+
+def parent_name(target: str) -> Tuple[str, str]:
+    """
+    Splits a torch.fx qualname into parent path and last atom.
+    For example, `foo.bar.baz` -> (`foo.bar`, `baz`)
+    """
+    # copied from:
+    # https://github.com/pytorch/pytorch/blob/master/torch/fx/experimental/optimization.py
+    *parent, name = target.rsplit('.', 1)
+    return parent[0] if parent else '', name
+
+
+def replace_node_module(node: fx.Node, modules: Dict[str, Any], new_module: torch.nn.Module):
+    """
+    Replace the implementation of fx.Node pointed by `node` with `new_module` within the dictionary
+    `modules`
+    """
+    assert isinstance(node.target, str)
+    pn, name = parent_name(node.target)
+    setattr(modules[pn], name, new_module)

@@ -83,7 +83,7 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
         raise ValueError("Unsupported conversion type {}".format(conversion_type))
 
     tracer = PITTracer()
-    graph = tracer.trace(model)
+    graph = tracer.trace(model.eval())
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
     # create a "fake" minibatch of 32 inputs for shape prop
@@ -93,7 +93,9 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     ShapeProp(mod).propagate(batch_example.to(device))
     target_layers = convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
+        fuse_bn(mod)
         set_input_features(mod)
+    mod.graph.lint()
     mod.recompile()
     return mod, target_layers
 
@@ -290,6 +292,77 @@ def update_shared_masker(n: fx.Node, mod: fx.GraphModule,
         return shared_masker
     else:
         raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
+
+
+def fuse_conv_bn_inplace(conv: PITLayer, bn):
+    """
+    Given a conv Module `A` and an batch_norm module `B`, modifies A
+    such that A(x) == B(A_old(x))
+    """
+    if not bn.track_running_stats:
+        raise AttributeError("BatchNorm foldign requires track_running_stats = True")
+    assert (isinstance(conv, PITConv1d) or isinstance(conv, PITConv2d))
+    with torch.no_grad():
+        conv.following_bn_args = {
+            'eps': bn.eps,
+            'momentum': bn.momentum,
+            'affine': bn.affine,
+            'track_running_stats': bn.track_running_stats,
+        }
+        conv_w = conv.weight
+        conv_b = conv.bias
+        bn_rm = bn.running_mean
+        bn_rv = bn.running_var
+        bn_w = bn.weight
+        bn_b = bn.bias
+        if conv_b is None:
+            conv_b = torch.zeros_like(bn_rm)
+        if bn_w is None:
+            bn_w = torch.ones_like(bn_rm)
+        if bn_b is None:
+            bn_b = torch.zeros_like(bn_rm)
+        bn_var_rsqrt = torch.rsqrt(bn_rv + bn.eps)
+        conv_w = conv_w * (bn_w * bn_var_rsqrt).reshape([-1] + [1] * (len(conv_w.shape) - 1))
+        conv_b = (conv_b - bn_rm) * bn_var_rsqrt * bn_w + bn_b
+        conv.weight.copy_(conv_w)
+        if conv.bias is None:
+            conv.bias = torch.nn.Parameter(conv_b)
+        else:
+            conv.bias.copy_(conv_b)
+
+
+def fuse_bn(mod: fx.GraphModule):
+    """Fuses all BatchNorm layers occurring just after a PITLayer with it.
+    This is needed because PIT channel masking does not work with BN just after conv.
+    Also sets the "had_bn" field in PITLayers to then re-split the BN during export
+
+    :param mod: a torch.fx.GraphModule with tensor shapes annotations.
+    :type mod: fx.GraphModule
+    """
+    # partially taken from: https://pytorch.org/tutorials/intermediate/fx_conv_bn_fuser.html
+    modules = dict(mod.named_modules())
+    for node in mod.graph.nodes:
+        if node.op != 'call_module' or node.args[0].op != 'call_module':
+            continue
+        isbn1d = isinstance(modules[node.target], PITBatchNorm1d)
+        prevconv1d = isinstance(modules[node.args[0].target], PITConv1d)
+        isbn2d = isinstance(modules[node.target], PITBatchNorm2d)
+        prevconv2d = isinstance(modules[node.args[0].target], PITConv2d)
+        if (isbn1d and prevconv1d) or (isbn2d and prevconv2d):
+            if len(node.args[0].users) > 1:
+                raise ValueError("""Convolution followed by BN but used also by other layers.
+                This layer cannot be converted by PIT""")
+            conv = modules[node.args[0].target]
+            bn = modules[node.target]
+            assert (isinstance(conv, PITConv1d) or isinstance(conv, PITConv2d))
+            fuse_conv_bn_inplace(conv, bn)
+            # next line removed because we modify inplace
+            # model_graph.replace_node_module(node.args[0], modules, fused_conv)
+            node.replace_all_uses_with(node.args[0])
+            # Now that all uses of the batch norm have been replaced, we can
+            # safely remove the batch norm.
+            mod.graph.erase_node(node)
+    mod.delete_all_unused_submodules()
 
 
 def set_input_features(mod: fx.GraphModule):

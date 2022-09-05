@@ -16,12 +16,10 @@ class SimplePitNN(nn.Module):
                                PITFeaturesMasker(32),
                                PITTimestepMasker(3),
                                PITDilationMasker(1))
-        # track_running_stats=False is important for testability, otherwise the DNAS Net and normal
-        # net won't produce the exact same outputs due to BatchNorm differences
-        self.bn0 = nn.BatchNorm1d(32, track_running_stats=False)
+        self.bn0 = nn.BatchNorm1d(32, track_running_stats=True)
         self.pool0 = nn.AvgPool1d(2)
         self.conv1 = nn.Conv1d(32, 57, (5,), padding='same')
-        self.bn1 = nn.BatchNorm1d(57, track_running_stats=False)
+        self.bn1 = nn.BatchNorm1d(57, track_running_stats=True)
         self.pool1 = nn.AvgPool1d(2)
         self.dpout = nn.Dropout(0.5)
         self.fc = nn.Linear(57 * (input_shape[-1] // 2 // 2), num_classes)

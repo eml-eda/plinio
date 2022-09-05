@@ -79,6 +79,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
         self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
         self._binarization_threshold = binarization_threshold
+        self.following_bn_args: Optional[Dict[str, Any]] = None
         _beta_norm, _gamma_norm = self._generate_norm_constants()
         self.register_buffer('_beta_norm', _beta_norm)
         self.register_buffer('_gamma_norm', _gamma_norm)
@@ -192,6 +193,26 @@ class PITConv1d(nn.Conv1d, PITLayer):
             if submodule.bias is not None:
                 cast(nn.parameter.Parameter, new_submodule.bias).copy_(submodule.bias[cout_mask])
         mod.add_submodule(str(n.target), new_submodule)
+        # unfuse the BatchNorm
+        if submodule.following_bn_args is not None:
+            new_bn = nn.BatchNorm1d(
+                submodule.out_features_opt,
+                eps=submodule.following_bn_args['eps'],
+                momentum=submodule.following_bn_args['momentum'],
+                affine=submodule.following_bn_args['affine'],
+                track_running_stats=submodule.following_bn_args['track_running_stats']
+            )
+            mod.add_submodule(str(n.target) + "_exported_bn", new_bn)
+            # add the batchnorm just after the conv in the graph
+            with mod.graph.inserting_after(n):
+                new_node = mod.graph.call_module(
+                    str(n.target) + "_exported_bn",
+                    args=(n,)
+                )
+                n.replace_all_uses_with(new_node)
+                # TODO: previous row replaces also the input to the BN with the BN itself.
+                # The following line fixes it. Is there a cleaner way to do this?
+                new_node.replace_input_with(new_node, n)
         return
 
     def summary(self) -> Dict[str, Any]:

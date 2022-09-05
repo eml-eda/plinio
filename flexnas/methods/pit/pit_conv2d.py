@@ -66,6 +66,7 @@ class PITConv2d(nn.Conv2d, PITLayer):
                 self.bias = None
         self.out_height = out_height
         self.out_width = out_width
+        self.following_bn_args: Optional[Dict[str, Any]] = None
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
         self.out_features_masker = out_features_masker
@@ -160,6 +161,23 @@ class PITConv2d(nn.Conv2d, PITLayer):
             if submodule.bias is not None:
                 cast(nn.parameter.Parameter, new_submodule.bias).copy_(submodule.bias[cout_mask])
         mod.add_submodule(str(n.target), new_submodule)
+        # unfuse the BatchNorm
+        if submodule.following_bn_args is not None:
+            new_bn = nn.BatchNorm1d(
+                submodule.out_features_opt,
+                eps=submodule.following_bn_args['eps'],
+                momentum=submodule.following_bn_args['momentum'],
+                affine=submodule.following_bn_args['affine'],
+                track_running_stats=submodule.following_bn_args['track_running_stats']
+            )
+            mod.add_submodule(str(n.target) + "_exported_bn", new_bn)
+            # add the batchnorm just after the conv in the graph
+            with mod.graph.inserting_after(n):
+                new_node = mod.graph.call_module(
+                    str(n.target) + "_exported_bn",
+                    args=(n,)
+                )
+                n.replace_all_uses_with(new_node)
         return
 
     def summary(self) -> Dict[str, Any]:
