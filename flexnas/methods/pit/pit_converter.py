@@ -93,7 +93,7 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     ShapeProp(mod).propagate(batch_example.to(device))
     target_layers = convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
-        fuse_bn(mod)
+        fuse_conv_bn(mod)
         set_input_features(mod)
     mod.graph.lint()
     mod.recompile()
@@ -244,9 +244,8 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    # TODO: for now, batchnorm layers are excluded from targets (cost implicit in preceding conv)
-    # but we can easily add them removing the first if condition here
     if model_graph.is_features_defining_op(n, mod):
+        # only conv and FC, exclude BN
         if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
             if exclude(n, mod, exclude_names, exclude_types):
                 return
@@ -331,7 +330,7 @@ def fuse_conv_bn_inplace(conv: PITLayer, bn):
             conv.bias.copy_(conv_b)
 
 
-def fuse_bn(mod: fx.GraphModule):
+def fuse_conv_bn(mod: fx.GraphModule):
     """Fuses all BatchNorm layers occurring just after a PITLayer with it.
     This is needed because PIT channel masking does not work with BN just after conv.
     Also sets the "had_bn" field in PITLayers to then re-split the BN during export

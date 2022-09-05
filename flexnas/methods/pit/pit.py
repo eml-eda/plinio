@@ -211,15 +211,24 @@ class PIT(DNAS):
                 print(f"Warning: layer {layer} does not support dilation optimization")
         self._train_dilation = value
 
-    def arch_export(self):
+    def arch_export(self, add_bn=True):
         """Export the architecture found by the NAS as a `nn.Module`
 
         The returned model will have the trained weights found during the search filled in, but
         should be fine-tuned for optimal results.
 
+        :param add_bn: determines if BatchNorm layers that have been fused with PITLayers
+        in order to make the channel masking work are re-added to the exported model. If set to
+        True, the model MUST be fine-tuned.
+        :type add_bn: bool
         :return: the architecture found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
+        if not add_bn:
+            for layer in self._target_layers:
+                if hasattr(layer, 'following_bn_args'):
+                    layer.following_bn_args = None
+
         mod, _ = convert(self.seed, self._input_shape, 'export')
 
         return mod
