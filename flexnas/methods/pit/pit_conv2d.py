@@ -163,7 +163,7 @@ class PITConv2d(nn.Conv2d, PITLayer):
         mod.add_submodule(str(n.target), new_submodule)
         # unfuse the BatchNorm
         if submodule.following_bn_args is not None:
-            new_bn = nn.BatchNorm1d(
+            new_bn = nn.BatchNorm2d(
                 submodule.out_features_opt,
                 eps=submodule.following_bn_args['eps'],
                 momentum=submodule.following_bn_args['momentum'],
