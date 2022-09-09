@@ -154,8 +154,8 @@ class PITConv2d(nn.Conv2d, PITLayer):
             submodule.groups,
             submodule.bias is not None,
             submodule.padding_mode)
-        new_weights = submodule.weight[cout_mask, :, :]
-        new_weights = new_weights[:, cin_mask, :]
+        new_weights = submodule.weight[cout_mask, :, :, :]
+        new_weights = new_weights[:, cin_mask, :, :]
         with torch.no_grad():
             new_submodule.weight.copy_(new_weights)
             if submodule.bias is not None:
