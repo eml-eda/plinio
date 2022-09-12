@@ -58,8 +58,8 @@ class PITConv2d(nn.Conv2d, PITLayer):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode)
-        if conv.groups != 1 and (
-                conv.groups != conv.in_channels or conv.groups != conv.out_channels):
+        is_depthwise = (conv.groups == conv.in_channels and conv.group == conv.out_channels)
+        if conv.groups != 1 and (not is_depthwise):
             raise AttributeError(
                 "PIT currently supports only full or DepthWise Conv., not other groupwise versions")
         with torch.no_grad():
@@ -159,7 +159,12 @@ class PITConv2d(nn.Conv2d, PITLayer):
             submodule.bias is not None,
             submodule.padding_mode)
         new_weights = submodule.weight[cout_mask, :, :, :]
-        new_weights = new_weights[:, cin_mask, :, :]
+        is_depthwise = (submodule.groups == submodule.in_channels) and (
+            submodule.groups == submodule.out_channels)
+        if not is_depthwise:
+            # for DWConv we have dimension 1 in the cin axis
+            # note: we don't handle other groupwise variants yet
+            new_weights = new_weights[:, cin_mask, :, :]
         with torch.no_grad():
             new_submodule.weight.copy_(new_weights)
             if submodule.bias is not None:
@@ -258,6 +263,7 @@ class PITConv2d(nn.Conv2d, PITLayer):
         """
         cin = self.input_features_calculator.features
         cost = cin * self.out_features_eff * self.kernel_size[0] * self.kernel_size[1]
+        cost = cost / self.groups
         return cost
 
     def get_macs(self) -> torch.Tensor:
