@@ -66,7 +66,7 @@ class PITConv1d(nn.Conv1d, PITLayer):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode)
-        is_depthwise = (conv.groups == conv.in_channels and conv.group == conv.out_channels)
+        is_depthwise = (conv.groups == conv.in_channels and conv.groups == conv.out_channels)
         if conv.groups != 1 and (not is_depthwise):
             raise AttributeError(
                 "PIT currently supports only full or DepthWise Conv., not other groupwise versions")
