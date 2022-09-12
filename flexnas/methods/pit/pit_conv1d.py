@@ -66,6 +66,10 @@ class PITConv1d(nn.Conv1d, PITLayer):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode)
+        if conv.groups != 1 and (
+                conv.groups != conv.in_channels or conv.groups != conv.out_channels):
+            raise AttributeError(
+                "PIT currently supports only full or DepthWise Conv., not other groupwise versions")
         with torch.no_grad():
             self.weight.copy_(conv.weight)
             if conv.bias is not None:

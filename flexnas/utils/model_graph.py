@@ -213,10 +213,13 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     if n.op == 'call_module':
         submodule = parent.get_submodule(str(n.target))
-        if isinstance(submodule, nn.Conv1d):
-            return True
-        if isinstance(submodule, nn.Conv2d):
-            return True
+        if isinstance(submodule, nn.Conv1d) or isinstance(submodule, nn.Conv2d):
+            if (submodule.groups == submodule.in_channels) and (
+                    submodule.groups == submodule.out_channels):
+                # this is the special case of a DepthWise Conv
+                return False
+            else:
+                return True
         if isinstance(submodule, nn.Linear):
             return True
         if isinstance(submodule, nn.Sequential):
@@ -270,6 +273,13 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if isinstance(submodule, nn.AdaptiveAvgPool1d):
             return True
+        if isinstance(submodule, nn.Conv1d) or isinstance(submodule, nn.Conv2d):
+            if (submodule.groups == submodule.in_channels) and (
+                    submodule.groups == submodule.out_channels):
+                # this is the special case of a DepthWise Conv
+                return True
+            else:
+                return False
         # TODO: add others
     if n.op == 'call_function':
         if n.target == F.relu:
