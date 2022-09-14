@@ -244,12 +244,13 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_features_defining_op(n, mod):
+    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+        if exclude(n, mod, exclude_names, exclude_types):
+            return
         # only conv and FC, exclude BN
-        if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
-            if exclude(n, mod, exclude_names, exclude_types):
-                return
-            target_layers.append(mod.get_submodule(str(n.target)))
+        if model_graph.is_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d)):
+            return
+        target_layers.append(mod.get_submodule(str(n.target)))
 
 
 def update_shared_masker(n: fx.Node, mod: fx.GraphModule,

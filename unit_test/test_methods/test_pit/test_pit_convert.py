@@ -27,6 +27,7 @@ from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
 from unit_test.models import ToyMultiPath1, ToyMultiPath2
+from unit_test.models import DSCNN
 
 
 class TestPITConvert(unittest.TestCase):
@@ -70,6 +71,15 @@ class TestPITConvert(unittest.TestCase):
             'out': fc_in_feats,
         }
         self._check_input_features(new_nn, expected_features)
+
+    def test_autoimport_depthwise(self):
+        """Test the conversion of a model with depthwise convolutions (cin=cout=groups)"""
+        nn_ut = DSCNN()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=14)
+        self._check_input_features(new_nn, {'inputlayer': 1, 'depthwise2': 64,
+                                            'pointwise3': 64, 'out': 64})
 
     def test_autoimport_multipath(self):
         """Test the conversion of a toy model with multiple concat and add operations"""
