@@ -128,7 +128,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
         return y
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]
+                   ) -> Optional[PITFeaturesMasker]:
         """Create a new fx.Node relative to a PITConv1d layer, starting from the fx.Node
         of a nn.Conv1d layer, and replace it into the parent fx.GraphModule
 
@@ -139,6 +140,8 @@ class PITConv1d(nn.Conv1d, PITLayer):
         :param sm: An optional shared output channel masker derived from subsequent layers
         :type sm: Optional[PITChannelMasker]
         :raises TypeError: if the input fx.Node is not of the correct type
+        :return: the updated shared_masker
+        :rtype: Optional[PITChannelMasker]
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Conv1d:
@@ -159,7 +162,11 @@ class PITConv1d(nn.Conv1d, PITLayer):
             dilation_masker=dil_masker,
         )
         mod.add_submodule(str(n.target), new_submodule)
-        return
+        is_depthwise = (submodule.groups == submodule.in_channels) and (
+            submodule.groups == submodule.out_channels)
+        if is_depthwise:
+            return chan_masker
+        return None
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):

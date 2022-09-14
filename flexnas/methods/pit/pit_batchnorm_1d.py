@@ -49,7 +49,8 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITLayer):
             self.bias.copy_(bn.bias)
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]
+                   ) -> Optional[PITFeaturesMasker]:
         """Create a new fx.Node relative to a PITBatchNorm1d layer, starting from the fx.Node
         of a nn.BatchNorm1d layer, and replace it into the parent fx.GraphModule
 
@@ -60,6 +61,8 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITLayer):
         :param sm: An optional shared output channel masker derived from subsequent layers
         :type sm: Optional[PITChannelMasker]
         :raises TypeError: if the input fx.Node is not of the correct type
+        :return: the updated shared_masker
+        :rtype: Optional[PITChannelMasker]
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.BatchNorm1d:
@@ -69,7 +72,7 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITLayer):
         submodule = cast(nn.BatchNorm1d, submodule)
         new_submodule = PITBatchNorm1d(submodule)
         mod.add_submodule(str(n.target), new_submodule)
-        return
+        return sm
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):

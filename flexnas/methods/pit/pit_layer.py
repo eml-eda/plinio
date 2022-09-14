@@ -58,9 +58,12 @@ class PITLayer:
 
     @staticmethod
     @abstractmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]
+                   ) -> Optional[PITFeaturesMasker]:
         """Create a new fx.Node relative to a PITLayer layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
+
+        Also returns a channel mask in case it needs to be shared with previous layers
 
         :param n: a fx.Node corresponding to a standard nn.Module layer, with shape annotations
         :type n: fx.Node
@@ -69,6 +72,8 @@ class PITLayer:
         :param sm: An optional shared output channel masker derived from subsequent layers
         :type sm: Optional[PITChannelMasker]
         :raises TypeError: if the input fx.Node is not of the correct type
+        :return: the updated shared_masker
+        :rtype: Optional[PITChannelMasker]
         """
         raise NotImplementedError("Trying to import layer using the base abstract class")
 

@@ -135,14 +135,13 @@ def convert_layers(mod: fx.GraphModule,
         shared_masker = shared_masker_queue.pop(0)
         if n not in visited:
             if conversion_type == 'autoimport':
-                autoimport_node(n, mod, shared_masker, exclude_names, exclude_types)
+                shared_masker = autoimport_node(n, mod, shared_masker, exclude_names, exclude_types)
+                # shared_masker = update_shared_masker(n, mod, shared_masker)
             if conversion_type == 'export':
                 export_node(n, mod, exclude_names, exclude_types)
             if conversion_type in ('import', 'autoimport'):
                 add_to_targets(n, mod, target_layers, exclude_names, exclude_types)
-            if conversion_type == 'autoimport':
-                shared_masker = update_shared_masker(n, mod, shared_masker)
-            else:
+            if conversion_type != 'autoimport':
                 shared_masker = None
 
             for pred in n.all_input_nodes:
@@ -178,9 +177,12 @@ def exclude(n: fx.Node, mod: fx.GraphModule,
 
 def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker],
                     exclude_names: Iterable[str],
-                    exclude_types: Iterable[Type[nn.Module]]):
+                    exclude_types: Iterable[Type[nn.Module]]) -> Optional[PITFeaturesMasker]:
     """Rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a standard
-    nn.Module with its corresponding NAS-able version
+    nn.Module with its corresponding NAS-able version.
+
+    Also determines if the currently processed node requires that its predecessor share a common
+    features mask.
 
     :param n: the node to be rewritten
     :type n: fx.Node
@@ -193,12 +195,41 @@ def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMas
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
+    :return: the updated shared_masker
+    :rtype: Optional[PITChannelMasker]
     """
-    if model_graph.is_layer(n, mod, tuple(pit_layer_map.keys())):
-        if exclude(n, mod, exclude_names, exclude_types):
-            return
+    if model_graph.is_layer(n, mod, tuple(pit_layer_map.keys())) and not exclude(
+            n, mod, exclude_names, exclude_types):
         conv_layer_type = pit_layer_map[type(mod.get_submodule(str(n.target)))]
-        conv_layer_type.autoimport(n, mod, sm)
+        sm = conv_layer_type.autoimport(n, mod, sm)
+        return sm
+    elif model_graph.is_shared_input_features_op(n, mod):
+        # modules that require multiple inputs all of the same size
+        # create a new shared masker with the common n. of input channels, to be used by
+        # predecessors
+        if sm is None or model_graph.is_features_defining_op(n, mod):
+            input_size = n.all_input_nodes[-1].meta['tensor_meta'].shape[1]
+            shared_masker = PITFeaturesMasker(input_size)
+        else:
+            shared_masker = sm
+        return shared_masker
+    elif model_graph.is_flatten(n, mod):
+        if sm is not None:
+            raise ValueError("Shared channels masks not supported for flatten")
+        return None
+    elif model_graph.is_untouchable_op(n):
+        return None
+    elif model_graph.is_features_concatenate(n, mod):
+        # if we concatenate over features, we don't need to share the mask
+        return None
+    elif model_graph.is_features_propagating_op(n, mod):
+        # this op has cin = cout, so return what was received as input
+        return sm
+    elif model_graph.is_features_defining_op(n, mod):
+        # this op defines its output features, no propagation
+        return None
+    else:
+        raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
 
 def export_node(n: fx.Node, mod: fx.GraphModule,
@@ -251,47 +282,6 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
         if model_graph.is_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d)):
             return
         target_layers.append(mod.get_submodule(str(n.target)))
-
-
-def update_shared_masker(n: fx.Node, mod: fx.GraphModule,
-                         sm: Optional[PITFeaturesMasker]) -> Optional[PITFeaturesMasker]:
-    """Determines if the currently processed node requires that its predecessor share a common
-    features mask.
-
-    :param n: the target node
-    :type n: fx.Node
-    :param mod: the parent module
-    :type mod: fx.GraphModule
-    :param sm: the optional input shared features masker to propagate from subsequent layers
-    :type sm: Optional[PITChannelMasker]
-    :raises ValueError: for unsupported nodes, to avoid unexpected behaviors
-    :return: the updated shared_masker
-    :rtype: Optional[PITChannelMasker]
-    """
-    if model_graph.is_zero_or_one_input_op(n):
-        if model_graph.is_features_defining_op(n, mod):
-            # this op defines its output features, no propagation
-            return None
-        else:
-            # this op has cin = cout. Return the masker received as input
-            return sm
-    elif model_graph.is_untouchable_op(n):
-        return None
-    elif model_graph.is_features_concatenate(n, mod):
-        # if we concatenate over features, we don't need to share the mask
-        return None
-    elif model_graph.is_shared_input_features_op(n, mod):
-        # modules that require multiple inputs all of the same size
-        # create a new shared masker with the common n. of input channels, to be used by
-        # predecessors
-        if sm is None or model_graph.is_features_defining_op(n, mod):
-            input_size = n.all_input_nodes[0].meta['tensor_meta'].shape[1]
-            shared_masker = PITFeaturesMasker(input_size)
-        else:
-            shared_masker = sm
-        return shared_masker
-    else:
-        raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
 
 def fuse_conv_bn_inplace(conv: PITLayer, bn):
