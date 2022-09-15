@@ -21,7 +21,7 @@ import unittest
 import torch
 import torch.nn as nn
 from flexnas.methods import PIT
-from flexnas.methods.pit import PITConv1d
+from flexnas.methods.pit import PITConv1d, PITConv2d
 from flexnas.methods.pit import PITLayer
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
@@ -80,6 +80,13 @@ class TestPITConvert(unittest.TestCase):
         self._check_target_layers(new_nn, exp_tgt=14)
         self._check_input_features(new_nn, {'inputlayer': 1, 'depthwise2': 64,
                                             'pointwise3': 64, 'out': 64})
+        shared_masker_rules = (
+            ('inputlayer', 'depthwise1', True),
+            ('conv1', 'depthwise2', True),
+            ('conv2', 'depthwise3', True),
+            ('conv3', 'depthwise4', True),
+        )
+        self._check_shared_maskers(new_nn, shared_masker_rules)
 
     def test_autoimport_multipath(self):
         """Test the conversion of a toy model with multiple concat and add operations"""
@@ -166,6 +173,13 @@ class TestPITConvert(unittest.TestCase):
         exported_nn = new_nn.arch_export()
         self._compare_identical(nn_ut, exported_nn)
 
+    def test_export_initial_depthwise(self):
+        """Test the conversion of a model with depthwise convolutions, just after import"""
+        nn_ut = DSCNN()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        exported_nn = new_nn.arch_export()
+        self._compare_identical(nn_ut, exported_nn)
+
     def test_export_with_masks(self):
         """Test the conversion of a simple model after forcing the mask values in some layers"""
         nn_ut = SimpleNN()
@@ -213,6 +227,36 @@ class TestPITConvert(unittest.TestCase):
                 self.assertTrue(
                     torch.all(child.weight[0:55, 2, 0:2] == pit_child.weight[0:55, 3, 0:6:4]),
                     "Wrong weight values for Cin=2")
+
+    def test_export_with_masks_depthwise(self):
+        """Test the conversion of a model with depthwise conv after forcing the
+        mask values in some layers"""
+        nn_ut = DSCNN()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+
+        conv1 = cast(PITConv2d, new_nn.seed.conv1)
+        conv1.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, 1, 0, 1] * 16, dtype=torch.float))
+
+        exported_nn = new_nn.arch_export()
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv1':
+                child = cast(nn.Conv2d, child)
+                pit_child = cast(PITConv2d, new_nn.seed._modules[name])
+                self.assertEqual(child.out_channels, 48, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 64, "Wrong input channels exported")
+                # check that PIT's 4th channel weights are now stored in the 3rd channel
+                self.assertTrue(torch.all(child.weight[2, :, :, :] == pit_child.weight[3, :, :, :]),
+                                "Wrong weight values in channel 2")
+            if name == 'depthwise2':
+                child = cast(nn.Conv2d, child)
+                pit_child = cast(PITConv2d, new_nn.seed._modules[name])
+                self.assertEqual(child.out_channels, 48, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 48, "Wrong input channels exported")
+                # check that PIT's 4th channel weights are now stored in the 3rd channel
+                self.assertTrue(torch.all(child.weight[2, :, :, :] == pit_child.weight[3, :, :, :]),
+                                "Wrong weight values in channel 2")
 
     def test_arch_summary(self):
         """Test the summary report for a simple sequential model"""

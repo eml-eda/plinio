@@ -186,6 +186,12 @@ class PITConv1d(nn.Conv1d, PITLayer):
         cout_mask = submodule.features_mask.bool()
         cin_mask = submodule.input_features_calculator.features_mask.bool()
         time_mask = submodule.time_mask.bool()
+        is_depthwise = (submodule.groups == submodule.in_channels) and (
+            submodule.groups == submodule.out_channels)
+        if is_depthwise:
+            groups_opt = submodule.in_features_opt
+        else:
+            groups_opt = submodule.groups
         new_submodule = nn.Conv1d(
             submodule.in_features_opt,
             submodule.out_features_opt,
@@ -193,12 +199,10 @@ class PITConv1d(nn.Conv1d, PITLayer):
             submodule.stride,
             submodule.padding,
             submodule.dilation_opt,
-            submodule.groups,
+            groups_opt,
             submodule.bias is not None,
             submodule.padding_mode)
         new_weights = submodule.weight[cout_mask, :, :]
-        is_depthwise = (submodule.groups == submodule.in_channels) and (
-            submodule.groups == submodule.out_channels)
         if not is_depthwise:
             # for DWConv we have dimension 1 in the cin axis
             # note: we don't handle other groupwise variants yet
