@@ -154,6 +154,12 @@ class PITConv2d(nn.Conv2d, PITModule):
         submodule = cast(PITConv2d, submodule)
         cout_mask = submodule.features_mask.bool()
         cin_mask = submodule.input_features_calculator.features_mask.bool()
+        is_depthwise = (submodule.groups == submodule.in_channels) and (
+            submodule.groups == submodule.out_channels)
+        if is_depthwise:
+            groups_opt = submodule.in_features_opt
+        else:
+            groups_opt = submodule.groups
         # note: kernel size and dilation are not optimized for conv2d
         new_submodule = nn.Conv2d(
             submodule.in_features_opt,
@@ -162,12 +168,11 @@ class PITConv2d(nn.Conv2d, PITModule):
             submodule.stride,
             submodule.padding,
             submodule.dilation,
-            submodule.groups,
+            groups_opt,
             submodule.bias is not None,
             submodule.padding_mode)
         new_weights = submodule.weight[cout_mask, :, :, :]
-        is_depthwise = (submodule.groups == submodule.in_channels) and (
-            submodule.groups == submodule.out_channels)
+
         if not is_depthwise:
             # for DWConv we have dimension 1 in the cin axis
             # note: we don't handle other groupwise variants yet
