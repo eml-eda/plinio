@@ -2,16 +2,19 @@
 from typing import Iterable, Iterator, Tuple
 import torch
 import torch.nn as nn
+from torchinfo import summary
 
 
 class SuperNetModule(nn.Module):
 
-    def __init__(self, input_layers: Iterable[nn.Module]):
+    def __init__(self, input_layers: Iterable[nn.Module], input_shape: Tuple[int, ...]):
         super().__init__()
 
         self.input_layers = list(input_layers)
+        self.input_shape = input_shape
         self.n_layers = len(self.input_layers)
         self.n_parameters = torch.zeros(1)
+        self.macs = torch.zeros(1)
 
         self.alpha = nn.Parameter(
             (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=True)
@@ -25,7 +28,6 @@ class SuperNetModule(nn.Module):
         :return: the output tensor (weighted sum of all layers output)
         :rtype: torch.Tensor
         """
-
         softmax = nn.Softmax(dim=0)
         soft_alpha = softmax(self.alpha)
 
@@ -37,14 +39,13 @@ class SuperNetModule(nn.Module):
         return y
 
     def export(self) -> nn.Module:
-        """It returns a single classic layer within the ones
+        """It returns a single layer within the ones
         given as input parameter to the SuperNetModule.
         The chosen layer will be the one with the highest alpha value (highest probability).
 
         :return: single nn classic layer
         :rtype: nn.Module
         """
-
         index = torch.argmax(self.alpha).item()
         return self.input_layers[int(index)]
 
@@ -62,6 +63,21 @@ class SuperNetModule(nn.Module):
 
         return self.n_parameters
 
+    def get_macs(self) -> torch.Tensor:
+        """Method that computes the number of MAC operations for the module
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        softmax = nn.Softmax(dim=0)
+        soft_alpha = softmax(self.alpha)
+
+        for i, layer in enumerate(self.input_layers):
+            stats = summary(layer, self.input_shape, verbose=0)
+            self.macs += soft_alpha[i] * stats.total_mult_adds
+
+        return self.macs
+
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
         """Returns an iterator over the architectural parameters of this module, yielding
@@ -69,12 +85,11 @@ class SuperNetModule(nn.Module):
 
         :param prefix: prefix to prepend to all parameter names, defaults to ''
         :type prefix: str, optional
-        :param recurse: _description_, defaults to False
+        :param recurse: kept for uniformity with pytorch API, defaults to False
         :type recurse: bool, optional
         :yield: an iterator over the architectural parameters of all layers of the module
         :rtype: Iterator[Tuple[str, nn.Parameter]]
         """
-
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
         prfx += "alpha"
@@ -84,11 +99,10 @@ class SuperNetModule(nn.Module):
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the architectural parameters of this module
 
-        :param recurse: _description_, defaults to False
+        :param recurse: kept for uniformity with pytorch API, defaults to False
         :type recurse: bool, optional
         :yield: an iterator over the architectural parameters of all layers of the module
         :rtype: Iterator[nn.Parameter]
         """
-
         for _, param in self.named_nas_parameters(recurse=recurse):
             yield param
