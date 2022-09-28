@@ -2,42 +2,25 @@
 from typing import Tuple, Iterable, List, Any, Iterator
 import torch
 import torch.nn as nn
+import torch.fx as fx
+from torch.fx.passes.shape_prop import ShapeProp
+from flexnas.utils import model_graph
 from flexnas.methods.dnas_base import DNAS
 from flexnas.methods.supernet.supernet_module import SuperNetModule
 
 
-def get_supernetModules(
-        target_modules: List,
-        model: nn.Module,
-        exclude_names: Iterable[str]) -> List[Tuple[str, SuperNetModule]]:
-    """This function spots each SuperNetModule contained in the model received
-    and saves them in a list.
+class SuperNetTracer(fx.Tracer):
+    def __init__(self) -> None:
+        super().__init__()  # type: ignore
 
-    :param target_modules: list where the function saves the SuperNetModules
-    :type target_modules: List
-    :param model: seed model
-    :type model: nn.Module
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
-    :type exclude_names: Iterable[str]
-    :return: list of target modules for the NAS
-    :rtype: List[Tuple[str, SuperNetModule]]
-    """
-    for named_module in model.named_modules():
-        if(named_module[0] != ''):
-            submodules = list(named_module[1].children())
-            if(named_module[1].__class__.__name__ == "SuperNetModule" and
-                    named_module[0] not in exclude_names):
-                target_modules.append(named_module)
-            elif(submodules):
-                for child in submodules:
-                    get_supernetModules(target_modules, child, exclude_names)
-        elif(named_module[1].__class__.__name__ == "SuperNetModule"):
-            target_modules.append(named_module)
-
-    return target_modules
+    def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
+        if isinstance(m, SuperNetModule):
+            return True
+        else:
+            return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
 
 
-class SUPERNET(DNAS):
+class SuperNet(DNAS):
 
     def __init__(
             self,
@@ -46,7 +29,7 @@ class SUPERNET(DNAS):
             regularizer: str = 'size',
             exclude_names: Iterable[str] = ()):
 
-        super(SUPERNET, self).__init__(regularizer, exclude_names)
+        super(SuperNet, self).__init__(regularizer, exclude_names)
 
         self._input_shape = input_shape
         self._regularizer = regularizer
@@ -54,7 +37,48 @@ class SUPERNET(DNAS):
         self.exclude_names = exclude_names
 
         target_modules = []
-        self._target_modules = get_supernetModules(target_modules, model, exclude_names)
+        self._target_modules = self.get_supernetModules(target_modules, model, exclude_names)
+
+        tracer = SuperNetTracer()
+        graph = tracer.trace(model.eval())
+        name = model.__class__.__name__
+        self.mod = fx.GraphModule(tracer.root, graph, name)
+        # create a "fake" minibatch of 1 inputs for shape prop
+        batch_example = torch.stack([torch.rand(self._input_shape)] * 1, 0)
+        # TODO: this is not very robust. Find a better way
+        device = next(model.parameters()).device
+        ShapeProp(self.mod).propagate(batch_example.to(device))
+
+    def get_supernetModules(
+            self,
+            target_modules: List,
+            model: nn.Module,
+            exclude_names: Iterable[str]) -> List[Tuple[str, SuperNetModule]]:
+        """This function spots each SuperNetModule contained in the model received
+        and saves them in a list.
+
+        :param target_modules: list where the function saves the SuperNetModules
+        :type target_modules: List
+        :param model: seed model
+        :type model: nn.Module
+        :param exclude_names: the names of `model` submodules that should be ignored by the NAS
+        :type exclude_names: Iterable[str]
+        :return: list of target modules for the NAS
+        :rtype: List[Tuple[str, SuperNetModule]]
+        """
+        for named_module in model.named_modules():
+            if(named_module[0] != ''):
+                submodules = list(named_module[1].children())
+                if(named_module[1].__class__.__name__ == "SuperNetModule" and
+                        named_module[0] not in exclude_names):
+                    target_modules.append(named_module)
+                elif(submodules):
+                    for child in submodules:
+                        self.get_supernetModules(target_modules, child, exclude_names)
+            elif(named_module[1].__class__.__name__ == "SuperNetModule"):
+                target_modules.append(named_module)
+
+        return target_modules
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -79,8 +103,8 @@ class SUPERNET(DNAS):
         :rtype: torch.Tensor
         """
         size = torch.tensor(0, dtype=torch.float32)
-        for module in self._target_modules:
-            size = size + module[1].get_size()
+        for named_module in self._target_modules:
+            size = size + named_module[1].get_size()
         return size
 
     def get_macs(self) -> torch.Tensor:
@@ -90,8 +114,22 @@ class SUPERNET(DNAS):
         :rtype: torch.Tensor
         """
         macs = torch.tensor(0, dtype=torch.float32)
-        for module in self._target_modules:
-            macs = macs + module[1].get_macs()
+        if (self._target_modules):
+            g = self.mod.graph
+            queue = model_graph.get_output_nodes(g)
+            target_nodes = []
+            while queue:
+                n = queue.pop(0)
+                if(n.name in self._target_modules[0]):
+                    target_nodes.append(n)
+                for pred in n.all_input_nodes:
+                    queue.append(pred)
+
+            for i, named_module in enumerate(self._target_modules):
+                shape = target_nodes[i].all_input_nodes[0].meta['tensor_meta'].shape
+                named_module[1].input_shape = shape
+                macs = macs + named_module[1].get_macs()
+
         return macs
 
     @property

@@ -7,11 +7,11 @@ from torchinfo import summary
 
 class SuperNetModule(nn.Module):
 
-    def __init__(self, input_layers: Iterable[nn.Module], input_shape: Tuple[int, ...]):
+    def __init__(self, input_layers: Iterable[nn.Module]):
         super().__init__()
 
         self.input_layers = list(input_layers)
-        self.input_shape = input_shape
+        self.input_shape = None
         self.n_layers = len(self.input_layers)
         self.n_parameters = torch.zeros(1)
         self.macs = torch.zeros(1)
@@ -56,10 +56,13 @@ class SuperNetModule(nn.Module):
         :return: number of weights of the module (weighted sum)
         :rtype: torch.Tensor
         """
+        softmax = nn.Softmax(dim=0)
+        soft_alpha = softmax(self.alpha)
+
         for i, layer in enumerate(self.input_layers):
             for param in layer.parameters():
                 prod = torch.prod(torch.tensor(param.shape))
-                self.n_parameters += self.alpha[i] * prod
+                self.n_parameters += soft_alpha[i] * prod
 
         return self.n_parameters
 
