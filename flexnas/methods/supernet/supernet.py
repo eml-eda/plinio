@@ -45,6 +45,7 @@ class SuperNet(DNAS):
         self.mod = fx.GraphModule(tracer.root, graph, name)
         # create a "fake" minibatch of 1 inputs for shape prop
         batch_example = torch.stack([torch.rand(self._input_shape)] * 1, 0)
+
         # TODO: this is not very robust. Find a better way
         device = next(model.parameters()).device
         ShapeProp(self.mod).propagate(batch_example.to(device))
