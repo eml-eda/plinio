@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
-from flexnas.utils import model_graph
 from flexnas.methods.dnas_base import DNAS
 from flexnas.methods.supernet.supernet_module import SuperNetModule
 
@@ -45,10 +44,11 @@ class SuperNet(DNAS):
         self.mod = fx.GraphModule(tracer.root, graph, name)
         # create a "fake" minibatch of 1 inputs for shape prop
         batch_example = torch.stack([torch.rand(self._input_shape)] * 1, 0)
-
         # TODO: this is not very robust. Find a better way
         device = next(model.parameters()).device
         ShapeProp(self.mod).propagate(batch_example.to(device))
+
+        self.compute_shapes()
 
     def get_supernetModules(
             self,
@@ -80,6 +80,15 @@ class SuperNet(DNAS):
                 target_modules.append(named_module)
 
         return target_modules
+
+    def compute_shapes(self):
+        if (self._target_modules):
+            g = self.mod.graph
+
+            for t in self._target_modules:
+                for n in g.nodes:
+                    if t[0] == n.target:
+                        t[1].input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -115,21 +124,8 @@ class SuperNet(DNAS):
         :rtype: torch.Tensor
         """
         macs = torch.tensor(0, dtype=torch.float32)
-        if (self._target_modules):
-            g = self.mod.graph
-            queue = model_graph.get_output_nodes(g)
-            target_nodes = []
-            while queue:
-                n = queue.pop(0)
-                if(n.name in self._target_modules[0]):
-                    target_nodes.append(n)
-                for pred in n.all_input_nodes:
-                    queue.append(pred)
-
-            for i, named_module in enumerate(self._target_modules):
-                shape = target_nodes[i].all_input_nodes[0].meta['tensor_meta'].shape
-                named_module[1].input_shape = shape
-                macs = macs + named_module[1].get_macs()
+        for t in self._target_modules:
+            macs = macs + t[1].get_macs()
 
         return macs
 
