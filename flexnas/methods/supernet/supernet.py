@@ -70,9 +70,9 @@ class SuperNet(DNAS):
         for named_module in model.named_modules():
             if(named_module[0] != ''):
                 submodules = list(named_module[1].children())
-                if(named_module[1].__class__.__name__ == "SuperNetModule" and
-                        named_module[0] not in exclude_names):
-                    target_modules.append(named_module)
+                if(named_module[1].__class__.__name__ == "SuperNetModule"):
+                    if(named_module[0] not in exclude_names):
+                        target_modules.append(named_module)
                 elif(submodules):
                     for child in submodules:
                         self.get_supernetModules(target_modules, child, exclude_names)

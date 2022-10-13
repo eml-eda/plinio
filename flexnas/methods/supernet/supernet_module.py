@@ -109,3 +109,6 @@ class SuperNetModule(nn.Module):
         """
         for _, param in self.named_nas_parameters(recurse=recurse):
             yield param
+
+    def __getitem__(self, pos: int) -> nn.Module:
+        return self.input_layers[pos]
