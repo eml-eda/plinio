@@ -65,7 +65,7 @@ class StandardSNModule(nn.Module):
         super(StandardSNModule, self).__init__()
         self.input_shape = input_shape
 
-        self.standard = SuperNetModule([
+        self.conv1 = SuperNetModule([
             nn.Conv2d(32, 32, 3, padding='same'),
             nn.Conv2d(32, 32, 5, padding='same'),
             nn.Sequential(
@@ -76,5 +76,5 @@ class StandardSNModule(nn.Module):
         ])
 
     def forward(self, x):
-        res = self.standard(x)
+        res = self.conv1(x)
         return res

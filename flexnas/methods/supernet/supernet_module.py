@@ -15,9 +15,15 @@ class SuperNetModule(nn.Module):
         self.n_layers = len(self.input_layers)
         self.n_parameters = torch.zeros(1)
         self.macs = torch.zeros(1)
+        self.layers_macs = []
 
         self.alpha = nn.Parameter(
             (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=True)
+
+    def compute_layers_macs(self):
+        for layer in self.input_layers:
+            stats = summary(layer, self.input_shape, verbose=0, mode='eval')
+            self.layers_macs.append(stats.total_mult_adds)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """Forward function for the SuperNetModule that returns a weighted
@@ -75,9 +81,8 @@ class SuperNetModule(nn.Module):
         softmax = nn.Softmax(dim=0)
         soft_alpha = softmax(self.alpha)
 
-        for i, layer in enumerate(self.input_layers):
-            stats = summary(layer, self.input_shape, verbose=0)
-            self.macs += soft_alpha[i] * stats.total_mult_adds
+        for i in range(self.n_layers):
+            self.macs += soft_alpha[i] * self.layers_macs[i]
 
         return self.macs
 

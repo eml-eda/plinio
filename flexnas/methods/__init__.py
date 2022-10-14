@@ -18,5 +18,7 @@
 # *----------------------------------------------------------------------------*
 from .dnas_base import DNAS
 from .pit import PIT
+from .supernet import SuperNet
+from .supernet import SuperNetModule
 
-__all__ = ['DNAS', 'PIT']
+__all__ = ['DNAS', 'PIT', 'SuperNet', 'SuperNetModule']
