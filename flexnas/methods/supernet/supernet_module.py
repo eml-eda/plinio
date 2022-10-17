@@ -13,12 +13,20 @@ class SuperNetModule(nn.Module):
         self.input_layers = list(input_layers)
         self.input_shape = None
         self.n_layers = len(self.input_layers)
-        self.n_parameters = torch.zeros(1)
+        self.size = torch.zeros(1)
         self.macs = torch.zeros(1)
+        self.layers_sizes = []
         self.layers_macs = []
 
         self.alpha = nn.Parameter(
             (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=True)
+
+    def compute_layers_sizes(self):
+        for layer in self.input_layers:
+            layer_size = 0
+            for param in layer.parameters():
+                layer_size += torch.prod(torch.tensor(param.shape))
+            self.layers_sizes.append(layer_size)
 
     def compute_layers_macs(self):
         for layer in self.input_layers:
@@ -65,12 +73,9 @@ class SuperNetModule(nn.Module):
         softmax = nn.Softmax(dim=0)
         soft_alpha = softmax(self.alpha)
 
-        for i, layer in enumerate(self.input_layers):
-            for param in layer.parameters():
-                prod = torch.prod(torch.tensor(param.shape))
-                self.n_parameters += soft_alpha[i] * prod
-
-        return self.n_parameters
+        for i in range(self.n_layers):
+            self.size += soft_alpha[i] * self.layers_sizes[i]
+        return self.size
 
     def get_macs(self) -> torch.Tensor:
         """Method that computes the number of MAC operations for the module
@@ -114,6 +119,16 @@ class SuperNetModule(nn.Module):
         """
         for _, param in self.named_nas_parameters(recurse=recurse):
             yield param
+
+    def named_net_parameters(self) -> Iterator[Tuple[str, nn.Parameter]]:
+        count = 0
+        for layer in self.input_layers:
+            for name, param in layer.named_parameters():
+                prfx = str(count)
+                prfx += "."
+                prfx += name
+                yield prfx, param
+            count += 1
 
     def __getitem__(self, pos: int) -> nn.Module:
         return self.input_layers[pos]

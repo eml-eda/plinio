@@ -3,6 +3,7 @@ import torch
 from flexnas.methods.supernet.supernet import SuperNet
 from unit_test.models.supernet_nn import SingleModuleNet1, SingleModuleNet2
 from unit_test.models.supernet_nn import MultipleModuleNet1, StandardSNModule
+from unit_test.models.sn_model import ResNet8SN
 
 
 class TestSuperNet(unittest.TestCase):
@@ -152,6 +153,16 @@ class TestSuperNet(unittest.TestCase):
         out = sn_model(dummy_inp)
         self.assertEqual(out.shape, (batch_size, ch_out, out_width, out_heigth),
                          "Unexpected output shape")
+
+    def test_supernet_sn_model_target_modules(self):
+        ch_in = 3
+        in_width = 32
+        in_height = 32
+
+        model = ResNet8SN()
+        sn_model = SuperNet(model, (ch_in, in_width, in_height))
+        target_modules = sn_model._target_modules
+        self.assertEqual(len(target_modules), 7, "Wrong target modules number")
 
 
 if __name__ == '__main__':

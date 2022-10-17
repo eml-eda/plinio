@@ -50,6 +50,7 @@ class SuperNet(DNAS):
 
         self.compute_shapes()
         for target in self._target_modules:
+            target[1].compute_layers_sizes()
             target[1].compute_layers_macs()
 
     def get_supernetModules(
@@ -78,8 +79,8 @@ class SuperNet(DNAS):
                 elif (submodules):
                     for child in submodules:
                         self.get_supernetModules(target_modules, child, exclude_names)
-            elif (named_module[1].__class__.__name__ == "SuperNetModule"):
-                target_modules.append(named_module)
+            # elif (named_module[1].__class__.__name__ == "SuperNetModule"):
+                # target_modules.append(named_module)
 
         return target_modules
 
@@ -115,8 +116,8 @@ class SuperNet(DNAS):
         :rtype: torch.Tensor
         """
         size = torch.tensor(0, dtype=torch.float32)
-        for named_module in self._target_modules:
-            size = size + named_module[1].get_size()
+        for module in self._target_modules:
+            size = size + module[1].get_size()
         return size
 
     def get_macs(self) -> torch.Tensor:
@@ -179,12 +180,14 @@ class SuperNet(DNAS):
         :return: an iterator over the architectural parameters of the NAS
         :rtype: Iterator[nn.Parameter]
         """
-        for sn_module in self._target_modules:
+        for module in self._target_modules:
             prfx = prefix
             prfx += "." if len(prefix) > 0 else ""
+            prfx += module[0]
+            prfx += "." if len(prfx) > 0 else ""
             prfx += "alpha"
 
-            yield prfx, sn_module[1].alpha
+            yield prfx, module[1].alpha
 
     def named_net_parameters(
             self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -201,6 +204,14 @@ class SuperNet(DNAS):
         exclude = set(_[0] for _ in self.named_nas_parameters())
 
         for name, param in self.seed.named_parameters():
-            last_name = name.split(".")[-1]
-            if last_name not in exclude:
+            if name not in exclude:
                 yield name, param
+
+        for module in self._target_modules:
+            for name, param in module[1].named_net_parameters():
+                prfx = prefix
+                prfx += "." if len(prefix) > 0 else ""
+                prfx += module[0]
+                prfx += "." if len(prfx) > 0 else ""
+                prfx += name
+                yield prfx, param
