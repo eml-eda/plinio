@@ -6,15 +6,18 @@ from torchinfo import summary
 
 
 class SuperNetModule(nn.Module):
+    """A nn.Module containing some layers among which the SuperNet NAS tool
+    will choose the one that is more suitable
 
+    :param nn: _description_
+    :type nn: _type_
+    """
     def __init__(self, input_layers: Iterable[nn.Module]):
         super().__init__()
 
         self.input_layers = list(input_layers)
         self.input_shape = None
         self.n_layers = len(self.input_layers)
-        self.size = torch.zeros(1)
-        self.macs = torch.zeros(1)
         self.layers_sizes = []
         self.layers_macs = []
 
@@ -22,6 +25,9 @@ class SuperNetModule(nn.Module):
             (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=True)
 
     def compute_layers_sizes(self):
+        """Computes the size of each possible layer of the SuperNetModule
+        and stores the values in a list
+        """
         for layer in self.input_layers:
             layer_size = 0
             for param in layer.parameters():
@@ -29,6 +35,9 @@ class SuperNetModule(nn.Module):
             self.layers_sizes.append(layer_size)
 
     def compute_layers_macs(self):
+        """Computes the number of macs of each possible layer of the SuperNetModule
+        and stores the values in a list
+        """
         for layer in self.input_layers:
             stats = summary(layer, self.input_shape, verbose=0, mode='eval')
             self.layers_macs.append(stats.total_mult_adds)
@@ -49,7 +58,6 @@ class SuperNetModule(nn.Module):
         for i, layer in enumerate(self.input_layers):
             y.append(soft_alpha[i] * layer(input))
         y = torch.stack(y, dim=0).sum(dim=0)
-
         return y
 
     def export(self) -> nn.Module:
@@ -57,7 +65,7 @@ class SuperNetModule(nn.Module):
         given as input parameter to the SuperNetModule.
         The chosen layer will be the one with the highest alpha value (highest probability).
 
-        :return: single nn classic layer
+        :return: single nn layer
         :rtype: nn.Module
         """
         index = torch.argmax(self.alpha).item()
@@ -73,9 +81,10 @@ class SuperNetModule(nn.Module):
         softmax = nn.Softmax(dim=0)
         soft_alpha = softmax(self.alpha)
 
+        size = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):
-            self.size += soft_alpha[i] * self.layers_sizes[i]
-        return self.size
+            size = size + (soft_alpha[i] * self.layers_sizes[i])
+        return size
 
     def get_macs(self) -> torch.Tensor:
         """Method that computes the number of MAC operations for the module
@@ -86,10 +95,10 @@ class SuperNetModule(nn.Module):
         softmax = nn.Softmax(dim=0)
         soft_alpha = softmax(self.alpha)
 
+        macs = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):
-            self.macs += soft_alpha[i] * self.layers_macs[i]
-
-        return self.macs
+            macs = macs + (soft_alpha[i] * self.layers_macs[i])
+        return macs
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -106,7 +115,6 @@ class SuperNetModule(nn.Module):
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
         prfx += "alpha"
-
         yield prfx, self.alpha
 
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
@@ -120,7 +128,13 @@ class SuperNetModule(nn.Module):
         for _, param in self.named_nas_parameters(recurse=recurse):
             yield param
 
-    def named_net_parameters(self) -> Iterator[Tuple[str, nn.Parameter]]:
+    def named_layers_parameters(self) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the parameters of each input layer, yielding
+        both the name of the parameter as well as the parameter itself
+
+        :yield: an iterator over the parameters of all layers of the module
+        :rtype: Iterator[Tuple[str, nn.Parameter]]
+        """
         count = 0
         for layer in self.input_layers:
             for name, param in layer.named_parameters():
@@ -131,4 +145,12 @@ class SuperNetModule(nn.Module):
             count += 1
 
     def __getitem__(self, pos: int) -> nn.Module:
+        """Get the layer at position pos in the list of all the possible
+        layers for the SuperNetModule
+
+        :param pos: position of the required layer in the list input_layers
+        :type pos: int
+        :return: layer at postion pos in the list input_layers
+        :rtype: nn.Module
+        """
         return self.input_layers[pos]

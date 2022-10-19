@@ -20,7 +20,19 @@ class SuperNetTracer(fx.Tracer):
 
 
 class SuperNet(DNAS):
+    """A class that wraps a nn.Module with the functionality of the SuperNet NAS tool
 
+    :param model: the inner nn.Module instance optimized by the NAS
+    :type model: nn.Module
+    :param input_shape: the shape of an input tensor, without batch size, required for symbolic
+    tracing
+    :type input_shape: Tuple[int, ...]
+    :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
+    :type regularizer: Optional[str], optional
+    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
+    when auto-converting layers, defaults to ()
+    :type exclude_names: Iterable[str], optional
+    """
     def __init__(
             self,
             model: nn.Module,
@@ -79,12 +91,11 @@ class SuperNet(DNAS):
                 elif (submodules):
                     for child in submodules:
                         self.get_supernetModules(target_modules, child, exclude_names)
-            # elif (named_module[1].__class__.__name__ == "SuperNetModule"):
-                # target_modules.append(named_module)
-
         return target_modules
 
     def compute_shapes(self):
+        """This function computes the input shape for each SuperNetModule in the target modules
+        """
         if (self._target_modules):
             g = self.mod.graph
 
@@ -129,7 +140,6 @@ class SuperNet(DNAS):
         macs = torch.tensor(0, dtype=torch.float32)
         for t in self._target_modules:
             macs = macs + t[1].get_macs()
-
         return macs
 
     @property
@@ -165,7 +175,6 @@ class SuperNet(DNAS):
                 self.seed = module[1].export()
             else:
                 setattr(self.seed, module[0], module[1].export())
-
         return self.seed
 
     def named_nas_parameters(
@@ -186,7 +195,6 @@ class SuperNet(DNAS):
             prfx += module[0]
             prfx += "." if len(prfx) > 0 else ""
             prfx += "alpha"
-
             yield prfx, module[1].alpha
 
     def named_net_parameters(
@@ -208,7 +216,7 @@ class SuperNet(DNAS):
                 yield name, param
 
         for module in self._target_modules:
-            for name, param in module[1].named_net_parameters():
+            for name, param in module[1].named_layers_parameters():
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += module[0]
