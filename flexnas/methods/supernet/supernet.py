@@ -1,5 +1,5 @@
 
-from typing import Tuple, Iterable, List, Any, Iterator
+from typing import Tuple, Iterable, List, Any, Iterator, Dict
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -169,13 +169,34 @@ class SuperNet(DNAS):
         :return: the architecture found by the NAS
         :rtype: nn.Module
         """
+        model = self.seed
+
         for module in self._target_modules:
-            name = module[0]
-            if name == '':
-                self.seed = module[1].export()
+            submodule = model.get_submodule(module[0])
+            module_exp = submodule.export()
+
+            path = module[0].split('.')
+            if (len(path) > 1):
+                parent = model.get_submodule(path[-2])
             else:
-                setattr(self.seed, module[0], module[1].export())
-        return self.seed
+                parent = model
+
+            parent.add_module(path[-1], module_exp)
+
+        return model
+
+    def arch_summary(self) -> Dict[str, str]:
+        """Generates a dictionary representation of the architecture found by the NAS.
+        Only optimized layers are reported
+
+        :return: a dictionary representation of the architecture found by the NAS
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        arch = {}
+
+        for module in self._target_modules:
+            arch[module[0]] = str(module[1].export())
+        return arch
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -223,3 +244,12 @@ class SuperNet(DNAS):
                 prfx += "." if len(prfx) > 0 else ""
                 prfx += name
                 yield prfx, param
+
+    def __str__(self):
+        """Prints the architecture found by the NAS to screen
+
+        :return: a str representation of the current architecture
+        :rtype: str
+        """
+        arch = self.arch_summary()
+        return str(arch)
