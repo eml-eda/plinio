@@ -13,9 +13,9 @@ class SuperNetModule(nn.Module):
     :type nn: _type_
     """
     def __init__(self, input_layers: Iterable[nn.Module]):
-        super().__init__()
+        super(SuperNetModule, self).__init__()
 
-        self.input_layers = list(input_layers)
+        self.input_layers = nn.ModuleList(list(input_layers))
         self.input_shape = None
         self.n_layers = len(self.input_layers)
         self.layers_sizes = []
@@ -127,22 +127,6 @@ class SuperNetModule(nn.Module):
         """
         for _, param in self.named_nas_parameters(recurse=recurse):
             yield param
-
-    def named_layers_parameters(self) -> Iterator[Tuple[str, nn.Parameter]]:
-        """Returns an iterator over the parameters of each input layer, yielding
-        both the name of the parameter as well as the parameter itself
-
-        :yield: an iterator over the parameters of all layers of the module
-        :rtype: Iterator[Tuple[str, nn.Parameter]]
-        """
-        count = 0
-        for layer in self.input_layers:
-            for name, param in layer.named_parameters():
-                prfx = str(count)
-                prfx += "."
-                prfx += name
-                yield prfx, param
-            count += 1
 
     def __getitem__(self, pos: int) -> nn.Module:
         """Get the layer at position pos in the list of all the possible

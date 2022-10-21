@@ -236,15 +236,6 @@ class SuperNet(DNAS):
             if name not in exclude:
                 yield name, param
 
-        for module in self._target_modules:
-            for name, param in module[1].named_layers_parameters():
-                prfx = prefix
-                prfx += "." if len(prefix) > 0 else ""
-                prfx += module[0]
-                prfx += "." if len(prfx) > 0 else ""
-                prfx += name
-                yield prfx, param
-
     def __str__(self):
         """Prints the architecture found by the NAS to screen
 
