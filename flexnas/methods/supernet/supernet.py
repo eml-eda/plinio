@@ -53,17 +53,14 @@ class SuperNet(DNAS):
         tracer = SuperNetTracer()
         graph = tracer.trace(model.eval())
         name = model.__class__.__name__
-        self.mod = fx.GraphModule(tracer.root, graph, name)
+        mod = fx.GraphModule(tracer.root, graph, name)
         # create a "fake" minibatch of 1 inputs for shape prop
         batch_example = torch.stack([torch.rand(self._input_shape)] * 1, 0)
         # TODO: this is not very robust. Find a better way
         device = next(model.parameters()).device
-        ShapeProp(self.mod).propagate(batch_example.to(device))
+        ShapeProp(mod).propagate(batch_example.to(device))
 
-        self.compute_shapes()
-        for target in self._target_modules:
-            target[1].compute_layers_sizes()
-            target[1].compute_layers_macs()
+        self.compute_shapes(mod)
 
     def get_supernetModules(
             self,
@@ -93,16 +90,20 @@ class SuperNet(DNAS):
                         self.get_supernetModules(target_modules, child, exclude_names)
         return target_modules
 
-    def compute_shapes(self):
+    def compute_shapes(self, mod: fx.GraphModule):
         """This function computes the input shape for each SuperNetModule in the target modules
         """
         if (self._target_modules):
-            g = self.mod.graph
+            g = mod.graph
 
             for t in self._target_modules:
                 for n in g.nodes:
                     if t[0] == n.target:
                         t[1].input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
+
+            for target in self._target_modules:
+                target[1].compute_layers_sizes()
+                target[1].compute_layers_macs()
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -215,8 +216,9 @@ class SuperNet(DNAS):
             prfx += "." if len(prefix) > 0 else ""
             prfx += module[0]
             prfx += "." if len(prfx) > 0 else ""
-            prfx += "alpha"
-            yield prfx, module[1].alpha
+            for name, param in module[1].named_nas_parameters():
+                prfx = prfx + name
+                yield prfx, param
 
     def named_net_parameters(
             self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:

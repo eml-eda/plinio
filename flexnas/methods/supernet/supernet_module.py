@@ -51,8 +51,7 @@ class SuperNetModule(nn.Module):
         :return: the output tensor (weighted sum of all layers output)
         :rtype: torch.Tensor
         """
-        softmax = nn.Softmax(dim=0)
-        soft_alpha = softmax(self.alpha)
+        soft_alpha = nn.functional.softmax(self.alpha, dim=0)
 
         y = []
         for i, layer in enumerate(self.input_layers):
@@ -78,8 +77,7 @@ class SuperNetModule(nn.Module):
         :return: number of weights of the module (weighted sum)
         :rtype: torch.Tensor
         """
-        softmax = nn.Softmax(dim=0)
-        soft_alpha = softmax(self.alpha)
+        soft_alpha = nn.functional.softmax(self.alpha, dim=0)
 
         size = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):
@@ -92,8 +90,7 @@ class SuperNetModule(nn.Module):
         :return: the number of MACs
         :rtype: torch.Tensor
         """
-        softmax = nn.Softmax(dim=0)
-        soft_alpha = softmax(self.alpha)
+        soft_alpha = nn.functional.softmax(self.alpha, dim=0)
 
         macs = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):

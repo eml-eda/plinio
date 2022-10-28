@@ -164,6 +164,17 @@ class TestSuperNet(unittest.TestCase):
         target_modules = sn_model._target_modules
         self.assertEqual(len(target_modules), 7, "Wrong target modules number")
 
+    def test_supernet_sn_model(self):
+        ch_in = 3
+        in_width = 32
+        in_height = 32
+
+        model = ResNet8SN()
+        sn_model = SuperNet(model, (ch_in, in_width, in_height))
+
+        for n, p in sn_model.named_nas_parameters():
+            print(n, p)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
