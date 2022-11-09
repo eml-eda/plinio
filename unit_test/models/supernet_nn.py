@@ -1,6 +1,7 @@
 
 from torch import nn
-from flexnas.methods.supernet.supernet_module import SuperNetModule
+from flexnas.methods import SuperNetModule
+from flexnas.methods import PaddedModule
 
 
 class SingleModuleNet1(nn.Module):
@@ -73,6 +74,27 @@ class StandardSNModule(nn.Module):
                 nn.Conv2d(32, 32, 1, padding='same')
             ),
             nn.Identity()
+        ])
+
+    def forward(self, x):
+        res = self.conv1(x)
+        return res
+
+
+class PaddedSNModule(nn.Module):
+    """Defines a simple sequential DNN used within unit tests"""
+    def __init__(self, input_shape=(32, 64, 64)):
+        super(PaddedSNModule, self).__init__()
+        self.input_shape = input_shape
+
+        self.conv1 = SuperNetModule([
+            nn.Conv2d(32, 64, 3, padding='same'),
+            nn.Conv2d(32, 64, 5, padding='same'),
+            nn.Sequential(
+                nn.Conv2d(32, 32, 3, groups=32, padding='same'),
+                nn.Conv2d(32, 64, 1, padding='same')
+            ),
+            PaddedModule(nn.Identity(), 32)
         ])
 
     def forward(self, x):

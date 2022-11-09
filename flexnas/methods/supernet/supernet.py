@@ -196,7 +196,14 @@ class SuperNet(DNAS):
         arch = {}
 
         for module in self._target_modules:
-            arch[module[0]] = str(module[1].export())
+            mod = module[1].export()
+            name = mod.__class__.__name__
+            if (name == "Conv2d" or name == "Conv1d"):
+                kernel_size = mod.kernel_size
+                t = (name, kernel_size)
+                arch[module[0]] = t
+            else:
+                arch[module[0]] = name
         return arch
 
     def named_nas_parameters(

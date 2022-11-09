@@ -2,8 +2,10 @@ import unittest
 import torch
 from flexnas.methods.supernet.supernet import SuperNet
 from unit_test.models.supernet_nn import SingleModuleNet1, SingleModuleNet2
-from unit_test.models.supernet_nn import MultipleModuleNet1, StandardSNModule
-from unit_test.models.sn_model import ResNet8SN
+from unit_test.models.supernet_nn import MultipleModuleNet1, StandardSNModule, PaddedSNModule
+from unit_test.models.icl_sn_model import ResNet8SN
+# from unit_test.models.icl_sn_padded_model import ResNet8SN_Padded
+from unit_test.models.vww_sn_model import MobileNetSN
 
 
 class TestSuperNet(unittest.TestCase):
@@ -138,6 +140,7 @@ class TestSuperNet(unittest.TestCase):
         sn_model = SuperNet(model, (ch_in, in_length))
         self.assertEqual(sn_model.get_macs(), 42916)
 
+    # StandardSNModule
     def test_standardSNModule(self):
         ch_in = 32
         ch_out = 32
@@ -154,6 +157,7 @@ class TestSuperNet(unittest.TestCase):
         self.assertEqual(out.shape, (batch_size, ch_out, out_width, out_heigth),
                          "Unexpected output shape")
 
+    # ICL SN Model
     def test_supernet_sn_model_target_modules(self):
         ch_in = 3
         in_width = 32
@@ -164,16 +168,68 @@ class TestSuperNet(unittest.TestCase):
         target_modules = sn_model._target_modules
         self.assertEqual(len(target_modules), 7, "Wrong target modules number")
 
-    def test_supernet_sn_model(self):
+    # VWW SN Model
+    def test_supernet_vww_sn_model_target_modules(self):
+        ch_in = 3
+        in_width = 96
+        in_height = 96
+
+        model = MobileNetSN()
+        sn_model = SuperNet(model, (ch_in, in_width, in_height))
+        target_modules = sn_model._target_modules
+        self.assertEqual(len(target_modules), 13, "Wrong target modules number")
+
+    '''
+    def test_supernet_vww_sn_model(self):
+        ch_in = 3
+        in_width = 96
+        in_height = 96
+        batch_size = 1
+
+        model = MobileNetSN()
+        dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
+        out = model(dummy_inp)
+        #print(out)
+
+        sn_model = SuperNet(model, (ch_in, in_width, in_height))
+        out2 = sn_model(dummy_inp)
+        #print(out2)
+    '''
+
+    # PaddedModule
+    def test_supernet_padded_module(self):
+        ch_in = 32
+        ch_out = 64
+        in_width = 64
+        in_height = 64
+        out_width = 64
+        out_heigth = 64
+        batch_size = 1
+
+        model = PaddedSNModule()
+        sn_model = SuperNet(model, (ch_in, in_width, in_height))
+        dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
+        out = sn_model(dummy_inp)
+        self.assertEqual(out.shape, (batch_size, ch_out, out_width, out_heigth),
+                         "Unexpected output shape")
+
+    '''
+    # ICL PaddedModule
+    def test_supernet_icl_sn_padded_model(self):
         ch_in = 3
         in_width = 32
         in_height = 32
+        batch_size = 1
 
-        model = ResNet8SN()
+        model = ResNet8SN_Padded()
+        dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
+        out = model(dummy_inp)
+        print(out)
+
         sn_model = SuperNet(model, (ch_in, in_width, in_height))
-
-        for n, p in sn_model.named_nas_parameters():
-            print(n, p)
+        out2 = sn_model(dummy_inp)
+        print(out2)
+    '''
 
 
 if __name__ == '__main__':
