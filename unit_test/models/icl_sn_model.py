@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import cast, Dict, Any, Optional
 import torch
 import torch.nn as nn
 from flexnas.methods import SuperNetModule
@@ -15,7 +15,8 @@ def get_reference_model(model_name: str, model_config: Optional[Dict[str, Any]] 
 class ConvBlock(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=2, padding=1):
         super().__init__()
-        # self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride, padding=padding, bias=False)
+        # self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
+        #                         padding=padding, bias=False)
 
         self.conv1 = SuperNetModule([
             nn.Conv2d(in_channels, out_channels, 3, padding=padding, stride=stride),
@@ -28,11 +29,11 @@ class ConvBlock(torch.nn.Module):
             # nn.Identity()
         ])
         # nn.init.kaiming_normal_(self.conv1.weight)
-        nn.init.kaiming_normal_(self.conv1[0].weight)
-        nn.init.kaiming_normal_(self.conv1[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv1[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv1[1]).weight)
         it = self.conv1[2].children()
-        nn.init.kaiming_normal_(next(it).weight)
-        nn.init.kaiming_normal_(next(it).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
         self.bn = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU()
 
@@ -68,11 +69,11 @@ class ResNet8SN(torch.nn.Module):
             nn.Identity()
         ])
         # nn.init.kaiming_normal_(self.conv1.weight)
-        nn.init.kaiming_normal_(self.conv1[0].weight)
-        nn.init.kaiming_normal_(self.conv1[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv1[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv1[1]).weight)
         it = self.conv1[2].children()
-        nn.init.kaiming_normal_(next(it).weight)
-        nn.init.kaiming_normal_(next(it).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
 
         self.bn1 = nn.BatchNorm2d(16)
         self.relu = nn.ReLU()
@@ -91,11 +92,11 @@ class ResNet8SN(torch.nn.Module):
             nn.Identity()
         ])
         # nn.init.kaiming_normal_(self.conv2y.weight)
-        nn.init.kaiming_normal_(self.conv2y[0].weight)
-        nn.init.kaiming_normal_(self.conv2y[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv2y[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv2y[1]).weight)
         it = self.conv2y[2].children()
-        nn.init.kaiming_normal_(next(it).weight)
-        nn.init.kaiming_normal_(next(it).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
         self.bn2 = nn.BatchNorm2d(32)
         self.conv2x = nn.Conv2d(16, 32, kernel_size=1, stride=2, padding=0)
         nn.init.kaiming_normal_(self.conv2x.weight)
@@ -114,11 +115,11 @@ class ResNet8SN(torch.nn.Module):
             nn.Identity()
         ])
         # nn.init.kaiming_normal_(self.conv3y.weight)
-        nn.init.kaiming_normal_(self.conv3y[0].weight)
-        nn.init.kaiming_normal_(self.conv3y[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv3y[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.conv3y[1]).weight)
         it = self.conv3y[2].children()
-        nn.init.kaiming_normal_(next(it).weight)
-        nn.init.kaiming_normal_(next(it).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, next(it)).weight)
         self.bn3 = nn.BatchNorm2d(64)
         self.conv3x = nn.Conv2d(32, 64, kernel_size=1, stride=2, padding=0)
         nn.init.kaiming_normal_(self.conv3x.weight)

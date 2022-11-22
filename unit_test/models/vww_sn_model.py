@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional
+from typing import cast, Dict, Any, Optional
 import torch
 import torch.nn as nn
 from flexnas.methods import SuperNetModule
@@ -63,8 +63,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint2[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint2[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint2[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint2[1]).weight)
 
         # 3d layer
         '''
@@ -83,8 +83,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint3[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint3[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint3[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint3[1]).weight)
 
         # 4th layer
         '''
@@ -103,8 +103,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint4[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint4[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint4[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint4[1]).weight)
 
         # 5h layer
         '''
@@ -123,8 +123,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint5[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint5[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint5[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint5[1]).weight)
 
         # 6th layer
         '''
@@ -143,8 +143,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint6[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint6[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint6[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint6[1]).weight)
 
         # 7th layer
         '''
@@ -163,8 +163,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint7[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint7[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint7[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint7[1]).weight)
 
         # 8th layer
         '''
@@ -183,8 +183,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint8[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint8[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint8[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint8[1]).weight)
 
         # 9th layer
         '''
@@ -203,8 +203,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint9[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint9[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint9[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint9[1]).weight)
 
         # 10th layer
         '''
@@ -223,8 +223,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint10[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint10[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint10[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint10[1]).weight)
 
         # 11th layer
         '''
@@ -243,8 +243,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint11[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint11[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint11[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint11[1]).weight)
 
         # 12th layer
         '''
@@ -263,8 +263,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint12[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint12[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint12[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint12[1]).weight)
 
         # 13th layer
         '''
@@ -283,8 +283,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint13[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint13[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint13[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint13[1]).weight)
 
         # 14th layer
         '''
@@ -303,8 +303,8 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(self.depthpoint14[0].weight)
-        nn.init.kaiming_normal_(self.depthpoint14[1].weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint14[0]).weight)
+        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint14[1]).weight)
 
         self.avgpool = torch.nn.AvgPool2d(3)
 

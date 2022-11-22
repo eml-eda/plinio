@@ -1,5 +1,5 @@
 
-from typing import Tuple, Iterable, List, Any, Iterator, Dict
+from typing import cast, Tuple, Iterable, List, Any, Iterator, Dict
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -173,7 +173,7 @@ class SuperNet(DNAS):
         model = self.seed
 
         for module in self._target_modules:
-            submodule = model.get_submodule(module[0])
+            submodule = cast(SuperNetModule, model.get_submodule(module[0]))
             module_exp = submodule.export()
 
             path = module[0].split('.')
