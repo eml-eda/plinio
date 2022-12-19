@@ -28,7 +28,7 @@ from flexnas.methods.pit.pit_conv2d import PITConv2d
 from flexnas.methods.pit.pit_linear import PITLinear
 from flexnas.methods.pit.pit_batchnorm_1d import PITBatchNorm1d
 from flexnas.methods.pit.pit_batchnorm_2d import PITBatchNorm2d
-from .pit_layer import PITLayer
+from .pit_module import PITModule
 from .pit_features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from flexnas.utils import model_graph
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator, \
@@ -36,7 +36,7 @@ from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesC
 
 # add new supported layers here:
 # TODO: can we fill this automatically based on classes that inherit from PITLayer?
-pit_layer_map: Dict[Type[nn.Module], Type[PITLayer]] = {
+pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {
     nn.Conv1d: PITConv1d,
     nn.Conv2d: PITConv2d,
     nn.Linear: PITLinear,
@@ -50,7 +50,7 @@ class PITTracer(fx.Tracer):
         super().__init__()  # type: ignore
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-        if isinstance(m, PITLayer):
+        if isinstance(m, PITModule):
             return True
         else:
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
@@ -248,10 +248,10 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+    if model_graph.is_inherited_layer(n, mod, (PITModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
-        layer = cast(PITLayer, mod.get_submodule(str(n.target)))
+        layer = cast(PITModule, mod.get_submodule(str(n.target)))
         layer.export(n, mod)
 
 
@@ -275,7 +275,7 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+    if model_graph.is_inherited_layer(n, mod, (PITModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         # only conv and FC, exclude BN
@@ -284,7 +284,7 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
         target_layers.append(mod.get_submodule(str(n.target)))
 
 
-def fuse_conv_bn_inplace(conv: PITLayer, bn):
+def fuse_conv_bn_inplace(conv: PITModule, bn):
     """
     Given a conv Module `A` and an batch_norm module `B`, modifies A
     such that A(x) == B(A_old(x))
@@ -400,9 +400,9 @@ def set_input_features_calculator(n: fx.Node, mod: fx.GraphModule,
     nodes in the network
     :type calc_dict: Dict[fx.Node, FeaturesCalculator]
     """
-    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+    if model_graph.is_inherited_layer(n, mod, (PITModule,)):
         prev = n.all_input_nodes[0]  # our NAS-able layers always have a single input (for now)
-        sub_mod = cast(PITLayer, mod.get_submodule(str(n.target)))
+        sub_mod = cast(PITModule, mod.get_submodule(str(n.target)))
         sub_mod.input_features_calculator = calc_dict[prev]
 
 
@@ -464,7 +464,7 @@ def update_output_features_calculator(n: fx.Node, mod: fx.GraphModule,
         calc_dict[n] = calc_dict[n.all_input_nodes[0]]
     elif model_graph.is_features_defining_op(n, mod):
         # this is the case fo PITConv1d, PITConv2d, PITLinear
-        if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+        if model_graph.is_inherited_layer(n, mod, (PITModule,)):
             # For PIT NAS-able layers, the "active" output features are stored in the
             # out_features_eff attribute, and the binary mask is in features_mask
             sub_mod = mod.get_submodule(str(n.target))

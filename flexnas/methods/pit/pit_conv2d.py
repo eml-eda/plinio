@@ -23,10 +23,10 @@ import torch.fx as fx
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
 from .pit_features_masker import PITFeaturesMasker
 from .pit_binarizer import PITBinarizer
-from .pit_layer import PITLayer
+from .pit_module import PITModule
 
 
-class PITConv2d(nn.Conv2d, PITLayer):
+class PITConv2d(nn.Conv2d, PITModule):
     """A nn.Module implementing a Conv2D layer optimizable with the PIT NAS tool
 
     :param conv: the inner `torch.nn.Conv2D` layer to be optimized

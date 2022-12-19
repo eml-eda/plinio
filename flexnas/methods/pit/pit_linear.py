@@ -22,12 +22,12 @@ import torch.nn as nn
 import torch.fx as fx
 import torch.nn.functional as F
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
-from .pit_layer import PITLayer
+from .pit_module import PITModule
 from .pit_features_masker import PITFeaturesMasker
 from .pit_binarizer import PITBinarizer
 
 
-class PITLinear(nn.Linear, PITLayer):
+class PITLinear(nn.Linear, PITModule):
     """A nn.Module implementing a Linear layer optimizable with the PIT NAS tool
 
     :param conv: the inner `torch.nn.Linear` layer to be optimized

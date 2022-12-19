@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
 from .pit_converter import convert
-from .pit_layer import PITLayer
+from .pit_module import PITModule
 
 
 class PIT(DNAS):
@@ -243,7 +243,7 @@ class PIT(DNAS):
         arch = {}
         for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
-                layer = cast(PITLayer, layer)
+                layer = cast(PITModule, layer)
                 arch[name] = layer.summary()
                 arch[name]['type'] = layer.__class__.__name__
         return arch
@@ -263,7 +263,7 @@ class PIT(DNAS):
         included = set()
         for lname, layer in self.named_modules():
             if layer in self._target_layers:
-                layer = cast(PITLayer, layer)
+                layer = cast(PITModule, layer)
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname

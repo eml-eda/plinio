@@ -25,7 +25,7 @@ from .pit_features_masker import PITFeaturesMasker
 from flexnas.utils.features_calculator import FeaturesCalculator
 
 
-class PITLayer:
+class PITModule:
     """An abstract class representing the interface that all PIT layers should implement
     """
     @abstractmethod

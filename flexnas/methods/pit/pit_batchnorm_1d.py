@@ -22,10 +22,10 @@ import torch.nn as nn
 import torch.fx as fx
 from .pit_features_masker import PITFeaturesMasker
 from flexnas.utils.features_calculator import FeaturesCalculator
-from .pit_layer import PITLayer
+from .pit_module import PITModule
 
 
-class PITBatchNorm1d(nn.BatchNorm1d, PITLayer):
+class PITBatchNorm1d(nn.BatchNorm1d, PITModule):
     """A nn.Module implementing a BatchNorm1d layer optimizable with the PIT NAS tool
 
     Does not do much except memorizing the optimized number of features for correct export

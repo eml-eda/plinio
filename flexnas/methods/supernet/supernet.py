@@ -1,4 +1,3 @@
-
 from typing import cast, Tuple, Iterable, List, Any, Iterator, Dict
 import torch
 import torch.nn as nn
@@ -213,7 +212,9 @@ class SuperNet(DNAS):
                 children = mod.children()
                 child1 = next(children)
                 child2 = next(children)
-                if (child2.__class__.__name__ == "Conv2d" or child2.__class__.__name__ == "ConvBlock"):
+                if (child2.__class__.__name__ == "Conv2d"):
+                    arch[module[0]] = "Depthwise Separable"
+                elif (child2.__class__.__name__ == "ConvBlock"):
                     arch[module[0]] = "Depthwise Separable"
                 else:
                     name_child = child1.__class__.__name__

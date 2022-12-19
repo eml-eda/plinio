@@ -27,10 +27,10 @@ from .pit_features_masker import PITFeaturesMasker
 from .pit_timestep_masker import PITTimestepMasker, PITFrozenTimestepMasker
 from .pit_dilation_masker import PITDilationMasker, PITFrozenDilationMasker
 from .pit_binarizer import PITBinarizer
-from .pit_layer import PITLayer
+from .pit_module import PITModule
 
 
-class PITConv1d(nn.Conv1d, PITLayer):
+class PITConv1d(nn.Conv1d, PITModule):
     """A nn.Module implementing a Conv1D layer optimizable with the PIT NAS tool
 
     :param conv: the inner `torch.nn.Conv1D` layer to be optimized
