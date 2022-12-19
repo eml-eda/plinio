@@ -48,7 +48,7 @@ class SuperNet(DNAS):
         self.exclude_names = exclude_names
 
         target_modules = []
-        self._target_modules = self.get_supernetModules(target_modules, model, exclude_names)
+        self._target_modules = self.get_supernet_modules(target_modules, model, exclude_names)
 
         tracer = SuperNetTracer()
         graph = tracer.trace(model.eval())
@@ -62,7 +62,7 @@ class SuperNet(DNAS):
 
         self.compute_shapes(mod)
 
-    def get_supernetModules(
+    def get_supernet_modules(
             self,
             target_modules: List,
             model: nn.Module,
@@ -87,7 +87,7 @@ class SuperNet(DNAS):
                         target_modules.append(named_module)
                 elif (submodules):
                     for child in submodules:
-                        self.get_supernetModules(target_modules, child, exclude_names)
+                        self.get_supernet_modules(target_modules, child, exclude_names)
         return target_modules
 
     def compute_shapes(self, mod: fx.GraphModule):
@@ -198,10 +198,28 @@ class SuperNet(DNAS):
         for module in self._target_modules:
             mod = module[1].export()
             name = mod.__class__.__name__
-            if (name == "Conv2d" or name == "Conv1d"):
+            if (name == "Conv2d"):
                 kernel_size = mod.kernel_size
                 t = (name, kernel_size)
                 arch[module[0]] = t
+            elif (name == "ConvBlock"):
+                children = mod.children()
+                child = next(children)
+                name_child = child.__class__.__name__
+                kernel_size = child.kernel_size
+                t = (name_child, kernel_size)
+                arch[module[0]] = t
+            elif (name == "Sequential"):
+                children = mod.children()
+                child1 = next(children)
+                child2 = next(children)
+                if (child2.__class__.__name__ == "Conv2d" or child2.__class__.__name__ == "ConvBlock"):
+                    arch[module[0]] = "Depthwise Separable"
+                else:
+                    name_child = child1.__class__.__name__
+                    kernel_size = child1.kernel_size
+                    t = (name_child, kernel_size)
+                    arch[module[0]] = t
             else:
                 arch[module[0]] = name
         return arch

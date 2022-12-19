@@ -1,19 +1,11 @@
-from typing import cast, Dict, Any, Optional
+
 import torch
 import torch.nn as nn
 from flexnas.methods import SuperNetModule
 
 
-def get_reference_model(model_name: str, model_config: Optional[Dict[str, Any]] = None
-                        ) -> nn.Module:
-    if model_name == 'mobilenet_sn':
-        return MobileNetSN()
-    else:
-        raise ValueError(f"Unsupported model name {model_name}")
-
-
 class ConvBlock(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, stride=2, padding=1, groups=1):
+    def __init__(self, in_channels, out_channels, stride, padding, kernel_size=3, groups=1):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels,
                                out_channels,
@@ -54,8 +46,8 @@ class MobileNetSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint2 = SuperNetModule([
-            nn.Conv2d(8, 16, 3, padding='same'),
-            nn.Conv2d(8, 16, 5, padding='same'),
+            ConvBlock(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=8, out_channels=16, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=8, out_channels=8, kernel_size=3, stride=1, padding=1,
                           groups=8),
@@ -63,8 +55,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint2[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint2[1]).weight)
 
         # 3d layer
         '''
@@ -74,8 +64,8 @@ class MobileNetSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint3 = SuperNetModule([
-            nn.Conv2d(16, 32, 3, padding=1, stride=2),
-            nn.Conv2d(16, 32, 5, padding=2, stride=2),
+            ConvBlock(in_channels=16, out_channels=32, kernel_size=3, padding=1, stride=2),
+            ConvBlock(in_channels=16, out_channels=32, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
                 ConvBlock(in_channels=16, out_channels=16, kernel_size=3, stride=2, padding=1,
                           groups=16),
@@ -83,8 +73,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint3[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint3[1]).weight)
 
         # 4th layer
         '''
@@ -93,9 +81,10 @@ class MobileNetSN(torch.nn.Module):
         self.pointwise4 = ConvBlock(in_channels=32, out_channels=32,
                                     kernel_size=1, stride=1, padding=0)
         '''
+
         self.depthpoint4 = SuperNetModule([
-            nn.Conv2d(32, 32, 3, padding='same'),
-            nn.Conv2d(32, 32, 5, padding='same'),
+            ConvBlock(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=32, out_channels=32, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1,
                           groups=32),
@@ -103,8 +92,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint4[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint4[1]).weight)
 
         # 5h layer
         '''
@@ -114,8 +101,8 @@ class MobileNetSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint5 = SuperNetModule([
-            nn.Conv2d(32, 64, 3, padding=1, stride=2),
-            nn.Conv2d(32, 64, 5, padding=2, stride=2),
+            ConvBlock(in_channels=32, out_channels=64, kernel_size=3, padding=1, stride=2),
+            ConvBlock(in_channels=32, out_channels=64, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
                 ConvBlock(in_channels=32, out_channels=32, kernel_size=3, stride=2, padding=1,
                           groups=32),
@@ -123,8 +110,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint5[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint5[1]).weight)
 
         # 6th layer
         '''
@@ -134,8 +119,8 @@ class MobileNetSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint6 = SuperNetModule([
-            nn.Conv2d(64, 64, 3, padding='same'),
-            nn.Conv2d(64, 64, 5, padding='same'),
+            ConvBlock(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=64, out_channels=64, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1,
                           groups=64),
@@ -143,8 +128,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint6[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint6[1]).weight)
 
         # 7th layer
         '''
@@ -154,8 +137,8 @@ class MobileNetSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint7 = SuperNetModule([
-            nn.Conv2d(64, 128, 3, padding=1, stride=2),
-            nn.Conv2d(64, 128, 5, padding=2, stride=2),
+            ConvBlock(in_channels=64, out_channels=128, kernel_size=3, padding=1, stride=2),
+            ConvBlock(in_channels=64, out_channels=128, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
                 ConvBlock(in_channels=64, out_channels=64, kernel_size=3, stride=2, padding=1,
                           groups=64),
@@ -163,8 +146,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint7[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint7[1]).weight)
 
         # 8th layer
         '''
@@ -174,8 +155,8 @@ class MobileNetSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint8 = SuperNetModule([
-            nn.Conv2d(128, 128, 3, padding='same'),
-            nn.Conv2d(128, 128, 5, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1,
                           groups=128),
@@ -183,8 +164,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint8[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint8[1]).weight)
 
         # 9th layer
         '''
@@ -194,8 +173,8 @@ class MobileNetSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint9 = SuperNetModule([
-            nn.Conv2d(128, 128, 3, padding='same'),
-            nn.Conv2d(128, 128, 5, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1,
                           groups=128),
@@ -203,8 +182,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint9[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint9[1]).weight)
 
         # 10th layer
         '''
@@ -214,8 +191,8 @@ class MobileNetSN(torch.nn.Module):
                                      kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint10 = SuperNetModule([
-            nn.Conv2d(128, 128, 3, padding='same'),
-            nn.Conv2d(128, 128, 5, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1,
                           groups=128),
@@ -223,8 +200,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint10[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint10[1]).weight)
 
         # 11th layer
         '''
@@ -234,8 +209,8 @@ class MobileNetSN(torch.nn.Module):
                                      kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint11 = SuperNetModule([
-            nn.Conv2d(128, 128, 3, padding='same'),
-            nn.Conv2d(128, 128, 5, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1,
                           groups=128),
@@ -243,8 +218,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint11[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint11[1]).weight)
 
         # 12th layer
         '''
@@ -254,8 +227,8 @@ class MobileNetSN(torch.nn.Module):
                                      kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint12 = SuperNetModule([
-            nn.Conv2d(128, 128, 3, padding='same'),
-            nn.Conv2d(128, 128, 5, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1,
                           groups=128),
@@ -263,8 +236,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint12[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint12[1]).weight)
 
         # 13th layer
         '''
@@ -274,8 +245,8 @@ class MobileNetSN(torch.nn.Module):
                                      kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint13 = SuperNetModule([
-            nn.Conv2d(128, 256, 3, padding=1, stride=2),
-            nn.Conv2d(128, 256, 5, padding=2, stride=2),
+            ConvBlock(in_channels=128, out_channels=256, kernel_size=3, padding=1, stride=2),
+            ConvBlock(in_channels=128, out_channels=256, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
                 ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=2, padding=1,
                           groups=128),
@@ -283,8 +254,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             # nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint13[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint13[1]).weight)
 
         # 14th layer
         '''
@@ -294,8 +263,8 @@ class MobileNetSN(torch.nn.Module):
                                      kernel_size=1, stride=1, padding=0)
         '''
         self.depthpoint14 = SuperNetModule([
-            nn.Conv2d(256, 256, 3, padding='same'),
-            nn.Conv2d(256, 256, 5, padding='same'),
+            ConvBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding='same'),
+            ConvBlock(in_channels=256, out_channels=256, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
                 ConvBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1,
                           groups=256),
@@ -303,8 +272,6 @@ class MobileNetSN(torch.nn.Module):
             ),
             nn.Identity()
         ])
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint14[0]).weight)
-        nn.init.kaiming_normal_(cast(nn.Conv2d, self.depthpoint14[1]).weight)
 
         self.avgpool = torch.nn.AvgPool2d(3)
 

@@ -4,14 +4,14 @@ from flexnas.methods.supernet.supernet import SuperNet
 from unit_test.models.supernet_nn import SingleModuleNet1, SingleModuleNet2
 from unit_test.models.supernet_nn import MultipleModuleNet1, StandardSNModule, PaddedSNModule
 from unit_test.models.icl_sn_model import ResNet8SN
-# from unit_test.models.icl_sn_padded_model import ResNet8SN_Padded
 from unit_test.models.vww_sn_model import MobileNetSN
+from unit_test.models.kws_sn_model import DSCnnSN
 
 
 class TestSuperNet(unittest.TestCase):
 
     # Single Module
-    def test_supernet_singleModule_output_shape(self):
+    def test_supernet_single_module_output_shape(self):
         batch_size = 1
         in_length = 4
         out_length = 4
@@ -32,7 +32,7 @@ class TestSuperNet(unittest.TestCase):
         out = sn_model(dummy_inp)
         self.assertEqual(out.shape, (batch_size, ch_out, out_length), "Unexpected output shape")
 
-    def test_supernet_singleModule_target_modules(self):
+    def test_supernet_single_module_target_modules(self):
         ch_in = 32
         in_length = 4
         n_target_modules = 1
@@ -47,7 +47,7 @@ class TestSuperNet(unittest.TestCase):
         target_modules = sn_model._target_modules
         self.assertEqual(len(target_modules), n_target_modules, "Wrong target modules number")
 
-    def test_supernet_singleModule_input_shape(self):
+    def test_supernet_single_module_input_shape(self):
         ch_in = 32
         in_length = 4
         batch_size = 1
@@ -64,7 +64,7 @@ class TestSuperNet(unittest.TestCase):
         shapes = [(batch_size, ch_in, in_length)]
         self.assertEqual(target_modules[0][1].input_shape, shapes[0], "Wrong target input shapes")
 
-    def test_supernet_singleModule_size(self):
+    def test_supernet_single_module_size(self):
         ch_in = 32
         in_length = 4
 
@@ -76,7 +76,7 @@ class TestSuperNet(unittest.TestCase):
         sn_model = SuperNet(model, (ch_in, in_length))
         self.assertEqual(sn_model.get_size(), 1552)
 
-    def test_supernet_singleModule_macs(self):
+    def test_supernet_single_module_macs(self):
         ch_in = 32
         in_length = 4
 
@@ -89,7 +89,7 @@ class TestSuperNet(unittest.TestCase):
         self.assertEqual(sn_model.get_macs(), 6208)
 
     # Multiple Modules
-    def test_supernet_multipleModule_output_shape(self):
+    def test_supernet_multiple_module_output_shape(self):
         batch_size = 1
         in_length = 4
         out_length = 4
@@ -102,7 +102,7 @@ class TestSuperNet(unittest.TestCase):
         out = sn_model(dummy_inp)
         self.assertEqual(out.shape, (batch_size, ch_out, out_length), "Unexpected output shape")
 
-    def test_supernet_multipleModule_target_modules(self):
+    def test_supernet_multiple_module_target_modules(self):
         ch_in = 32
         in_length = 4
         n_target_modules = 2
@@ -112,7 +112,7 @@ class TestSuperNet(unittest.TestCase):
         target_modules = sn_model._target_modules
         self.assertEqual(len(target_modules), n_target_modules, "Wrong target modules number")
 
-    def test_supernet_multipleModule_input_shape(self):
+    def test_supernet_multiple_module_input_shape(self):
         ch_in = 32
         in_length = 4
         batch_size = 1
@@ -124,7 +124,7 @@ class TestSuperNet(unittest.TestCase):
         for i, t in enumerate(target_modules):
             self.assertEqual(t[1].input_shape, shapes[i], "Wrong input target input shapes")
 
-    def test_supernet_multipleModule_size(self):
+    def test_supernet_multiple_module_size(self):
         ch_in = 32
         in_length = 4
 
@@ -132,7 +132,7 @@ class TestSuperNet(unittest.TestCase):
         sn_model = SuperNet(model, (ch_in, in_length))
         self.assertEqual(sn_model.get_size(), 10729)
 
-    def test_supernet_multipleModule_macs(self):
+    def test_supernet_multiple_module_macs(self):
         ch_in = 32
         in_length = 4
 
@@ -141,7 +141,7 @@ class TestSuperNet(unittest.TestCase):
         self.assertEqual(sn_model.get_macs(), 42916)
 
     # StandardSNModule
-    def test_standardSNModule(self):
+    def test_standard_sn_module(self):
         ch_in = 32
         ch_out = 32
         in_width = 64
@@ -179,8 +179,19 @@ class TestSuperNet(unittest.TestCase):
         target_modules = sn_model._target_modules
         self.assertEqual(len(target_modules), 13, "Wrong target modules number")
 
+    # KWS SN Model
+    def test_supernet_kws_sn_model_target_modules(self):
+        ch_in = 1
+        in_width = 49
+        in_height = 10
+
+        model = DSCnnSN()
+        sn_model = SuperNet(model, (ch_in, in_width, in_height))
+        target_modules = sn_model._target_modules
+        self.assertEqual(len(target_modules), 4, "Wrong target modules number")
+
     '''
-    def test_supernet_vww_sn_model(self):
+    def test_supernet_sn_model_input(self):
         ch_in = 3
         in_width = 96
         in_height = 96
@@ -212,24 +223,6 @@ class TestSuperNet(unittest.TestCase):
         out = sn_model(dummy_inp)
         self.assertEqual(out.shape, (batch_size, ch_out, out_width, out_heigth),
                          "Unexpected output shape")
-
-    '''
-    # ICL PaddedModule
-    def test_supernet_icl_sn_padded_model(self):
-        ch_in = 3
-        in_width = 32
-        in_height = 32
-        batch_size = 1
-
-        model = ResNet8SN_Padded()
-        dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = model(dummy_inp)
-        print(out)
-
-        sn_model = SuperNet(model, (ch_in, in_width, in_height))
-        out2 = sn_model(dummy_inp)
-        print(out2)
-    '''
 
 
 if __name__ == '__main__':
