@@ -18,7 +18,11 @@
 # *----------------------------------------------------------------------------*
 
 from .quantizer import Quantizer
+from .fq_weight import FQ_Weight
+from .minmax_weight import MinMax_Weight
+from .pact_act import PACT_Act
+from .qtz_bias import Quantizer_Bias
 
 __all__ = [
-    'Quantizer',
+    'Quantizer', 'FQ_Weight', 'MinMax_Weight', 'PACT_Act', 'Quantizer_Bias',
 ]

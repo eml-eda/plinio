@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Dict, Any, Optional, Iterator, Tuple
+from typing import Dict, Any, Optional, Iterator, Tuple, Type
 import torch.fx as fx
 import torch.nn as nn
 from quant import Quantizer
@@ -33,7 +33,12 @@ class MixPrecModule:
 
     @staticmethod
     @abstractmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sq: Optional[Quantizer]
+    def autoimport(n: fx.Node,
+                   mod: fx.GraphModule,
+                   precisions: Tuple[int, ...],
+                   quantizer: Type[Quantizer],
+                   sq: Optional[Quantizer],
+                   quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
         """Create a new fx.Node relative to a MixPrecModule layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
@@ -44,8 +49,14 @@ class MixPrecModule:
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param sm: An optional shared quantizer derived from other layers
-        :type sm: Optional[Quantizer]
+        :param precisions: The precisions to be explored
+        :type precisions: Tuple[int, ...]
+        :param quantizer: The quantizer to be used
+        :type quantizer: Type[Quantizer]
+        :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
+        :type quantizer_kwargs: Dict
+        :param sq: An optional shared quantizer derived from other layers
+        :type sq: Optional[Quantizer]
         :raises TypeError: if the input fx.Node is not of the correct type
         :return: the updated shared quantizer
         :rtype: Optional[Quantizer]
@@ -53,6 +64,7 @@ class MixPrecModule:
         raise NotImplementedError("Trying to import layer using the base abstract class")
 
     @staticmethod
+    @abstractmethod
     def export(n: fx.Node, mod: fx.GraphModule):
         """Replaces a fx.Node corresponding to a MixPrecModule, with a standard nn.Module layer
         within a fx.GraphModule

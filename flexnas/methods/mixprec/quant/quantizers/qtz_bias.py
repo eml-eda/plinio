@@ -17,49 +17,66 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple
+from typing import Dict, Any, Optional, Iterator, Tuple, Type
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..quantizer import Quantizer
+from .quantizer import Quantizer
 
 
-class MinMax_Weight(nn.Module, Quantizer):
-    """A nn.Module implementing a min-max quantization strategy for weights.
+# TODO: the quantizer assumes that both weights and activations are quantized
+#       then both scale-factors will be available.
+#       Need to understand how to manage this operation whether one of
+#       weights and activations is not quantized.
+class Quantizer_Bias(nn.Module, Quantizer):
+    """A nn.Module implementing bias quantization.
 
     :param num_bits: quantization precision
     :type num_bits: int
-    :param symmetric: wether the weight upper and lower bound should be the same
-    :type init_clip_val: bool
+    :param cout: number of output channels, coincide with len of bias vector
+    :type cout: int
+    :param act_quantizer: activation quantizer
+    :type act_quantizer: Quantizer
+    :param weight_quantizer: weight quantizer
+    :type weight_quantizer: Quantizer
     :param dequantize: whether the output should be fake-quantized or not
     :type dequantize: bool
     """
     def __init__(self,
                  num_bits: int,
-                 symmetric: bool = True,
+                 cout: int,
+                 act_quantizer: Type[Quantizer],
+                 weight_quantizer: Type[Quantizer],
                  dequantize: bool = True):
-        super(MinMax_Weight, self).__init__()
+        super(Quantizer_Bias, self).__init__()
         self.num_bits = num_bits
-        self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
+        self.act_quantizer = act_quantizer
+        self.weight_quantizer = weight_quantizer
         self.dequantize = dequantize
-        self.register_buffer('s_w', torch.Tensor())
+        self.register_buffer('s_b', torch.Tensor(cout))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of the MinMax weight quantizer.
+        """The forward function of the bias quantizer.
 
-        Compute quantization using the whole weights' value span and implements STE
-        for the backward pass
+        Compute quantization using the scale-factors of weight and activations
+        and implements STE for the backward pass
 
-        :param input: the input float weights tensor
+        :param input: the input float bias tensor
         :type input: torch.Tensor
-        :return: the output fake-quantized weights tensor
+        :return: the output fake-quantized bias tensor
         :rtype: torch.Tensor
         """
-        input_q, s_w = self.qtz_func.apply(input,
-                                           self.num_bits,
-                                           self.dequantize)
-        self.s_w = s_w
-        return input_q
+        s_a = self.weight_quantizer.s_a  # type: ignore
+        s_w = self.weight_quantizer.s_w  # type: ignore
+        self.s_b = s_a * s_w
+
+        scaled_inp = input / self.s_b
+        output = Round_STE.apply(scaled_inp)
+
+        if self.dequantize:
+            output = self.s_b * output
+
+        return output
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule, backend: Optional[str]):
@@ -82,7 +99,7 @@ class MinMax_Weight(nn.Module, Quantizer):
         :rtype: Dict[str, Any]
         """
         return {
-            'scale_factor': self.s_w,
+            'scale_factor': self.s_b,
         }
 
     def named_quant_parameters(
@@ -101,48 +118,15 @@ class MinMax_Weight(nn.Module, Quantizer):
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
         for name, param in self.named_parameters(
-                prfx + "weight_quantizer", recurse):
+                prfx + "bias_quantizer", recurse):
             yield name, param
 
 
-class MinMax_Asym_STE(torch.autograd.Function):
+class Round_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, num_bits, dequantize):
-        ch_max, _ = x.view(x.size(0), -1).max(1)
-        ch_min, _ = x.view(x.size(0), -1).min(1)
-        return _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize)
+    def forward(ctx, x):
+        return torch.round(x)
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output, None, None, None
-
-
-class MinMax_Sym_STE(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, num_bits, dequantize):
-        ch_max, _ = x.view(x.size(0), -1).abs().max(1)
-        return _min_max_quantize(x, -ch_max, ch_max, num_bits, dequantize)
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output, None, None, None
-
-
-def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
-    # Compute scale factor
-    ch_range = ch_max - ch_min
-    ch_range.masked_fill_(ch_range.eq(0), 1)
-    n_steps = 2 ** num_bits - 1
-    scale_factor = ch_range / n_steps
-
-    # Reshape
-    shape = (x.shape[0],) + (1,) * len(x.shape[1:])
-    scale_factor = scale_factor.view(shape)
-
-    # Quantize
-    y = torch.round(x / scale_factor)
-
-    if dequantize:
-        y = y * scale_factor
-
-    return y, scale_factor
+        return grad_output, None

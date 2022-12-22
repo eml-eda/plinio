@@ -21,7 +21,7 @@ from typing import Dict, Any, Optional, Iterator, Tuple
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..quantizer import Quantizer
+from .quantizer import Quantizer
 
 
 class PACT_Act(nn.Module, Quantizer):
@@ -31,6 +31,8 @@ class PACT_Act(nn.Module, Quantizer):
 
     :param num_bits: quantization precision
     :type num_bits: int
+    :param cout: dummy argument used to maintain same interface with other quantizers
+    :type cout: None
     :param init_clip_val: input upper bound
     :type init_clip_val: float
     :param dequantize: whether the output should be fake-quantized or not
@@ -38,13 +40,14 @@ class PACT_Act(nn.Module, Quantizer):
     """
     def __init__(self,
                  num_bits: int,
+                 cout: None = None,
                  init_clip_val: float = 6.,
                  dequantize: bool = True):
         super(PACT_Act, self).__init__()
         self.num_bits = num_bits
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]))
         self.dequantize = dequantize
-        self.register_buffer('s_a', torch.Tensor())
+        self.register_buffer('s_a', torch.Tensor(1))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the PACT activartion quantizer.

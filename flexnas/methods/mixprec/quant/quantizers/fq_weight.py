@@ -17,63 +17,71 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, Type
+from typing import Dict, Any, Optional, Iterator, Tuple
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..quantizer import Quantizer
+from .quantizer import Quantizer
 
 
-# TODO: the quantizer assumes that both weights and activations are quantized
-#       then both scale-factors will be available.
-#       Need to understand how to manage this operation whether one of
-#       weights and activations is not quantized.
-class Quantizer_Bias(nn.Module, Quantizer):
-    """A nn.Module implementing bias quantization.
+class FQ_Weight(nn.Module, Quantizer):
+    """A nn.Module implementing the FQ quantization strategy for weights.
+    More details can be found at: https://arxiv.org/abs/1912.09356
 
     :param num_bits: quantization precision
     :type num_bits: int
-    :param act_quantizer: activation quantizer
-    :type act_quantizer: Quantizer
-    :param weight_quantizer: weight quantizer
-    :type weight_quantizer: Quantizer
+    :param cout: number of output channels, used only if ch_wise is True
+    :type cout: int
+    :param ch_wise: wether the quantization is channel-wise or not
+    :type ch_wise: bool
+    :param train_scale_param: wether the scale_param should be trained or not
+    :type train_scale_param: bool
     :param dequantize: whether the output should be fake-quantized or not
     :type dequantize: bool
     """
     def __init__(self,
                  num_bits: int,
-                 act_quantizer: Type[Quantizer],
-                 weight_quantizer: Type[Quantizer],
+                 cout: int,
+                 ch_wise: bool = True,
+                 train_scale_param: bool = True,
                  dequantize: bool = True):
-        super(Quantizer_Bias, self).__init__()
+        super(FQ_Weight, self).__init__()
         self.num_bits = num_bits
-        self.act_quantizer = act_quantizer
-        self.weight_quantizer = weight_quantizer
+        self.quant_bins = 2**(self.num_bits - 1) - 1
+        self.cout = cout
+        self.ch_wise = ch_wise
+        self.train_scale_param
         self.dequantize = dequantize
-        self.register_buffer('s_b', torch.Tensor())
+
+        # Trainable scale param
+        self.n_s = cout if ch_wise else 1
+        self.scale_param = nn.Parameter(torch.Tensor(self.n_s),
+                                        requires_grad=train_scale_param)
+        self.register_buffer('s_w', torch.Tensor(cout))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of the bias quantizer.
+        """The forward function of the FQ weight quantizer.
 
-        Compute quantization using the scale-factors of weight and activations
-        and implements STE for the backward pass
+        Compute quantization using the learned scale-param and implements STE
+        for the backward pass
 
-        :param input: the input float bias tensor
+        :param input: the input float weights tensor
         :type input: torch.Tensor
-        :return: the output fake-quantized bias tensor
+        :return: the output fake-quantized weights tensor
         :rtype: torch.Tensor
         """
-        s_a = self.weight_quantizer.s_a  # type: ignore
-        s_w = self.weight_quantizer.s_w  # type: ignore
-        self.s_b = s_a * s_w
-
-        scaled_inp = input / self.s_b
-        output = Round_STE.apply(scaled_inp)
-
+        # Having a positive scale factor is preferable to avoid instabilities
+        exp_scale_param = torch.exp(self.scale_param).view(
+            (self.n_s,) + (1,) * len(input.shape[1:]))
+        input_scaled = input / exp_scale_param
+        # Quantize
+        input_q = FQ_Quant_STE.apply(input_scaled,
+                                     self.quant_bins)
+        self.s_w = exp_scale_param / self.quant_bins
         if self.dequantize:
-            output = self.s_b * output
-
-        return output
+            return input_q * exp_scale_param
+        else:
+            return input_q * self.quant_bins
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule, backend: Optional[str]):
@@ -96,7 +104,7 @@ class Quantizer_Bias(nn.Module, Quantizer):
         :rtype: Dict[str, Any]
         """
         return {
-            'scale_factor': self.s_b,
+            'scale_factor': self.s_w,
         }
 
     def named_quant_parameters(
@@ -115,14 +123,22 @@ class Quantizer_Bias(nn.Module, Quantizer):
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
         for name, param in self.named_parameters(
-                prfx + "bias_quantizer", recurse):
+                prfx + "weight_quantizer", recurse):
             yield name, param
 
 
-class Round_STE(torch.autograd.Function):
+class FQ_Quant_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x):
-        return torch.round(x)
+    def forward(ctx, x, n):
+        # Hardtanh
+        output = torch.clamp(x, -1, 1)
+        # Multiply by number of levels
+        output = output * n
+        # Round
+        output = torch.round(output)
+        # Divide by number of levels
+        output = output / n
+        return output
 
     @staticmethod
     def backward(ctx, grad_output):
