@@ -28,8 +28,7 @@ from ..quantizer import Quantizer
 #       then both scale-factors will be available.
 #       Need to understand how to manage this operation whether one of
 #       weights and activations is not quantized.
-# TODO: change name.
-class MinMax_Bias(nn.Module, Quantizer):
+class Quantizer_Bias(nn.Module, Quantizer):
     """A nn.Module implementing bias quantization.
 
     :param num_bits: quantization precision
@@ -46,7 +45,7 @@ class MinMax_Bias(nn.Module, Quantizer):
                  act_quantizer: Type[Quantizer],
                  weight_quantizer: Type[Quantizer],
                  dequantize: bool = True):
-        super(MinMax_Bias, self).__init__()
+        super(Quantizer_Bias, self).__init__()
         self.num_bits = num_bits
         self.act_quantizer = act_quantizer
         self.weight_quantizer = weight_quantizer
