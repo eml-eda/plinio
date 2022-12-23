@@ -16,9 +16,3 @@
 # *                                                                            *
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-
-from .quant_module import QuantModule
-
-__all__ = [
-    'QuantModule',
-]

@@ -17,8 +17,8 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .quant_module import QuantModule
+from .base import Backend
 
 __all__ = [
-    'QuantModule',
+    'Backend',
 ]

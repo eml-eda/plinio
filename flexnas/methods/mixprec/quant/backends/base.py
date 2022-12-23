@@ -17,8 +17,11 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .quant_module import QuantModule
+from enum import Enum, auto
 
-__all__ = [
-    'QuantModule',
-]
+
+class Backend(Enum):
+    ONNX = auto()
+    DORY = auto()
+    DIANA = auto()
+    # Add new backends here

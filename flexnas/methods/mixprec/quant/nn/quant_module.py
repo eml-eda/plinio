@@ -22,25 +22,26 @@ from typing import Dict, Any, Optional, Iterator, Tuple, Type
 import torch.fx as fx
 import torch.nn as nn
 from quant.quantizers import Quantizer
+from quant.backends import Backend
 
 
-class MixPrecModule:
-    """An abstract class representing the interface that all MixPrec layers should implement
+class QuantModule:
+    """An abstract class representing the interface that all quantized layers should implement
     """
     @abstractmethod
     def __init__(self):
-        raise NotImplementedError("Calling init on base abstract MixPrecModule class")
+        raise NotImplementedError("Calling init on base abstract QuantModule class")
 
     @staticmethod
     @abstractmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   precisions: Tuple[int, ...],
+                   precision: int,
                    quantizer: Type[Quantizer],
                    sq: Optional[Quantizer],
                    quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a MixPrecModule layer, starting from the fx.Node
+        """Create a new fx.Node relative to a QuantModule layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
 
         Also returns a quantizer in case it needs to be shared with other layers
@@ -49,8 +50,8 @@ class MixPrecModule:
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param precisions: The precisions to be explored
-        :type precisions: Tuple[int, ...]
+        :param precision: The precision to be enforced
+        :type precision: int
         :param quantizer: The quantizer to be used
         :type quantizer: Type[Quantizer]
         :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
@@ -65,14 +66,18 @@ class MixPrecModule:
 
     @staticmethod
     @abstractmethod
-    def export(n: fx.Node, mod: fx.GraphModule):
-        """Replaces a fx.Node corresponding to a MixPrecModule, with a standard nn.Module layer
-        within a fx.GraphModule
+    def export(n: fx.Node,
+               mod: fx.GraphModule,
+               backend: Backend):
+        """Replaces a fx.Node corresponding to a QuantModule, with a backend-specific
+        layer implementation within a fx.GraphModule
 
         :param n: the node to be rewritten
         :type n: fx.Node
         :param mod: the parent module, where the new node has to be inserted
         :type mod: fx.GraphModule
+        :param backend: the specific backend to be used
+        :type backend: Backend
         """
         raise NotImplementedError("Trying to export layer using the base abstract class")
 
@@ -83,32 +88,32 @@ class MixPrecModule:
         :return: a dictionary containing the optimized layer hyperparameter values
         :rtype: Dict[str, Any]
         """
-        raise NotImplementedError("Calling summary on base abstract MixPrecModule class")
+        raise NotImplementedError("Calling summary on base abstract QuantModule class")
 
     @abstractmethod
-    def named_nas_parameters(
+    def named_quant_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
-        """Returns an iterator over the architectural parameters of this layer, yielding
+        """Returns an iterator over the quantization parameters of this layer, yielding
         both the name of the parameter as well as the parameter itself
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
         :param recurse: kept for uniformity with pytorch API,
-        but MixPrecModule never have sub-layers TODO: check if true
+        but QuantModule never have sub-layers TODO: check if true
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract MixPrecModule class")
+        raise NotImplementedError("Calling arch_parameters on base abstract QuantModule class")
 
-    def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
-        """Returns an iterator over the architectural parameters of this layer
+    def quant_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
+        """Returns an iterator over the quantization parameters of this layer
 
         :param recurse: kept for uniformity with pytorch API,
-        but MixPrecModule never have sub-layers TODO: check if true
+        but QuantModule never have sub-layers TODO: check if true
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        for name, param in self.named_nas_parameters(recurse=recurse):
+        for name, param in self.named_quant_parameters(recurse=recurse):
             yield param
