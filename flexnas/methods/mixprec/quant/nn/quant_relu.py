@@ -17,56 +17,55 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, Type, cast
+from typing import Dict, Any, Optional, Iterator, Tuple, cast
 import torch
 import torch.fx as fx
 import torch.nn as nn
 import torch.nn.functional as F
 from quant.quantizers import Quantizer
-import quant.nn as qnn
-from .mixprec_module import MixPrecModule
-from .mixprec_qtz_layer import MixPrec_Qtz_Layer
+from quant.backends import Backend, backend_solver
+from .quant_module import QuantModule
 
 
-class MixPrec_ReLU(nn.ReLU, MixPrecModule):
-    """A nn.Module implementing a ReLU layer with mixed-precision search support
+class Quant_ReLU(nn.ReLU, QuantModule):
+    """A nn.Module implementing a quantized ReLU layer
 
-    :param precisions: different bitwitdth alternatives among which perform search
-    :type precisions: Tuple[int, ...]
+    :param precision: the quantization precision
+    :type precisions: int
     :param quantizer: input tensor quantizer
-    :type quantizer: MixPrec_Qtz_Layer
+    :type quantizer: Type[Quantizer]
     """
     def __init__(self,
-                 precisions: Tuple[int, ...],
-                 quantizer: MixPrec_Qtz_Layer):
-        super(MixPrec_ReLU, self).__init__()
-        self.precisions = precisions
-        self.mixprec_quantizer = quantizer
+                 precision: int,
+                 quantizer: Quantizer):
+        super(Quant_ReLU, self).__init__()
+        self.precision = precision
+        self.quantizer = quantizer
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of the mixed-precision NAS-able layer.
+        """The forward function of quantized layer.
 
-        In a nutshell, quantize and combine the input tensor at the different
-        `precisions`.
+        It simply quantize the input tensor using a specific `Quantizer`.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        q_out = self.mixprec_quantizer(input)
+        q_out = self.quantizer(input)  # type: ignore
+        q_out = cast(torch.Tensor, q_out)
         out = F.relu(q_out)
         return out
 
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   precisions: Tuple[int, ...],
-                   quantizer: Type[Quantizer],
+                   precision: int,
+                   quantizer: Quantizer,
                    sq: Optional[Quantizer],
                    quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a MixPrec_ReLU layer, starting from the fx.Node
+        """Create a new fx.Node relative to a Quant_ReLU layer, starting from the fx.Node
         of a nn.ReLU layer, and replace it into the parent fx.GraphModule
 
         Also returns a quantizer in case it needs to be shared with other layers
@@ -75,9 +74,9 @@ class MixPrec_ReLU(nn.ReLU, MixPrecModule):
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param precisions: The precisions to be explored
-        :type precisions: Tuple[int, ...]
-        :param quantizer: The quantizer to be used
+        :param precision: the quantization precision
+        :type precision: int
+        :param quantizer: the quantizer to be used
         :type quantizer: Type[Quantizer]
         :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
         :type quantizer_kwargs: Dict
@@ -89,40 +88,39 @@ class MixPrec_ReLU(nn.ReLU, MixPrecModule):
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.ReLU:
-            msg = f"Trying to generate MixPrec_ReLU from layer of type {type(submodule)}"
+            msg = f"Trying to generate Quant_Identity from layer of type {type(submodule)}"
             raise TypeError(msg)
         if sq is not None:
-            mixprec_quantizer = sq
+            qtz_obj = sq
         else:
-            mixprec_quantizer = MixPrec_Qtz_Layer(precisions,
-                                                  quantizer,
-                                                  quantizer_kwargs)
+            qtz_obj = quantizer(precision,
+                                **quantizer_kwargs)  # type: ignore
 
-        mixprec_quantizer = cast(MixPrec_Qtz_Layer, mixprec_quantizer)
-        new_submodule = MixPrec_ReLU(precisions, mixprec_quantizer)
+        new_submodule = Quant_ReLU(precision, qtz_obj)
         mod.add_submodule(str(n.target), new_submodule)
         return None  # TODO: Understand if I should return something and when
 
     @staticmethod
-    def export(n: fx.Node, mod: fx.GraphModule):
-        """Replaces a fx.Node corresponding to a MixPrec_ReLU layer,
-        with the selected fake-quantized nn.ReLU layer within a fx.GraphModule
+    def export(n: fx.Node,
+               mod: fx.GraphModule,
+               backend: Backend):
+        """Replaces a fx.Node corresponding to a Quant_ReLU layer,
+        with a backend-specific quantize ReLU layer within a fx.GraphModule
 
         :param n: the node to be rewritten
         :type n: fx.Node
         :param mod: the parent module, where the new node has to be inserted
         :type mod: fx.GraphModule
+        :param backend: the specific backend to be used
+        :type backend: Backend
         """
         submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != MixPrec_ReLU:
+        if type(submodule) != Quant_ReLU:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        selected_precision = submodule.selected_precision
-        selected_precision = cast(int, selected_precision)
-        selected_quantizer = submodule.selected_quantizer
-        selected_quantizer = cast(Quantizer, selected_quantizer)
-        new_submodule = qnn.Quant_ReLU(
-            selected_precision,
-            selected_quantizer
+        integer_relu = backend_solver(type(submodule), backend)
+        new_submodule = integer_relu(
+            submodule.precision,
+            submodule.quantizer
         )
         mod.add_submodule(str(n.target), new_submodule)
 
@@ -133,50 +131,25 @@ class MixPrec_ReLU(nn.ReLU, MixPrecModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'precision': self.selected_precision,
+            'precision': self.precision,
+            'quantizer': self.quantizer.summary(),
         }
 
-    def named_nas_parameters(
+    def named_quant_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
-        """Returns an iterator over the architectural parameters of this layer, yielding
+        """Returns an iterator over the quantization parameters of this layer, yielding
         both the name of the parameter as well as the parameter itself
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
         :param recurse: kept for uniformity with pytorch API,
-        but MixPrecModule never have sub-layers TODO: check if true
+        but QuantModule never have sub-layers TODO: check if true
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.mixprec_quantizer.named_parameters(
+        for name, param in self.quantizer.named_quant_parameters(
                 prfx + "mixprec_quantizer", recurse):
             yield name, param
-
-    @property
-    def selected_precision(self) -> int:
-        """Return the selected precision based on the magnitude of `alpha_prec`
-        components
-
-        :return: the selected precision
-        :rtype: int
-        """
-        with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_quantizer.alpha_prec))
-            return self.precisions[idx]
-
-    @property
-    def selected_quantizer(self) -> Type[Quantizer]:
-        """Return the selected quantizer based on the magnitude of `alpha_prec`
-        components
-
-        :return: the selected precision
-        :rtype: int
-        """
-        with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_quantizer.alpha_prec))
-            qtz = self.mixprec_quantizer.mix_qtz[idx]
-            qtz = cast(Type[Quantizer], qtz)
-            return qtz

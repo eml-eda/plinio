@@ -20,7 +20,7 @@
 from typing import Dict, Tuple, Type, cast
 import torch
 import torch.nn as nn
-from quant import Quantizer
+from quant.quantizers import Quantizer
 
 
 class MixPrec_Qtz_Layer(nn.Module):
