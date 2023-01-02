@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Dict, Any, Optional, Iterator, Tuple, Type
+from typing import Dict, Any, Optional, Iterator, Tuple
 import torch.fx as fx
 import torch.nn as nn
 from quant.quantizers import Quantizer
@@ -37,7 +37,7 @@ class QuantModule:
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
                    precision: int,
-                   quantizer: Type[Quantizer],
+                   quantizer: Quantizer,
                    sq: Optional[Quantizer],
                    quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
@@ -53,7 +53,7 @@ class QuantModule:
         :param precision: The precision to be enforced
         :type precision: int
         :param quantizer: The quantizer to be used
-        :type quantizer: Type[Quantizer]
+        :type quantizer: Quantizer
         :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
         :type quantizer_kwargs: Dict
         :param sq: An optional shared quantizer derived from other layers

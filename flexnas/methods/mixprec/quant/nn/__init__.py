@@ -18,7 +18,8 @@
 # *----------------------------------------------------------------------------*
 
 from .quant_module import QuantModule
+from .quant_identity import Quant_Identity
 
 __all__ = [
-    'QuantModule',
+    'QuantModule', 'Quant_Identity',
 ]

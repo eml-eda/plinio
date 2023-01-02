@@ -17,8 +17,8 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .base import Backend
+from .base import Backend, backend_solver
 
 __all__ = [
-    'Backend',
+    'Backend', 'backend_solver',
 ]

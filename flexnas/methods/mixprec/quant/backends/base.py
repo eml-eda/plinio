@@ -25,3 +25,10 @@ class Backend(Enum):
     DORY = auto()
     DIANA = auto()
     # Add new backends here
+
+
+def backend_solver(layer_type, backend):
+    """Depending on the specific `layer_type` and specified `backend` returns
+    the appropriate backend-specific layer implementation
+    """
+    raise NotImplementedError

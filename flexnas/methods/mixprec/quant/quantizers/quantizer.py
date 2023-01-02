@@ -19,6 +19,7 @@
 
 from abc import abstractmethod
 from typing import Dict, Any, Optional, Iterator, Tuple
+import torch
 import torch.fx as fx
 import torch.nn as nn
 
@@ -29,6 +30,10 @@ class Quantizer:
     @abstractmethod
     def __init__(self):
         raise NotImplementedError("Calling init on base abstract Quantizer class")
+
+    @abstractmethod
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError("Calling forward on base abstract Quantizer class")
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule, backend: Optional[str]):
