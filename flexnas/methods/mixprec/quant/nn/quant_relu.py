@@ -22,8 +22,8 @@ import torch
 import torch.fx as fx
 import torch.nn as nn
 import torch.nn.functional as F
-from quant.quantizers import Quantizer
-from quant.backends import Backend, backend_solver
+from ..quantizers import Quantizer
+from ..backends import Backend, backend_solver
 from .quant_module import QuantModule
 
 

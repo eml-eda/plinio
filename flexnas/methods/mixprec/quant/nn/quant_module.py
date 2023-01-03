@@ -21,8 +21,8 @@ from abc import abstractmethod
 from typing import Dict, Any, Optional, Iterator, Tuple
 import torch.fx as fx
 import torch.nn as nn
-from quant.quantizers import Quantizer
-from quant.backends import Backend
+from ..quantizers import Quantizer
+from ..backends import Backend
 
 
 class QuantModule:

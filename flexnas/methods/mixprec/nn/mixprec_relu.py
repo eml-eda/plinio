@@ -22,10 +22,10 @@ import torch
 import torch.fx as fx
 import torch.nn as nn
 import torch.nn.functional as F
-from quant.quantizers import Quantizer
-import quant.nn as qnn
+from ..quant.quantizers import Quantizer
+from ..quant.nn import Quant_ReLU
 from .mixprec_module import MixPrecModule
-from .mixprec_qtz_layer import MixPrec_Qtz_Layer
+from .mixprec_qtz import MixPrec_Qtz_Layer
 
 
 class MixPrec_ReLU(nn.ReLU, MixPrecModule):
@@ -120,7 +120,7 @@ class MixPrec_ReLU(nn.ReLU, MixPrecModule):
         selected_precision = cast(int, selected_precision)
         selected_quantizer = submodule.selected_quantizer
         selected_quantizer = cast(Quantizer, selected_quantizer)
-        new_submodule = qnn.Quant_ReLU(
+        new_submodule = Quant_ReLU(
             selected_precision,
             selected_quantizer
         )

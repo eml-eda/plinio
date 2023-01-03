@@ -21,7 +21,7 @@ from abc import abstractmethod
 from typing import Dict, Any, Optional, Iterator, Tuple, Type
 import torch.fx as fx
 import torch.nn as nn
-from quant.quantizers import Quantizer
+from ..quant.quantizers import Quantizer
 
 
 class MixPrecModule:

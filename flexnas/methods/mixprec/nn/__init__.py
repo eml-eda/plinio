@@ -20,7 +20,9 @@
 from .mixprec_module import MixPrecModule
 from .mixprec_identity import MixPrec_Identity
 from .mixprec_relu import MixPrec_ReLU
+from .mixprec_linear import MixPrec_Linear
 
 __all__ = [
     'MixPrecModule', 'MixPrec_Identity', 'MixPrec_ReLU',
+    'MixPrec_Linear',
 ]

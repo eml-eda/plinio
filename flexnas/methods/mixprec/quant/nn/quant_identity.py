@@ -21,8 +21,8 @@ from typing import Dict, Any, Optional, Iterator, Tuple, cast
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from quant.quantizers import Quantizer
-from quant.backends import Backend, backend_solver
+from ..quantizers import Quantizer
+from ..backends import Backend, backend_solver
 from .quant_module import QuantModule
 
 

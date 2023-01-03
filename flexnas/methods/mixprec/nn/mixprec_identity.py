@@ -21,10 +21,10 @@ from typing import Dict, Any, Optional, Iterator, Tuple, Type, cast
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from quant.quantizers import Quantizer
-import quant.nn as qnn
+from ..quant.quantizers import Quantizer
+from ..quant.nn import Quant_Identity
 from .mixprec_module import MixPrecModule
-from .mixprec_qtz_layer import MixPrec_Qtz_Layer
+from .mixprec_qtz import MixPrec_Qtz_Layer
 
 
 class MixPrec_Identity(nn.Identity, MixPrecModule):
@@ -118,7 +118,7 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
         selected_precision = cast(int, selected_precision)
         selected_quantizer = submodule.selected_quantizer
         selected_quantizer = cast(Quantizer, selected_quantizer)
-        new_submodule = qnn.Quant_Identity(
+        new_submodule = Quant_Identity(
             selected_precision,
             selected_quantizer
         )

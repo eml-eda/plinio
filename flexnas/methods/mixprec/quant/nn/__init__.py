@@ -20,7 +20,9 @@
 from .quant_module import QuantModule
 from .quant_identity import Quant_Identity
 from .quant_relu import Quant_ReLU
+from .quant_linear import Quant_Linear
 
 __all__ = [
     'QuantModule', 'Quant_Identity', 'Quant_ReLU',
+    'Quant_Linear',
 ]
