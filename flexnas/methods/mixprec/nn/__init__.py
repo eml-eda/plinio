@@ -21,8 +21,9 @@ from .mixprec_module import MixPrecModule
 from .mixprec_identity import MixPrec_Identity
 from .mixprec_relu import MixPrec_ReLU
 from .mixprec_linear import MixPrec_Linear
+from .mixprec_conv2d import MixPrec_Conv2d
 
 __all__ = [
     'MixPrecModule', 'MixPrec_Identity', 'MixPrec_ReLU',
-    'MixPrec_Linear',
+    'MixPrec_Linear', 'MixPrec_Conv2d',
 ]

@@ -21,8 +21,9 @@ from .quant_module import QuantModule
 from .quant_identity import Quant_Identity
 from .quant_relu import Quant_ReLU
 from .quant_linear import Quant_Linear
+from .quant_conv2d import Quant_Conv2d
 
 __all__ = [
     'QuantModule', 'Quant_Identity', 'Quant_ReLU',
-    'Quant_Linear',
+    'Quant_Linear', 'Quant_Conv2d',
 ]
