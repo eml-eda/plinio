@@ -378,3 +378,25 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             qtz = self.mixprec_b_quantizer.mix_qtz[idx]
             qtz = cast(Type[Quantizer], qtz)
             return qtz
+
+    def get_size(self) -> torch.Tensor:
+        """Computes the effective number of weights for the layer
+
+        :return: the effective memory occupation of weights
+        :rtype: torch.Tensor
+        """
+        eff_w_prec = self.mixprec_w_quantizer.effective_precision
+        cost = self.in_features * self.out_features * eff_w_prec
+        return cost
+
+    # N.B., EdMIPS formulation
+    def get_macs(self) -> torch.Tensor:
+        """Method that computes the effective MACs operations for the layer
+
+        :return: the effective number of MACs
+        :rtype: torch.Tensor
+        """
+        eff_w_prec = self.mixprec_w_quantizer.effective_precision
+        eff_a_prec = self.mixprec_a_quantizer.effective_precision
+        cost = self.in_features * self.out_features * eff_w_prec * eff_a_prec
+        return cost

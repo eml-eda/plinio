@@ -75,7 +75,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha_prec / self._temperature,
+        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
                                            dim=0)
         soft_alpha = soft_alpha.view((self.cout,) + (1,) * len(input.shape[1:]))
         y = []
@@ -83,6 +83,20 @@ class MixPrec_Qtz_Channel(nn.Module):
             y.append(soft_alpha[i] * quantizer(input))
         y = torch.stack(y, dim=0).sum(dim=0)
         return y
+
+    @property
+    def effective_precision(self) -> torch.Tensor:
+        """Return each channel effective precision as the average precision weighted by
+        softmax-ed `alpha_prec` parameters
+
+        :return: the effective precision
+        :rtype: torch.Tensor
+        """
+        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
+                                           dim=0)
+        p_tensor = torch.Tensor(self.precisions)
+        eff_prec = (soft_alpha.sum(dim=1) * p_tensor).sum() / self.cout  # TODO: Check
+        return eff_prec
 
     @property
     def temperature(self) -> float:
@@ -145,13 +159,27 @@ class MixPrec_Qtz_Layer(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha_prec / self._temperature,
+        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
                                            dim=0)
         y = []
         for i, quantizer in enumerate(self.mix_qtz):
             y.append(soft_alpha[i] * quantizer(input))
         y = torch.stack(y, dim=0).sum(dim=0)
         return y
+
+    @property
+    def effective_precision(self) -> torch.Tensor:
+        """Return the effective precision as the average precision weighted by
+        softmax-ed `alpha_prec` parameters
+
+        :return: the effective precision
+        :rtype: torch.Tensor
+        """
+        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
+                                           dim=0)
+        p_tensor = torch.Tensor(self.precisions)
+        eff_prec = (soft_alpha * p_tensor).sum()
+        return eff_prec
 
     @property
     def temperature(self) -> float:

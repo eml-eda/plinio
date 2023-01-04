@@ -32,6 +32,10 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
 
     :param conv: the inner `nn.Conv2d` layer to be optimized
     :type conv: nn.Conv2d
+    :param out_heigth: the height of the output feature map (needed to compute the MACs)
+    :type out_height: int
+    :param out_width: the width of the output feature map (needed to compute the MACs)
+    :type out_width: int
     :param a_precisions: different bitwitdth alternatives among which perform search
     for activations
     :type a_precisions: Tuple[int, ...]
@@ -50,6 +54,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
     """
     def __init__(self,
                  conv: nn.Conv2d,
+                 out_height: int,
+                 out_width: int,
                  a_precisions: Tuple[int, ...],
                  w_precisions: Tuple[int, ...],
                  a_quantizer: MixPrec_Qtz_Layer,
@@ -78,7 +84,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                 self.bias.copy_(conv.bias)
             else:
                 self.bias = None
-
+        self.out_height = out_height
+        self.out_width = out_width
         # TODO: Understand if I need this lines of code for regularization later on
         # this will be overwritten later when we process the model graph
         # self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
@@ -233,7 +240,13 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                                    mixprec_w_quantizer)
         mixprec_b_quantizer = cast(Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
                                    mixprec_b_quantizer)
+        out_height = n.meta['tensor_meta'].shape[2],
+        out_height = cast(int, out_height)
+        out_width = n.meta['tensor_meta'].shape[3],
+        out_width = cast(int, out_width)
         new_submodule = MixPrec_Conv2d(submodule,
+                                       out_height,
+                                       out_width,
                                        a_precisions,
                                        w_precisions,
                                        mixprec_a_quantizer,
@@ -389,3 +402,26 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             qtz = self.mixprec_b_quantizer.mix_qtz[idx]
             qtz = cast(Type[Quantizer], qtz)
             return qtz
+
+    def get_size(self) -> torch.Tensor:
+        """Computes the effective number of weights for the layer
+
+        :return: the effective memory occupation of weights
+        :rtype: torch.Tensor
+        """
+        eff_w_prec = self.mixprec_w_quantizer.effective_precision
+        cost = self.in_channels * self.out_channels * self.kernel_size[0] * self.kernel_size[1]
+        cost = cost / self.groups
+        eff_cost = cost * eff_w_prec
+        return eff_cost
+
+    # N.B., EdMIPS formulation
+    def get_macs(self) -> torch.Tensor:
+        """Method that computes the effective MACs operations for the layer
+
+        :return: the effective number of MACs
+        :rtype: torch.Tensor
+        """
+        eff_a_prec = self.mixprec_a_quantizer.effective_precision
+        eff_cost = self.get_size() * self.out_height * self.out_width * eff_a_prec
+        return eff_cost
