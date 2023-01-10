@@ -21,5 +21,6 @@ from .pit import PIT
 from .supernet import SuperNet, SuperNetTracer
 from .supernet import SuperNetModule
 from .supernet import PaddedModule
+from .pit_supernet import PITSuperNetModule, PITSuperNet
 
-__all__ = ['DNAS', 'PIT', 'SuperNet', 'SuperNetModule', 'PaddedModule', 'SuperNetTracer']
+__all__ = ['DNAS', 'PIT', 'SuperNet', 'SuperNetModule', 'PaddedModule', 'SuperNetTracer', 'PITSuperNetModule', 'PITSuperNet']

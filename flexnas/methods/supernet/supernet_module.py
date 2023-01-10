@@ -1,4 +1,3 @@
-
 from typing import Iterable, Iterator, Tuple
 import torch
 import torch.nn as nn

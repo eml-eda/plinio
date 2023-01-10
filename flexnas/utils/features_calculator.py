@@ -208,3 +208,39 @@ class ConcatFeaturesCalculator(FeaturesCalculator):
         for i, fc in enumerate(self.inputs):
             prefix = f"prev_{i}" + prefix
             fc.register(mod, prefix)
+
+
+class SoftMaxFeaturesCalculator(FeaturesCalculator):
+
+    def __init__(self, mod: nn.Module, attr_name: str, inputs: List[FeaturesCalculator]):
+        super(SoftMaxFeaturesCalculator, self).__init__()
+        self.inputs = inputs
+        self.mod = mod
+        self.attr_name = attr_name
+
+    @property
+    def features(self) -> torch.Tensor:
+        # combinazione lineare con ogni coeff (alpha) che moltiplica il corrispondente input,
+        # non so se si fa cosi in torch, consideriamolo pseudo-codice
+        coeff = nn.functional.softmax(getattr(self.mod, self.attr_name), dim=0)
+        prev = [_.features for _ in self.inputs]
+
+        outfeat = torch.zeros()
+        for i, input in enumerate(prev):
+            other = coeff[i] * input
+            torch.add(outfeat, other, out=outfeat)
+
+        return outfeat
+
+    @property
+    def features_mask(self) -> torch.Tensor:
+        # maschera dell'input corrispondente all'argmax, anche qui pseudo-codice
+        amax = torch.argmax(getattr(self.mod, self.attr_name)).item()
+        return self.inputs[int(amax)].features_mask
+
+    def register(self, mod: nn.Module, prefix: str = ""):
+        # uguale al caso del concat
+        # recursively ensure that predecessors are registers
+        for i, fc in enumerate(self.inputs):
+            prefix = f"prev_{i}" + prefix
+            fc.register(mod, prefix)

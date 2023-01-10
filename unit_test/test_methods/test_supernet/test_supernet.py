@@ -200,11 +200,11 @@ class TestSuperNet(unittest.TestCase):
         model = MobileNetSN()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out = model(dummy_inp)
-        #print(out)
+        print(out)
 
         sn_model = SuperNet(model, (ch_in, in_width, in_height))
         out2 = sn_model(dummy_inp)
-        #print(out2)
+        print(out2)
     '''
 
     # PaddedModule

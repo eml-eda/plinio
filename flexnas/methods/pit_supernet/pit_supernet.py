@@ -4,21 +4,12 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.dnas_base import DNAS
-from .supernet_module import SuperNetModule
+from .pit_supernet_combiner import PITSuperNetCombiner
+from .pit_supernet_graph import PITSuperNetTracer
+from .pit_supernet_graph import convert
 
 
-class SuperNetTracer(fx.Tracer):
-    def __init__(self) -> None:
-        super().__init__()  # type: ignore
-
-    def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-        if isinstance(m, SuperNetModule):
-            return True
-        else:
-            return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
-
-
-class SuperNet(DNAS):
+class PITSuperNet(DNAS):
     """A class that wraps a nn.Module with the functionality of the SuperNet NAS tool
 
     :param model: the inner nn.Module instance optimized by the NAS
@@ -39,17 +30,21 @@ class SuperNet(DNAS):
             regularizer: str = 'size',
             exclude_names: Iterable[str] = ()):
 
-        super(SuperNet, self).__init__(regularizer, exclude_names)
+        super(PITSuperNet, self).__init__(regularizer, exclude_names)
 
         self._input_shape = input_shape
         self._regularizer = regularizer
-        self.seed = model
+        # self.seed = model
         self.exclude_names = exclude_names
 
-        target_modules = []
-        self._target_modules = self.get_supernet_modules(target_modules, model, exclude_names)
+        print(model)
+        self.seed, targets = convert(model, self._input_shape, 'import')
+        print(self.seed)
 
-        tracer = SuperNetTracer()
+        target_modules = []
+        self._target_modules = self.get_pit_supernet_modules(target_modules, model, exclude_names)
+
+        tracer = PITSuperNetTracer()
         graph = tracer.trace(model.eval())
         name = model.__class__.__name__
         mod = fx.GraphModule(tracer.root, graph, name)
@@ -61,11 +56,11 @@ class SuperNet(DNAS):
 
         self._compute_shapes(mod)
 
-    def get_supernet_modules(
+    def get_pit_supernet_modules(
             self,
             target_modules: List,
             model: nn.Module,
-            exclude_names: Iterable[str]) -> List[Tuple[str, SuperNetModule]]:
+            exclude_names: Iterable[str]) -> List[Tuple[str, PITSuperNetCombiner]]:
         """This function spots each SuperNetModule contained in the model received
         and saves them in a list.
 
@@ -81,12 +76,12 @@ class SuperNet(DNAS):
         for named_module in model.named_modules():
             if (named_module[0] != ''):
                 submodules = list(named_module[1].children())
-                if (named_module[1].__class__.__name__ == "SuperNetModule"):
+                if (named_module[1].__class__.__name__ == "PITSuperNetCombiner"):
                     if (named_module[0] not in exclude_names):
                         target_modules.append(named_module)
                 elif (submodules):
                     for child in submodules:
-                        self.get_supernet_modules(target_modules, child, exclude_names)
+                        self.get_pit_supernet_modules(target_modules, child, exclude_names)
         return target_modules
 
     def _compute_shapes(self, mod: fx.GraphModule):
@@ -162,7 +157,7 @@ class SuperNet(DNAS):
             raise ValueError(f"Invalid regularizer {value}")
         self._regularizer = value
 
-    def arch_export(self) -> nn.Module:
+    def arch_export(self, add_bn=True) -> nn.Module:
         """Export the architecture found by the NAS as a 'nn.Module'
         It replaces each SuperNetModule found in the model with a single layer.
 
@@ -170,19 +165,33 @@ class SuperNet(DNAS):
         :rtype: nn.Module
         """
         model = self.seed
+        '''
+        if not add_bn:
+            for layer in self._target_layers:
+                if hasattr(layer, 'following_bn_args'):
+                    layer.following_bn_args = None
+        '''
+        print(model)
 
+        model, _ = convert(model, self._input_shape, 'export')
+
+        print(model)
+
+        '''
         for module in self._target_modules:
-            submodule = cast(SuperNetModule, model.get_submodule(module[0]))
+            submodule = cast(PITSuperNetCombiner, model.get_submodule(module[0]))
             module_exp = submodule.export()
 
             path = module[0].split('.')
+            path.remove('combiner')
             if (len(path) > 1):
                 parent = model.get_submodule(path[-2])
             else:
                 parent = model
 
             parent.add_module(path[-1], module_exp)
-
+        '''
+        print(model)
         return model
 
     def arch_summary(self) -> Dict[str, str]:
@@ -264,6 +273,7 @@ class SuperNet(DNAS):
             if name not in exclude:
                 yield name, param
 
+    '''
     def __str__(self):
         """Prints the architecture found by the NAS to screen
 
@@ -272,3 +282,4 @@ class SuperNet(DNAS):
         """
         arch = self.arch_summary()
         return str(arch)
+    '''

@@ -16,13 +16,16 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List, Type, Tuple, Any, Dict
+from typing import List, Type, Tuple, Any, Dict, Optional, Callable
+import math
 import operator
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.fx as fx
 import networkx as nx
+from flexnas.utils.features_calculator import ConstFeaturesCalculator, \
+    FlattenFeaturesCalculator, ConcatFeaturesCalculator, FeaturesCalculator
 
 
 def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
@@ -273,6 +276,8 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if isinstance(submodule, nn.AdaptiveAvgPool1d):
             return True
+        if isinstance(submodule, nn.Identity):
+            return True
         if isinstance(submodule, nn.Conv1d) or isinstance(submodule, nn.Conv2d):
             if (submodule.groups == submodule.in_channels) and (
                     submodule.groups == submodule.out_channels):
@@ -396,3 +401,147 @@ def replace_node_module(node: fx.Node, modules: Dict[str, Any], new_module: torc
     assert isinstance(node.target, str)
     pn, name = parent_name(node.target)
     setattr(modules[pn], name, new_module)
+
+
+def add_node_properties(mod: fx.GraphModule):
+    g = mod.graph
+    nx_graph = fx_to_nx_graph(g)
+    queue = get_input_nodes(g)
+
+    while queue:
+        n = queue.pop(0)
+
+        n.meta['features_propagating'] = is_features_propagating_op(n, mod)
+        n.meta['features_defining'] = is_features_defining_op(n, mod)
+        n.meta['shared_input_features'] = is_shared_input_features_op(n, mod)
+        n.meta['flatten'] = is_flatten(n, mod)
+        n.meta['squeeze'] = is_squeeze(n, mod)
+        n.meta['features_concatenate'] = is_features_concatenate(n, mod)
+
+        for succ in nx_graph.successors(n):
+            queue.append(succ)
+
+
+def add_features_calculator(mod: fx.GraphModule,
+                            extra_rules: List[Callable]
+                            ) -> Optional[FeaturesCalculator]:
+    # List[((fx.node, fx.GraphModule) -> Optional[FeaturesCalculator])]
+    # List[Callable[[fx.node, fx.GraphModule], Optional[FeaturesCalculator]]]
+    # List[Callable]
+    g = mod.graph
+    nx_graph = fx_to_nx_graph(g)
+    queue = get_input_nodes(g)
+
+    print(type(extra_rules[0]))
+    while queue:
+        n = queue.pop(0)
+        # skip nodes for which predecessors have not yet been processed completely, we'll come
+        # back to them later
+        skip_flag = False
+        if len(n.all_input_nodes) > 0:
+            for i in n.all_input_nodes:
+                if 'features_calculator' not in i.meta:
+                    skip_flag = True
+        if skip_flag:
+            continue
+
+        fc = None
+        if extra_rules:
+            for rule in extra_rules:
+                fc = rule(n, mod)
+                if fc:
+                    break
+        if fc:
+            n.meta['features_calculator'] = fc
+        elif n.meta['flatten']:
+            # For flatten ops, the output features are computed as: input_features * spatial_size
+            # note that this is NOT simply equal to the output shape if the preceding layer is a
+            # NAS-able one, for which some features # could be de-activated
+            ifc = n.all_input_nodes[0].meta['features_calculator']
+            input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
+            start_dim = try_get_args(n, 1, 'start_dim', 0)
+            end_dim = try_get_args(n, 2, 'end_dim', -1)
+            assert start_dim != 0 and len(input_shape) - start_dim != 0, \
+                "Flattening the batch not supported by PIT"
+            # if flatten includes the channels
+            if start_dim == 1 or len(input_shape) - start_dim == 1:
+                n.meta['features_calculator'] = FlattenFeaturesCalculator
+            if start_dim == 1 or len(input_shape) - start_dim == 1:
+                flattened_size = math.prod(input_shape[2:end_dim if end_dim != -1 else None])
+                n.meta['features_calculator'] = FlattenFeaturesCalculator(ifc, flattened_size)
+            else:
+                n.meta['features_calculator'] = ifc  # just propagate the features
+        elif n.meta['squeeze']:
+            # Squeeze is similar to flatten but the pytorch operation is slightly different
+            ifc = n.all_input_nodes[0].meta['features_calculator']
+            input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
+            dim = try_get_args(n, 1, 'dim', None)
+            '''
+            if dim is None:
+                raise ValueError("Squeeze without dim not supported by PIT")
+            assert dim != 0 and len(input_shape) - dim != 0, \
+                "Squeezing the batch is not supported by PIT"
+            '''
+            if dim is None:
+                n.meta['features_calculator'] = ifc  # just propagate the features
+            elif dim == 1 or len(input_shape) - dim == 1:
+                flattened_size = input_shape[2]
+                n.meta['features_calculator'] = FlattenFeaturesCalculator(ifc, flattened_size)
+            else:
+                n.meta['features_calculator'] = ifc  # just propagate the features
+        elif n.meta['features_concatenate']:
+            # for concatenation over the features axis the number of output features is the sum
+            # of the output features of preceding layers as for flatten, this is NOT equal to the
+            # input shape of this layer, when one or more predecessors are NAS-able
+            # ifc = ConcatFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes])
+            ifc = ConcatFeaturesCalculator(
+                [prev.meta['features_calculator'] for prev in n.all_input_nodes]
+            )
+            n.meta['features_calculator'] = ifc
+        elif n.meta['shared_input_features']:
+            # for nodes that require identical number of features in all their inputs (e.g., add)
+            # we simply assume that we can take any of the output features calculators from
+            # predecessors
+            # this is enforced for NAS-able layers by the use of shared maskers (see above)
+            n.meta['features_calculator'] = n.all_input_nodes[0].meta['features_calculator']
+            # just propagate the features
+        elif n.meta['features_defining']:
+            # these are "static" (i.e., non NAS-able) nodes that alter the number of output
+            # features, and hence the number of input features of subsequent layers
+            n.meta['features_calculator'] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
+        elif n.meta['features_propagating']:
+            # these are nodes that have a single input and n. output features == n. input features
+            # so, we just propagate forward the features calculator of the input
+            # this also includes PITBatchNorm1d and PITBatchNorm2d
+            n.meta['features_calculator'] = n.all_input_nodes[0].meta['features_calculator']
+            # they all have a single input
+        else:
+            raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
+
+        for succ in nx_graph.successors(n):
+            queue.append(succ)
+
+
+def associate_input_features(mod: fx.GraphModule):
+    g = mod.graph
+    nx_graph = fx_to_nx_graph(g)
+    queue = get_input_nodes(g)
+
+    while queue:
+        n = queue.pop(0)
+
+        input_nodes = n.all_input_nodes
+        if len(input_nodes) > 0:
+            prev = input_nodes[0]
+            if 'input_features_set_by' in prev.meta:
+                if prev.meta['features_defining']:
+                    n.meta['input_features_set_by'] = prev
+                elif prev.meta['features_propagating']:
+                    n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                else:
+                    n.meta['input_features_set_by'] = prev  # CHECK!!
+        else:  # input node
+            n.meta['input_features_set_by'] = n
+
+        for succ in nx_graph.successors(n):
+            queue.append(succ)
