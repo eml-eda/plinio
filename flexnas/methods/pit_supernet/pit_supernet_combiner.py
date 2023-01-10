@@ -8,7 +8,7 @@ from flexnas.methods.pit import PITModule
 
 class PITSuperNetCombiner(nn.Module):
 
-    def __init__(self, input_layers: nn.ModuleList):
+    def __init__(self, input_layers: list[nn.Module]):
         super(PITSuperNetCombiner, self).__init__()
 
         self._input_layers = input_layers

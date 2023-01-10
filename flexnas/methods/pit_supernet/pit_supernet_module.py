@@ -11,7 +11,7 @@ class PITSuperNetModule(nn.Module):
 
         self._input_layers = nn.ModuleList(list(input_layers))
         self.input_shape = None
-        self.combiner = PITSuperNetCombiner(self._input_layers)
+        self.combiner = PITSuperNetCombiner(list(input_layers))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         layers_outputs = [layer(input) for layer in self._input_layers]

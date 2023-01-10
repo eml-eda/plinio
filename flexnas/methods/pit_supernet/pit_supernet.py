@@ -191,7 +191,6 @@ class PITSuperNet(DNAS):
 
             parent.add_module(path[-1], module_exp)
         '''
-        print(model)
         return model
 
     def arch_summary(self) -> Dict[str, str]:

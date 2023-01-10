@@ -432,7 +432,6 @@ def add_features_calculator(mod: fx.GraphModule,
     nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
 
-    print(type(extra_rules[0]))
     while queue:
         n = queue.pop(0)
         # skip nodes for which predecessors have not yet been processed completely, we'll come
