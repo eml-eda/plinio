@@ -17,7 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, Type
+from typing import Dict, Any, Optional, Iterator, Tuple
 import torch
 import torch.fx as fx
 import torch.nn as nn
@@ -35,23 +35,23 @@ class Quantizer_Bias(nn.Module, Quantizer):
     :type num_bits: int
     :param cout: number of output channels, coincide with len of bias vector
     :type cout: int
-    :param act_quantizer: activation quantizer
-    :type act_quantizer: Quantizer
-    :param weight_quantizer: weight quantizer
-    :type weight_quantizer: Quantizer
+    :param scale_act: activation scale factor
+    :type scale_act: torch.Tensor
+    :param scale_weight: weight scale factor
+    :type scale_weight: torch.Tensor
     :param dequantize: whether the output should be fake-quantized or not
     :type dequantize: bool
     """
     def __init__(self,
                  num_bits: int,
                  cout: int,
-                 act_quantizer: Type[Quantizer],
-                 weight_quantizer: Type[Quantizer],
+                 scale_act: torch.Tensor,
+                 scale_weight: torch.Tensor,
                  dequantize: bool = True):
         super(Quantizer_Bias, self).__init__()
         self.num_bits = num_bits
-        self.act_quantizer = act_quantizer
-        self.weight_quantizer = weight_quantizer
+        self.scale_act = scale_act
+        self.scale_weight = scale_weight
         self.dequantize = dequantize
         self.register_buffer('s_b', torch.Tensor(cout))
 
@@ -66,8 +66,8 @@ class Quantizer_Bias(nn.Module, Quantizer):
         :return: the output fake-quantized bias tensor
         :rtype: torch.Tensor
         """
-        s_a = self.weight_quantizer.s_a  # type: ignore
-        s_w = self.weight_quantizer.s_w  # type: ignore
+        s_a = self.scale_act
+        s_w = self.scale_weight
         self.s_b = s_a * s_w
 
         scaled_inp = input / self.s_b

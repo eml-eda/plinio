@@ -22,6 +22,7 @@ from typing import Dict, Any, Optional, Iterator, Tuple, Type
 import torch.fx as fx
 import torch.nn as nn
 from ..quant.quantizers import Quantizer
+from .mixprec_qtz import MixPrecType
 
 
 class MixPrecModule:
@@ -35,28 +36,47 @@ class MixPrecModule:
     @abstractmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   precisions: Tuple[int, ...],
-                   quantizer: Type[Quantizer],
-                   sq: Optional[Quantizer],
-                   quantizer_kwargs: Dict = {}
+                   w_mixprec_type: MixPrecType,
+                   a_precisions: Tuple[int, ...],
+                   w_precisions: Tuple[int, ...],
+                   a_quantizer: Type[Quantizer],
+                   w_quantizer: Type[Quantizer],
+                   b_quantizer: Type[Quantizer],
+                   a_sq: Optional[Quantizer],
+                   a_quantizer_kwargs: Dict = {},
+                   w_quantizer_kwargs: Dict = {},
+                   b_quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
         """Create a new fx.Node relative to a MixPrecModule layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
 
         Also returns a quantizer in case it needs to be shared with other layers
 
-        :param n: a fx.Node corresponding to a standard nn.Module layer, with shape annotations
+        :param n: a fx.Node corresponding to a nn.ReLU layer, with shape annotations
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param precisions: The precisions to be explored
-        :type precisions: Tuple[int, ...]
-        :param quantizer: The quantizer to be used
-        :type quantizer: Type[Quantizer]
-        :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
-        :type quantizer_kwargs: Dict
-        :param sq: An optional shared quantizer derived from other layers
-        :type sq: Optional[Quantizer]
+        :param w_mixprec_type: the mixed precision strategy to be used for weigth
+        i.e., `PER_CHANNEL` or `PER_LAYER`.
+        :type w_mixprec_type: MixPrecType
+        :param a_precisions: The precisions to be explored for activations
+        :type a_precisions: Tuple[int, ...]
+        :param w_precisions: The precisions to be explored for weights
+        :type w_precisions: Tuple[int, ...]
+        :param a_quantizer: The quantizer to be used for activations
+        :type a_quantizer: Type[Quantizer]
+        :param w_quantizer: The quantizer to be used for weights
+        :type w_quantizer: Type[Quantizer]
+        :param b_quantizer: The quantizer to be used for biases
+        :type b_quantizer: Type[Quantizer]
+        :param a_sq: An optional shared quantizer derived from other layers for activations
+        :type a_sq: Optional[Quantizer]
+        :param a_quantizer_kwargs: act quantizer kwargs, if no kwargs are passed default is used
+        :type a_quantizer_kwargs: Dict
+        :param w_quantizer_kwargs: weight quantizer kwargs, if no kwargs are passed default is used
+        :type w_quantizer_kwargs: Dict
+        :param b_quantizer_kwargs: bias quantizer kwargs, if no kwargs are passed default is used
+        :type b_quantizer_kwargs: Dict
         :raises TypeError: if the input fx.Node is not of the correct type
         :return: the updated shared quantizer
         :rtype: Optional[Quantizer]

@@ -24,6 +24,26 @@ import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
 from .mixprec_converter import convert
 from .nn.mixprec_module import MixPrecModule
+from .nn.mixprec_qtz import MixPrecType
+
+from flexnas.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight, Quantizer_Bias
+
+DEFAULT_QINFO = {
+    'a_quantizer': {
+        'quantizer': PACT_Act,
+        'kwargs': {},
+    },
+    'w_quantizer': {
+        'quantizer': MinMax_Weight,
+        'kwargs': {},
+    },
+    'b_quantizer': {
+        'quantizer': Quantizer_Bias,
+        'kwargs': {
+            'num_bits': 32,
+        },
+    },
+}
 
 
 class MixPrec(DNAS):
@@ -34,6 +54,18 @@ class MixPrec(DNAS):
     :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
     :type input_shape: Tuple[int, ...]
+    :param activation_precisions: the possible activations' precisions assigment to be explored
+    by the NAS
+    :type activation_precisions: Iterable[int]
+    :param weight_precisions: the possible weights' precisions assigment to be explored
+    by the NAS
+    :type weight_precisions: Iterable[int]
+    :param w_mixprec_type: the mixed precision strategy to be used for weigth
+    i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
+    :type w_mixprec_type: MixPrecType
+    :param qinfo: dict containing desired quantizers for act, weight and bias
+    and their arguments excluding the num_bits precision
+    :type qinfo: Dict
     :param regularizer: the name of the model cost regularizer used by the NAS, defaults to 'size'
     :type regularizer: Optional[str], optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
@@ -51,6 +83,10 @@ class MixPrec(DNAS):
             self,
             model: nn.Module,
             input_shape: Tuple[int, ...],
+            activation_precisions: Tuple[int, ...] = (2, 4, 8),
+            weight_precisions: Tuple[int, ...] = (2, 4, 8),
+            w_mixprec_type: MixPrecType = MixPrecType.PER_LAYER,
+            qinfo: Dict = DEFAULT_QINFO,
             regularizer: str = 'size',
             autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
@@ -60,9 +96,17 @@ class MixPrec(DNAS):
         self.seed, self._target_layers = convert(
             model,
             input_shape,
+            activation_precisions,
+            weight_precisions,
+            w_mixprec_type,
+            qinfo,
             'autoimport' if autoconvert_layers else 'import',
             exclude_names,
             exclude_types)
+        self.activation_precisions = activation_precisions
+        self.weight_precisions = weight_precisions
+        self.w_mixprec_type = w_mixprec_type
+        self.qinfo = qinfo
         self._regularizer = regularizer
 
     def forward(self, *args: Any) -> torch.Tensor:
