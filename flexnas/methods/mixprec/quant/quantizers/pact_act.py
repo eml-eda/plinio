@@ -47,7 +47,10 @@ class PACT_Act(nn.Module, Quantizer):
         self.num_bits = num_bits
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]))
         self.dequantize = dequantize
-        self.register_buffer('s_a', torch.Tensor(1))
+        # Buffer is probably wrong choice cause we might need radients (?)
+        # self.register_buffer('s_a', torch.Tensor(1))
+        self.s_a = torch.Tensor(1)
+        self.s_a.fill_(0.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the PACT activartion quantizer.
@@ -110,6 +113,15 @@ class PACT_Act(nn.Module, Quantizer):
         for name, param in self.named_parameters(
                 prfx + "act_quantizer", recurse):
             yield name, param
+
+    def __repr__(self):
+        msg = (
+            f'{self.__class__.__name__}'
+            f'(num_bits={self.num_bits}, '
+            f'clip_val={self.clip_val}, '
+            f'scale_factor={self.s_a})'
+        )
+        return msg
 
 
 class PACT_Act_STE(torch.autograd.Function):

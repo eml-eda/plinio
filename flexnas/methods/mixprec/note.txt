@@ -10,3 +10,9 @@
   Quindi togliendo le relu e basta in fase di conversione.
   Se cosi' fosse in fase di export bisognera' aggiungerle
   nuovamente.
+
+- TODO: Passo di rimozione relu. Va tolta ovunque?
+
+- TODO: Aggiungere MixPrecPool (?)
+
+- TODO: Fixare temperatura.

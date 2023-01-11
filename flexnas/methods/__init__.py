@@ -18,5 +18,6 @@
 # *----------------------------------------------------------------------------*
 from .dnas_base import DNAS
 from .pit import PIT
+from .mixprec import MixPrec
 
-__all__ = ['DNAS', 'PIT']
+__all__ = ['DNAS', 'PIT', 'MixPrec']

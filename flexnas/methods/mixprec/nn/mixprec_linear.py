@@ -25,7 +25,8 @@ import torch.nn.functional as F
 from ..quant.quantizers import Quantizer
 from ..quant.nn import Quant_Linear
 from .mixprec_module import MixPrecModule
-from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel
+from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel, \
+    MixPrec_Qtz_Layer_Bias
 
 
 class MixPrec_Linear(nn.Linear, MixPrecModule):
@@ -124,8 +125,6 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                    w_quantizer: Type[Quantizer],
                    b_quantizer: Type[Quantizer],
                    a_sq: Optional[Quantizer],
-                   w_sq: Optional[Quantizer],
-                   b_sq: Optional[Quantizer],
                    a_quantizer_kwargs: Dict = {},
                    w_quantizer_kwargs: Dict = {},
                    b_quantizer_kwargs: Dict = {}
@@ -154,10 +153,6 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         :type b_quantizer: Type[Quantizer]
         :param a_sq: An optional shared quantizer derived from other layers for activations
         :type a_sq: Optional[Quantizer]
-        :param w_sq: An optional shared quantizer derived from other layers for weights
-        :type w_sq: Optional[Quantizer]
-        :param b_sq: An optional shared quantizer derived from other layers for weights
-        :type b_sq: Optional[Quantizer]
         :param a_quantizer_kwargs: act quantizer kwargs, if no kwargs are passed default is used
         :type a_quantizer_kwargs: Dict
         :param w_quantizer_kwargs: weight quantizer kwargs, if no kwargs are passed default is used
@@ -182,40 +177,38 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                                                     a_quantizer,
                                                     a_quantizer_kwargs)
         # Build weight mixprec quantizer
-        if w_sq is not None:
-            mixprec_w_quantizer = w_sq
+        if w_mixprec_type == MixPrecType.PER_LAYER:
+            mixprec_w_quantizer = MixPrec_Qtz_Layer(w_precisions,
+                                                    w_quantizer,
+                                                    w_quantizer_kwargs)
+        elif w_mixprec_type == MixPrecType.PER_CHANNEL:
+            mixprec_w_quantizer = MixPrec_Qtz_Channel(w_precisions,
+                                                      submodule.out_features,
+                                                      w_quantizer,
+                                                      w_quantizer_kwargs)
         else:
-            if w_mixprec_type == MixPrecType.PER_LAYER:
-                mixprec_w_quantizer = MixPrec_Qtz_Layer(w_precisions,
-                                                        w_quantizer,
-                                                        w_quantizer_kwargs)
-            elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-                mixprec_w_quantizer = MixPrec_Qtz_Channel(w_precisions,
-                                                          submodule.out_features,
-                                                          w_quantizer,
-                                                          w_quantizer_kwargs)
-            else:
-                msg = f'Supported mixed-precision types: {list(MixPrecType)}'
-                raise ValueError(msg)
+            msg = f'Supported mixed-precision types: {list(MixPrecType)}'
+            raise ValueError(msg)
 
         # Build bias mixprec quantizer
-        b_precisions = w_precisions  # Bias precisions are dictated by weights
         b_mixprec_type = w_mixprec_type  # Bias MixPrec scheme is dictated by weights
-        if b_sq is not None:
-            mixprec_b_quantizer = b_sq
+        if b_mixprec_type == MixPrecType.PER_LAYER:
+            mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
+            mixprec_w_quantizer = cast(MixPrec_Qtz_Layer, mixprec_w_quantizer)
+            mixprec_b_quantizer = MixPrec_Qtz_Layer_Bias(b_quantizer,
+                                                         submodule.out_features,
+                                                         mixprec_a_quantizer,
+                                                         mixprec_w_quantizer,
+                                                         b_quantizer_kwargs)
+        elif w_mixprec_type == MixPrecType.PER_CHANNEL:
+            raise NotImplementedError
+            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(b_precisions,
+                                                           submodule.out_features,
+                                                           b_quantizer,
+                                                           b_quantizer_kwargs)
         else:
-            if b_mixprec_type == MixPrecType.PER_LAYER:
-                mixprec_b_quantizer = MixPrec_Qtz_Layer(b_precisions,
-                                                        b_quantizer,
-                                                        b_quantizer_kwargs)
-            elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-                mixprec_b_quantizer = MixPrec_Qtz_Channel(b_precisions,
-                                                          submodule.out_features,
-                                                          b_quantizer,
-                                                          b_quantizer_kwargs)
-            else:
-                msg = f'Supported mixed-precision types: {list(MixPrecType)}'
-                raise ValueError(msg)
+            msg = f'Supported mixed-precision types: {list(MixPrecType)}'
+            raise ValueError(msg)
 
         mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
         mixprec_w_quantizer = cast(Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],

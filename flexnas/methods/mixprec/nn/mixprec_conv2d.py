@@ -61,7 +61,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                  w_precisions: Tuple[int, ...],
                  a_quantizer: MixPrec_Qtz_Layer,
                  w_quantizer: Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
-                 b_quantizer: Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
+                 b_quantizer: Union[MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias],
                  w_mixprec_type: MixPrecType):
         super(MixPrec_Conv2d, self).__init__(
             conv.in_channels,
@@ -100,7 +100,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         if self.bias is not None:
             self.mixprec_b_quantizer = b_quantizer
             # Share NAS parameters of weights and biases
-            self.mixprec_b_quantizer.alpha_prec = self.mixprec_w_quantizer.alpha_prec
+            # self.mixprec_b_quantizer.alpha_prec = self.mixprec_w_quantizer.alpha_prec
         else:
             self.mixprec_b_quantizer = lambda *args: None  # Do Nothing
 
@@ -145,7 +145,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                    a_quantizer_kwargs: Dict = {},
                    w_quantizer_kwargs: Dict = {},
                    b_quantizer_kwargs: Dict = {}
-                   ) -> Tuple[Optional[Quantizer], ...]:
+                   ) -> Optional[Quantizer]:
         """Create a new fx.Node relative to a MixPrec_Conv2d layer, starting from the fx.Node
         of a nn.Conv2d layer, and replace it into the parent fx.GraphModule
 
@@ -251,7 +251,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                                        mixprec_b_quantizer,
                                        w_mixprec_type)
         mod.add_submodule(str(n.target), new_submodule)
-        return (None, None, None)  # TODO: Understand if I should return something and when
+        return None  # TODO: Understand if I should return something and when
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):

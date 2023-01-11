@@ -17,13 +17,17 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 from .tc_resnet_14 import TCResNet14
-from .simple_nn import SimpleNN
+from .simple_nn import SimpleNN, SimpleNN2D
 from .simple_nn_pit import SimplePitNN
+from .simple_nn_mixprec import SimpleMixPrecNN
 from .dscnn import DSCNN
 from .toy_models import ToySequentialConv1d, ToySequentialSeparated, ToyAdd
 from .toy_models import ToyTimeCat, ToyChannelsCat
-from .toy_models import ToyFlatten, ToyMultiPath1, ToyMultiPath2, ToyRegression
+from .toy_models import ToyFlatten, ToyMultiPath1, ToyMultiPath2, ToyRegression, \
+    ToyMultiPath1_2D, ToyMultiPath2_2D
 
-__all__ = ['TCResNet14', 'SimpleNN', 'SimplePitNN', 'DSCNN', 'ToySequentialConv1d',
+__all__ = ['TCResNet14', 'SimpleNN', 'SimpleNN2D', 'SimplePitNN', 'DSCNN',
+           'ToySequentialConv1d', 'ToyMultiPath1_2D', 'ToyMultiPath2_2D',
            'ToySequentialSeparated', 'ToyAdd', 'ToyTimeCat', 'ToyChannelsCat',
-           'ToyFlatten', 'ToyMultiPath1', 'ToyMultiPath2', 'ToyRegression']
+           'ToyFlatten', 'ToyMultiPath1', 'ToyMultiPath2', 'ToyRegression',
+           'SimpleMixPrecNN']

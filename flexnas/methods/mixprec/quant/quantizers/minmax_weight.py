@@ -45,7 +45,9 @@ class MinMax_Weight(nn.Module, Quantizer):
         self.num_bits = num_bits
         self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
         self.dequantize = dequantize
-        self.register_buffer('s_w', torch.Tensor(cout))
+        # self.register_buffer('s_w', torch.Tensor(cout))
+        self.s_w = torch.Tensor(cout)
+        self.s_w.fill_(0.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the MinMax weight quantizer.
@@ -106,6 +108,14 @@ class MinMax_Weight(nn.Module, Quantizer):
         for name, param in self.named_parameters(
                 prfx + "weight_quantizer", recurse):
             yield name, param
+
+    def __repr__(self):
+        msg = (
+            f'{self.__class__.__name__}'
+            f'(num_bits={self.num_bits}, '
+            f'scale_factor={self.s_w})'
+        )
+        return msg
 
 
 class MinMax_Asym_STE(torch.autograd.Function):

@@ -57,7 +57,9 @@ class FQ_Weight(nn.Module, Quantizer):
         self.n_s = cout if ch_wise else 1
         self.scale_param = nn.Parameter(torch.Tensor(self.n_s),
                                         requires_grad=train_scale_param)
-        self.register_buffer('s_w', torch.Tensor(cout))
+        # self.register_buffer('s_w', torch.Tensor(cout))
+        self.s_w = torch.Tensor(cout)
+        self.s_w.fill_(0.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the FQ weight quantizer.
@@ -125,6 +127,14 @@ class FQ_Weight(nn.Module, Quantizer):
         for name, param in self.named_parameters(
                 prfx + "weight_quantizer", recurse):
             yield name, param
+
+    def __repr__(self):
+        msg = (
+            f'{self.__class__.__name__}'
+            f'(num_bits={self.num_bits}, '
+            f'scale_factor={self.s_w})'
+        )
+        return msg
 
 
 class FQ_Quant_STE(torch.autograd.Function):

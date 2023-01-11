@@ -53,7 +53,9 @@ class Quantizer_Bias(nn.Module, Quantizer):
         self.scale_act = scale_act
         self.scale_weight = scale_weight
         self.dequantize = dequantize
-        self.register_buffer('s_b', torch.Tensor(cout))
+        # self.register_buffer('s_b', torch.Tensor(cout))
+        self.s_b = torch.Tensor(cout)
+        self.s_b.fill_(0.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the bias quantizer.
@@ -120,6 +122,14 @@ class Quantizer_Bias(nn.Module, Quantizer):
         for name, param in self.named_parameters(
                 prfx + "bias_quantizer", recurse):
             yield name, param
+
+    def __repr__(self):
+        msg = (
+            f'{self.__class__.__name__}'
+            f'(num_bits={self.num_bits}, '
+            f'scale_factor={self.s_b})'
+        )
+        return msg
 
 
 class Round_STE(torch.autograd.Function):

@@ -104,6 +104,9 @@ def convert(model: nn.Module,
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
 
+    if conversion_type in ('autoimport', 'import'):
+        fuse_conv_bn(mod)
+        # remove relu
     target_layers = convert_layers(mod,
                                    activation_precisions,
                                    weight_precisions,
@@ -112,8 +115,7 @@ def convert(model: nn.Module,
                                    conversion_type,
                                    exclude_names,
                                    exclude_types)
-    if conversion_type in ('autoimport', 'import'):
-        fuse_conv_bn(mod)
+
     mod.graph.lint()
     mod.recompile()
     return mod, target_layers
@@ -273,7 +275,7 @@ def autoimport_node(n: fx.Node,
         b_quantizer = qinfo['b_quantizer']['quantizer']
         b_quantizer_kwargs = qinfo['b_quantizer']['kwargs']
         # Add output channel info to wuantizer kwargs
-        cout = n.meta['tensor_meta'].shape[1]  # TODO: Check
+        cout = n.meta['tensor_meta'].shape[1]
         a_quantizer_kwargs['cout'] = cout
         w_quantizer_kwargs['cout'] = cout
         b_quantizer_kwargs['cout'] = cout
@@ -313,8 +315,23 @@ def autoimport_node(n: fx.Node,
     elif model_graph.is_untouchable_op(n):
         return None
     elif model_graph.is_features_concatenate(n, mod):
-        # if we concatenate over features, we don't need to share the mask
-        return None
+        # if we concatenate over features, we need to share the mask
+        # then we create a new shared quantizer to be used by predecessors
+        if sq is None or model_graph.is_features_defining_op(n, mod):
+            a_quantizer = qinfo['a_quantizer']['quantizer']
+            a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
+            # Computes cout after cat operation
+            cout = sum(list(map(
+                lambda x: x.meta['tensor_meta'].shape[1],
+                n.all_input_nodes)))
+            a_quantizer_kwargs['cout'] = cout
+            shared_quantizer = MixPrec_Qtz_Layer(activation_precisions,
+                                                 a_quantizer,
+                                                 a_quantizer_kwargs)
+            shared_quantizer = cast(Quantizer, shared_quantizer)
+        else:
+            shared_quantizer = sq
+        return shared_quantizer
     elif model_graph.is_features_propagating_op(n, mod):
         # this op has cin = cout, so return what was received as input
         return sq
@@ -369,11 +386,11 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+    if model_graph.is_inherited_layer(n, mod, (MixPrecModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         # only conv and FC, exclude BN
-        if model_graph.is_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d)):
+        if model_graph.is_layer(n, mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
             return
         target_layers.append(mod.get_submodule(str(n.target)))
 
