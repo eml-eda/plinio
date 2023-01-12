@@ -9,13 +9,13 @@ class PITSuperNetModule(nn.Module):
     def __init__(self, input_layers: Iterable[nn.Module]):
         super(PITSuperNetModule, self).__init__()
 
-        self._input_layers = nn.ModuleList(list(input_layers))
+        self.sn_input_layers = nn.ModuleList(list(input_layers))
         self.input_shape = None
-        self.combiner = PITSuperNetCombiner(list(input_layers))
+        self.sn_combiner = PITSuperNetCombiner(list(input_layers))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        layers_outputs = [layer(input) for layer in self._input_layers]
-        return self.combiner(layers_outputs)
+        layers_outputs = [layer(input) for layer in self.sn_input_layers]
+        return self.sn_combiner(layers_outputs)
 
     def __getitem__(self, pos: int) -> nn.Module:
         """Get the layer at position pos in the list of all the possible
@@ -26,4 +26,4 @@ class PITSuperNetModule(nn.Module):
         :return: layer at postion pos in the list input_layers
         :rtype: nn.Module
         """
-        return self._input_layers[pos]
+        return self.sn_input_layers[pos]

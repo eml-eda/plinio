@@ -37,9 +37,7 @@ class PITSuperNet(DNAS):
         # self.seed = model
         self.exclude_names = exclude_names
 
-        print(model)
         self.seed, targets = convert(model, self._input_shape, 'import')
-        print(self.seed)
 
         target_modules = []
         self._target_modules = self.get_pit_supernet_modules(target_modules, model, exclude_names)
@@ -165,18 +163,14 @@ class PITSuperNet(DNAS):
         :rtype: nn.Module
         """
         model = self.seed
+
         '''
         if not add_bn:
             for layer in self._target_layers:
                 if hasattr(layer, 'following_bn_args'):
                     layer.following_bn_args = None
         '''
-        print(model)
-
         model, _ = convert(model, self._input_shape, 'export')
-
-        print(model)
-
         '''
         for module in self._target_modules:
             submodule = cast(PITSuperNetCombiner, model.get_submodule(module[0]))
@@ -192,46 +186,6 @@ class PITSuperNet(DNAS):
             parent.add_module(path[-1], module_exp)
         '''
         return model
-
-    def arch_summary(self) -> Dict[str, str]:
-        """Generates a dictionary representation of the architecture found by the NAS.
-        Only optimized layers are reported
-
-        :return: a dictionary representation of the architecture found by the NAS
-        :rtype: Dict[str, Dict[str, Any]]
-        """
-        arch = {}
-
-        for module in self._target_modules:
-            mod = module[1].export()
-            name = mod.__class__.__name__
-            if (name == "Conv2d"):
-                kernel_size = mod.kernel_size
-                t = (name, kernel_size)
-                arch[module[0]] = t
-            elif (name == "ConvBlock"):
-                children = mod.children()
-                child = next(children)
-                name_child = child.__class__.__name__
-                kernel_size = child.kernel_size
-                t = (name_child, kernel_size)
-                arch[module[0]] = t
-            elif (name == "Sequential"):
-                children = mod.children()
-                child1 = next(children)
-                child2 = next(children)
-                if (child2.__class__.__name__ == "Conv2d"):
-                    arch[module[0]] = "Depthwise Separable"
-                elif (child2.__class__.__name__ == "ConvBlock"):
-                    arch[module[0]] = "Depthwise Separable"
-                else:
-                    name_child = child1.__class__.__name__
-                    kernel_size = child1.kernel_size
-                    t = (name_child, kernel_size)
-                    arch[module[0]] = t
-            else:
-                arch[module[0]] = name
-        return arch
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -273,6 +227,46 @@ class PITSuperNet(DNAS):
                 yield name, param
 
     '''
+    def arch_summary(self) -> Dict[str, str]:
+        """Generates a dictionary representation of the architecture found by the NAS.
+        Only optimized layers are reported
+
+        :return: a dictionary representation of the architecture found by the NAS
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        arch = {}
+
+        for module in self._target_modules:
+            mod = module[1].export()
+            name = mod.__class__.__name__
+            if (name == "Conv2d"):
+                kernel_size = mod.kernel_size
+                t = (name, kernel_size)
+                arch[module[0]] = t
+            elif (name == "ConvBlock"):
+                children = mod.children()
+                child = next(children)
+                name_child = child.__class__.__name__
+                kernel_size = child.kernel_size
+                t = (name_child, kernel_size)
+                arch[module[0]] = t
+            elif (name == "Sequential"):
+                children = mod.children()
+                child1 = next(children)
+                child2 = next(children)
+                if (child2.__class__.__name__ == "Conv2d"):
+                    arch[module[0]] = "Depthwise Separable"
+                elif (child2.__class__.__name__ == "ConvBlock"):
+                    arch[module[0]] = "Depthwise Separable"
+                else:
+                    name_child = child1.__class__.__name__
+                    kernel_size = child1.kernel_size
+                    t = (name_child, kernel_size)
+                    arch[module[0]] = t
+            else:
+                arch[module[0]] = name
+        return arch
+
     def __str__(self):
         """Prints the architecture found by the NAS to screen
 

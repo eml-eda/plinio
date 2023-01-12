@@ -7,7 +7,6 @@ from unit_test.models.kws_pit_sn_model import DSCnnPITSN
 
 class TestSuperNet(unittest.TestCase):
 
-    '''
     # StandardSNModule
     def test_standard_pit_sn_module(self):
         ch_in = 32
@@ -51,7 +50,6 @@ class TestSuperNet(unittest.TestCase):
         out2 = sn_model(dummy_inp)
         print(out2)
 
-    '''
     def test_pit_supernet_export(self):
         ch_in = 1
         in_width = 49

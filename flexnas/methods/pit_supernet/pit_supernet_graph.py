@@ -66,29 +66,30 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
                                             [pit_graph.pit_features_calc, combiner_features_calc])
         model_graph.associate_input_features(mod)
         pit_graph.register_input_features(mod)
-    # mod.graph.lint()
+
+    if conversion_type == 'export':
+        prev_args = None
+        for node in mod.graph.nodes:
+            if node.op == 'call_module':
+                if '_input_layers' in node.target:
+                    if prev_args is None:
+                        prev_args = node.args
+                    node.args = ()
+                if 'combiner' in node.target:
+                    node.args = prev_args
+                    prev_args = None
+        for node in mod.graph.nodes:
+            if node.op == 'call_module':
+                if '_input_layers' in node.target:
+                    mod.graph.erase_node(node)
+
+    mod.graph.lint()
     mod.recompile()
     return mod, target_layers
 
 
 def convert_layers(mod: fx.GraphModule,
                    conversion_type: str) -> List[nn.Module]:
-    """Replaces target layers with their NAS-able version, or vice versa, while also
-    recording the list of NAS-able layers for speeding up later regularization loss
-    computations. Layer conversion is implemented as a reverse BFS on the model graph.
-
-    :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to
-    determine the sizes of PIT masks.
-    :type mod: fx.GraphModule
-    :param conversion_type: a string specifying the type of conversion
-    :type conversion_type: str
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
-    :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that should be ignored by the NAS
-    :type exclude_types: Iterable[Type[nn.Module]], optional
-    :return: the list of target layers that will be optimized by the NAS
-    :rtype: List[nn.Module]
-    """
     g = mod.graph
     queue = model_graph.get_output_nodes(g)
 
@@ -117,19 +118,6 @@ def convert_layers(mod: fx.GraphModule,
 
 
 def export_node(n: fx.Node, mod: fx.GraphModule) -> Optional[str]:
-    """Rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a NAS-able
-    layer with its original nn.Module counterpart
-
-    :param n: the node to be rewritten
-    :type n: fx.Node
-    :param mod: the parent module, where the new node has to be optionally inserted
-    :type mod: fx.GraphModule
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
-    when auto-converting layers, defaults to ()
-    :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that should be ignored by the NAS
-    :type exclude_types: Iterable[Type[nn.Module]], optional
-    """
     if n.op == 'call_module':
         sub_mod = mod.get_submodule(str(n.target))
         if isinstance(sub_mod, PITSuperNetCombiner):
