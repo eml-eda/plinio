@@ -90,7 +90,6 @@ class TestMixPrecConvert(unittest.TestCase):
         self._check_target_layers(new_nn, exp_tgt=4)
         self._check_layers_exclusion(new_nn, excluded)
 
-    # TODO: FIxare discorso temperatura!!!
     def test_import_simple(self):
         """Test the conversion of a simple sequential model that already contains a PIT layer"""
         nn_ut = SimpleMixPrecNN()

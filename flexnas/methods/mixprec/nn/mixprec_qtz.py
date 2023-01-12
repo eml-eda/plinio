@@ -146,6 +146,8 @@ class MixPrec_Qtz_Layer(nn.Module):
             qtz = quantizer(p, **quantizer_kwargs)  # type: ignore
             qtz = cast(nn.Module, qtz)
             self.mix_qtz.append(qtz)
+        # Init temperature to std value
+        self.temperature = 1.
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the searchable mixed-precision layer.

@@ -24,7 +24,7 @@ import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
 from .mixprec_converter import convert
 from .nn.mixprec_module import MixPrecModule
-from .nn.mixprec_qtz import MixPrecType
+from .nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel
 
 from flexnas.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight, Quantizer_Bias
 
@@ -87,6 +87,7 @@ class MixPrec(DNAS):
             weight_precisions: Tuple[int, ...] = (2, 4, 8),
             w_mixprec_type: MixPrecType = MixPrecType.PER_LAYER,
             qinfo: Dict = DEFAULT_QINFO,
+            temperature: float = 1.,
             regularizer: str = 'size',
             autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
@@ -107,6 +108,7 @@ class MixPrec(DNAS):
         self.weight_precisions = weight_precisions
         self.w_mixprec_type = w_mixprec_type
         self.qinfo = qinfo
+        self.initial_temperature = temperature
         self._regularizer = regularizer
 
     def forward(self, *args: Any) -> torch.Tensor:
@@ -239,6 +241,11 @@ class MixPrec(DNAS):
         for name, param in self.named_parameters():
             if name not in exclude:
                 yield name, param
+
+    def _set_temperature(self, t_i):
+        for _, module in self.seed.named_modules():
+            if isinstance(module, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                module.temperature = t_i
 
     def __str__(self):
         """Prints the precision-assignent found by the NAS to screen

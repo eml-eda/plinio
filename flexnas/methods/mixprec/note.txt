@@ -1,4 +1,4 @@
-- Al momento i layer tipo linear-conv1d-conv2d hanno la
+- NOTA: Al momento i layer tipo linear-conv1d-conv2d hanno la
   quantizzazione come era in multi-prec-nas ed edmips,
   cioe' (relu + layer), penso sia piu' pulito transire
   verso una formulazione dove il layer quantizza solo pesi
@@ -11,8 +11,5 @@
   Se cosi' fosse in fase di export bisognera' aggiungerle
   nuovamente.
 
-- TODO: Passo di rimozione relu. Va tolta ovunque?
-
-- TODO: Aggiungere MixPrecPool (?)
-
-- TODO: Fixare temperatura.
+- TODO: Aggiungere MixPrecPool (?) Serve durante la ricerca? Secondo me no.
+  Dovro' averla quando faccio export.
