@@ -32,10 +32,9 @@ def add_combiner_properties(mod: fx.GraphModule):
     while queue:
         n = queue.pop(0)
 
-        if n.op == 'call_module':
-            sub_mod = mod.get_submodule(str(n.target))
-            if isinstance(sub_mod, PITSuperNetCombiner):
-                n.meta['shared_input_features'] = True
+        if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):
+            n.meta['shared_input_features'] = True
+            n.meta['features_defining'] = True
 
         for succ in nx_graph.successors(n):
             queue.append(succ)
@@ -91,7 +90,7 @@ def convert_layers(mod: fx.GraphModule,
         if n not in visited:
             if conversion_type == 'export':
                 export_node(n, mod)
-            if conversion_type == 'import':
+            if conversion_type in ('import', 'autoimport'):
                 add_to_targets(n, mod, target_layers)
 
             for pred in n.all_input_nodes:
@@ -155,7 +154,7 @@ def clean_graph(mod: fx.GraphModule):
                     prev_args = n.args
                 n.args = ()
             if 'sn_combiner' in str(n.target):
-                n.args = prev_args
+                n.args = cast(Tuple, prev_args)
                 prev_args = None
 
         visited.append(n)
@@ -164,8 +163,9 @@ def clean_graph(mod: fx.GraphModule):
 
     for node in mod.graph.nodes:
         if node.op == 'call_module':
-            if '_input_layers' in node.target:
+            if 'sn_input_layers' in node.target:
                 mod.graph.erase_node(node)
+    mod.delete_all_unused_submodules()
 
 
 def combiner_features_calc(n, mod):

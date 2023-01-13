@@ -1,9 +1,6 @@
-
 import torch
 import torch.nn as nn
 from flexnas.methods import PITSuperNetModule
-from flexnas.methods.pit import PITConv2d
-from flexnas.methods.pit.pit_features_masker import PITFeaturesMasker
 
 
 class DSCnnPITSN(torch.nn.Module):
@@ -29,16 +26,12 @@ class DSCnnPITSN(torch.nn.Module):
         '''
         self.depthpoint1 = PITSuperNetModule([
             nn.Sequential(
-                PITConv2d(nn.Conv2d(64, 64, 3, padding='same'),
-                          10, 49, out_features_masker=PITFeaturesMasker(64)),
-                # nn.Conv2d(64, 64, 3, padding='same'),
+                nn.Conv2d(64, 64, 3, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),
                 nn.ReLU()
             ),
             nn.Sequential(
-                PITConv2d(nn.Conv2d(64, 64, 5, padding='same'),
-                          10, 49, out_features_masker=PITFeaturesMasker(64)),
-                # nn.Conv2d(64, 64, 5, padding='same'),
+                nn.Conv2d(64, 64, 5, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),
                 nn.ReLU()
             ),
@@ -212,7 +205,7 @@ class DSCnnPITSN(torch.nn.Module):
 
         x = self.dropout2(x)
         x = self.avgpool(x)
-        x = torch.squeeze(x)
+        x = torch.flatten(x, start_dim=1)
         x = self.out(x)
 
         return x

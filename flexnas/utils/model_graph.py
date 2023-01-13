@@ -303,6 +303,8 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if n.target == torch.squeeze:
             return True
+        if n.target == torch.flatten:
+            return True
     return False
 
 
@@ -461,7 +463,7 @@ def add_features_calculator(mod: fx.GraphModule,
             start_dim = try_get_args(n, 1, 'start_dim', 0)
             end_dim = try_get_args(n, 2, 'end_dim', -1)
             assert start_dim != 0 and len(input_shape) - start_dim != 0, \
-                "Flattening the batch not supported by PIT"
+                "Flattening the batch not supported"
             # if flatten includes the channels
             if start_dim == 1 or len(input_shape) - start_dim == 1:
                 n.meta['features_calculator'] = FlattenFeaturesCalculator
@@ -475,15 +477,11 @@ def add_features_calculator(mod: fx.GraphModule,
             ifc = n.all_input_nodes[0].meta['features_calculator']
             input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
             dim = try_get_args(n, 1, 'dim', None)
-            '''
             if dim is None:
-                raise ValueError("Squeeze without dim not supported by PIT")
+                raise ValueError("Squeeze without dim not supported")
             assert dim != 0 and len(input_shape) - dim != 0, \
-                "Squeezing the batch is not supported by PIT"
-            '''
-            if dim is None:
-                n.meta['features_calculator'] = ifc  # just propagate the features
-            elif dim == 1 or len(input_shape) - dim == 1:
+                "Squeezing the batch is not supported"
+            if dim == 1 or len(input_shape) - dim == 1:
                 flattened_size = input_shape[2]
                 n.meta['features_calculator'] = FlattenFeaturesCalculator(ifc, flattened_size)
             else:
@@ -531,14 +529,22 @@ def associate_input_features(mod: fx.GraphModule):
 
         input_nodes = n.all_input_nodes
         if len(input_nodes) > 0:
-            prev = input_nodes[0]
-            if 'input_features_set_by' in prev.meta:
-                if prev.meta['features_defining']:
-                    n.meta['input_features_set_by'] = prev
-                elif prev.meta['features_propagating']:
-                    n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                else:
-                    n.meta['input_features_set_by'] = prev  # CHECK!!
+            skip = False
+            if n.meta['features_concatenate']:
+                for inode in input_nodes:
+                    if 'input_features_set_by' not in inode.meta:
+                        skip = True
+                if not skip:
+                    n.meta['input_features_set_by'] = input_nodes
+            else:
+                prev = input_nodes[0]
+                if 'input_features_set_by' in prev.meta:
+                    if prev.meta['features_defining']:
+                        n.meta['input_features_set_by'] = prev
+                    elif prev.meta['features_propagating']:
+                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                    # else:
+                        # n.meta['input_features_set_by'] = prev  # CHECK!!
         else:  # input node
             n.meta['input_features_set_by'] = n
 
