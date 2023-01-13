@@ -8,7 +8,7 @@ from flexnas.methods.pit import PITModule
 
 class PITSuperNetCombiner(nn.Module):
 
-    def __init__(self, input_layers: list[nn.Module]):
+    def __init__(self, input_layers: List[nn.Module]):
         super(PITSuperNetCombiner, self).__init__()
 
         self.sn_input_layers = input_layers
@@ -32,18 +32,11 @@ class PITSuperNetCombiner(nn.Module):
         y = torch.stack(y, dim=0).sum(dim=0)
         return y
 
-    '''
-    def export(self) -> nn.Module:
-        index = torch.argmax(self.alpha).item()
-        return self._input_layers[int(index)]
-    '''
-
-    def export(self, n: fx.Node, mod: fx.GraphModule) -> str:
+    def export(self, n: fx.Node, mod: fx.GraphModule):
         index = torch.argmax(self.alpha).item()
         submodule = self.sn_input_layers[int(index)]
         target = str(n.target)
         mod.add_submodule(target, submodule)
-        return target
 
     def compute_layers_sizes(self):
         for layer in self.sn_input_layers:
@@ -101,7 +94,7 @@ class PITSuperNetCombiner(nn.Module):
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        prfx += "combiner.alpha"
+        prfx += "alpha"
         yield prfx, self.alpha
 
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:

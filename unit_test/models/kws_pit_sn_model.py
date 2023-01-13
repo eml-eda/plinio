@@ -29,16 +29,16 @@ class DSCnnPITSN(torch.nn.Module):
         '''
         self.depthpoint1 = PITSuperNetModule([
             nn.Sequential(
-                # PITConv2d(nn.Conv2d(64, 64, 3, padding='same'),
-                          # 64, 64, out_features_masker=PITFeaturesMasker(64)),
-                nn.Conv2d(64, 64, 3, padding='same'),
+                PITConv2d(nn.Conv2d(64, 64, 3, padding='same'),
+                          10, 49, out_features_masker=PITFeaturesMasker(64)),
+                # nn.Conv2d(64, 64, 3, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),
                 nn.ReLU()
             ),
             nn.Sequential(
-                # PITConv2d(nn.Conv2d(64, 64, 5, padding='same'),
-                          # 64, 64, out_features_masker=PITFeaturesMasker(64)),
-                nn.Conv2d(64, 64, 5, padding='same'),
+                PITConv2d(nn.Conv2d(64, 64, 5, padding='same'),
+                          10, 49, out_features_masker=PITFeaturesMasker(64)),
+                # nn.Conv2d(64, 64, 5, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),
                 nn.ReLU()
             ),

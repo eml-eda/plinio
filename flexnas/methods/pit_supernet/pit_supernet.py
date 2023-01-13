@@ -1,11 +1,7 @@
-from typing import cast, Tuple, Iterable, List, Any, Iterator, Dict
+from typing import Tuple, Any, Iterator
 import torch
 import torch.nn as nn
-import torch.fx as fx
-from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.methods.dnas_base import DNAS
-from .pit_supernet_combiner import PITSuperNetCombiner
-from .pit_supernet_graph import PITSuperNetTracer
 from .pit_supernet_graph import convert
 
 
@@ -27,75 +23,13 @@ class PITSuperNet(DNAS):
             self,
             model: nn.Module,
             input_shape: Tuple[int, ...],
-            regularizer: str = 'size',
-            exclude_names: Iterable[str] = ()):
+            regularizer: str = 'size'):
 
-        super(PITSuperNet, self).__init__(regularizer, exclude_names)
+        super(PITSuperNet, self).__init__(regularizer)
 
         self._input_shape = input_shape
         self._regularizer = regularizer
-        # self.seed = model
-        self.exclude_names = exclude_names
-
-        self.seed, targets = convert(model, self._input_shape, 'import')
-
-        target_modules = []
-        self._target_modules = self.get_pit_supernet_modules(target_modules, model, exclude_names)
-
-        tracer = PITSuperNetTracer()
-        graph = tracer.trace(model.eval())
-        name = model.__class__.__name__
-        mod = fx.GraphModule(tracer.root, graph, name)
-        # create a "fake" minibatch of 1 inputs for shape prop
-        batch_example = torch.stack([torch.rand(self._input_shape)] * 1, 0)
-        # TODO: this is not very robust. Find a better way
-        device = next(model.parameters()).device
-        ShapeProp(mod).propagate(batch_example.to(device))
-
-        self._compute_shapes(mod)
-
-    def get_pit_supernet_modules(
-            self,
-            target_modules: List,
-            model: nn.Module,
-            exclude_names: Iterable[str]) -> List[Tuple[str, PITSuperNetCombiner]]:
-        """This function spots each SuperNetModule contained in the model received
-        and saves them in a list.
-
-        :param target_modules: list where the function saves the SuperNetModules
-        :type target_modules: List
-        :param model: seed model
-        :type model: nn.Module
-        :param exclude_names: the names of `model` submodules that should be ignored by the NAS
-        :type exclude_names: Iterable[str]
-        :return: list of target modules for the NAS
-        :rtype: List[Tuple[str, SuperNetModule]]
-        """
-        for named_module in model.named_modules():
-            if (named_module[0] != ''):
-                submodules = list(named_module[1].children())
-                if (named_module[1].__class__.__name__ == "PITSuperNetCombiner"):
-                    if (named_module[0] not in exclude_names):
-                        target_modules.append(named_module)
-                elif (submodules):
-                    for child in submodules:
-                        self.get_pit_supernet_modules(target_modules, child, exclude_names)
-        return target_modules
-
-    def _compute_shapes(self, mod: fx.GraphModule):
-        """This function computes the input shape for each SuperNetModule in the target modules
-        """
-        if (self._target_modules):
-            g = mod.graph
-
-            for t in self._target_modules:
-                for n in g.nodes:
-                    if t[0] == n.target:
-                        t[1].input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
-
-            for target in self._target_modules:
-                target[1].compute_layers_sizes()
-                target[1].compute_layers_macs()
+        self.seed, self._target_modules = convert(model, self._input_shape, 'import')
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -163,7 +97,6 @@ class PITSuperNet(DNAS):
         :rtype: nn.Module
         """
         model = self.seed
-
         '''
         if not add_bn:
             for layer in self._target_layers:
@@ -171,20 +104,7 @@ class PITSuperNet(DNAS):
                     layer.following_bn_args = None
         '''
         model, _ = convert(model, self._input_shape, 'export')
-        '''
-        for module in self._target_modules:
-            submodule = cast(PITSuperNetCombiner, model.get_submodule(module[0]))
-            module_exp = submodule.export()
 
-            path = module[0].split('.')
-            path.remove('combiner')
-            if (len(path) > 1):
-                parent = model.get_submodule(path[-2])
-            else:
-                parent = model
-
-            parent.add_module(path[-1], module_exp)
-        '''
         return model
 
     def named_nas_parameters(
