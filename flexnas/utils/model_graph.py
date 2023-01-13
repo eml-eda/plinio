@@ -303,8 +303,6 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if n.target == torch.squeeze:
             return True
-        if n.target == torch.flatten:
-            return True
     return False
 
 
@@ -466,8 +464,6 @@ def add_features_calculator(mod: fx.GraphModule,
                 "Flattening the batch not supported"
             # if flatten includes the channels
             if start_dim == 1 or len(input_shape) - start_dim == 1:
-                n.meta['features_calculator'] = FlattenFeaturesCalculator
-            if start_dim == 1 or len(input_shape) - start_dim == 1:
                 flattened_size = math.prod(input_shape[2:end_dim if end_dim != -1 else None])
                 n.meta['features_calculator'] = FlattenFeaturesCalculator(ifc, flattened_size)
             else:
@@ -543,8 +539,19 @@ def associate_input_features(mod: fx.GraphModule):
                         n.meta['input_features_set_by'] = prev
                     elif prev.meta['features_propagating']:
                         n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                    # else:
-                        # n.meta['input_features_set_by'] = prev  # CHECK!!
+                    elif prev.meta['flatten']:
+                        input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
+                        start_dim = try_get_args(prev, 1, 'start_dim', 0)
+                        assert start_dim != 0 and len(input_shape) - start_dim != 0, \
+                            "Flattening the batch not supported"
+                        # if flatten includes the channels
+                        if start_dim == 1 or len(input_shape) - start_dim == 1:
+                            n.meta['input_features_set_by'] = prev
+                        else:
+                            n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                    else:
+                        raise ValueError("Unsupported node {} (op: {}, target: {})"
+                                         .format(n, n.op, n.target))
         else:  # input node
             n.meta['input_features_set_by'] = n
 
