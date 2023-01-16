@@ -231,23 +231,21 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         # Mixed-Precision Act scale factor
         # TODO: understand which alternative is better
         # self.register_buffer('s_a', torch.Tensor(1))
-        self.s_a = torch.Tensor(1)
-        self.s_a.fill_(0.)
-        for i, qtz in enumerate(mixprec_a_quantizer.mix_qtz):
-            self.s_a = self.s_a + (mixprec_a_quantizer.alpha_prec[i] * qtz.s_a)
+        # self.s_a = torch.Tensor(1)
+        # self.s_a.fill_(0.)
+        # for i, qtz in enumerate(mixprec_a_quantizer.mix_qtz):
+        #     self.s_a = self.s_a + (mixprec_a_quantizer.alpha_prec[i] * qtz.s_a)
 
         # Mixed-Precision Weight scale factor
         # TODO: understand which alternative is better
         # self.register_buffer('s_w', torch.Tensor(1))
-        self.s_w = torch.Tensor(1)
-        self.s_w.fill_(0.)
-        for i, qtz in enumerate(mixprec_w_quantizer.mix_qtz):
-            self.s_w = self.s_w + (mixprec_w_quantizer.alpha_prec[i] * qtz.s_w)
+        # self.s_w = torch.Tensor(1)
+        # self.s_w.fill_(0.)
+        # for i, qtz in enumerate(mixprec_w_quantizer.mix_qtz):
+        #     self.s_w = self.s_w + (mixprec_w_quantizer.alpha_prec[i] * qtz.s_w)
 
         # Build bias quantizer
         self.quantizer_kwargs['cout'] = cout
-        self.quantizer_kwargs['scale_act'] = self.s_a
-        self.quantizer_kwargs['scale_weight'] = self.s_w
         self.qtz_func = quantizer(**self.quantizer_kwargs)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -263,8 +261,32 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         self.qtz_func = cast(nn.Module, self.qtz_func)
-        y = self.qtz_func(input)
+        y = self.qtz_func(input, self.s_a, self.s_w)
         return y
+
+    @property
+    def s_a(self) -> torch.Tensor:
+        """Return the aggregated act scale factor
+        :return: the scale factor
+        :rtype: torch.Tensor
+        """
+        s_a = torch.tensor(0, dtype=torch.float32)
+        sm_alpha = self.mixprec_w_quantizer.alpha_prec.softmax(0)
+        for i, qtz in enumerate(self.mixprec_a_quantizer.mix_qtz):
+            s_a = s_a + (sm_alpha[i] * qtz.s_a)
+        return s_a
+
+    @property
+    def s_w(self) -> torch.Tensor:
+        """Return the aggregated weight scale factor
+        :return: the scale factor
+        :rtype: torch.Tensor
+        """
+        s_w = torch.tensor(0, dtype=torch.float32)
+        sm_alpha = self.mixprec_w_quantizer.alpha_prec.softmax(0)
+        for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
+            s_w = s_w + (sm_alpha[i] * qtz.s_w)
+        return s_w
 
 
 class MixPrec_Qtz_Channel_Bias(nn.Module):

@@ -45,9 +45,10 @@ class MinMax_Weight(nn.Module, Quantizer):
         self.num_bits = num_bits
         self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
         self.dequantize = dequantize
-        # self.register_buffer('s_w', torch.Tensor(cout))
-        self.s_w = torch.Tensor(cout)
-        self.s_w.fill_(0.)
+        self.register_buffer('ch_max', torch.Tensor(cout))
+        self.register_buffer('ch_min', torch.Tensor(cout))
+        # self.s_w = torch.Tensor(cout)
+        # self.s_w.fill_(1.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the MinMax weight quantizer.
@@ -60,10 +61,17 @@ class MinMax_Weight(nn.Module, Quantizer):
         :return: the output fake-quantized weights tensor
         :rtype: torch.Tensor
         """
-        input_q, s_w = self.qtz_func.apply(input,
-                                           self.num_bits,
-                                           self.dequantize)
-        self.s_w = s_w
+        # input_q, s_w = self.qtz_func.apply(input,
+        input_q = self.qtz_func.apply(input,
+                                      self.num_bits,
+                                      self.dequantize)
+        if self.qtz_func is MinMax_Sym_STE:
+            self.ch_max, _ = input.view(input.size(0), -1).abs().max(1)
+            self.ch_min = -1 * self.ch_max
+        if self.qtz_func is MinMax_Asym_STE:
+            self.ch_max, _ = input.view(input.size(0), -1).max(1)
+            self.ch_min, _ = input.view(input.size(0), -1).min(1)
+        # self.s_w = s_w
         return input_q
 
     @staticmethod
@@ -79,6 +87,20 @@ class MinMax_Weight(nn.Module, Quantizer):
         :type backend: Optional[str]
         """
         raise NotImplementedError("TODO")
+
+    @property
+    def s_w(self) -> torch.Tensor:
+        """Return the computed scale factor which depends upon self.num_bits and
+        weights magnitude
+
+        :return: the scale factor
+        :rtype: torch.Tensor
+        """
+        ch_range = self.ch_max - self.ch_min
+        ch_range.masked_fill_(ch_range.eq(0), 1)
+        n_steps = 2 ** self.num_bits - 1
+        scale_factor = ch_range / n_steps
+        return scale_factor
 
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer quantization hyperparameters
@@ -127,7 +149,7 @@ class MinMax_Asym_STE(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output, None, None, None
+        return grad_output, None, None
 
 
 class MinMax_Sym_STE(torch.autograd.Function):
@@ -138,7 +160,7 @@ class MinMax_Sym_STE(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output, None, None, None
+        return grad_output, None, None
 
 
 def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
@@ -158,4 +180,5 @@ def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
     if dequantize:
         y = y * scale_factor
 
-    return y, scale_factor
+    # return y, scale_factor
+    return y

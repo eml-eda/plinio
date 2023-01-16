@@ -24,7 +24,6 @@ import torch.nn as nn
 from flexnas.methods import MixPrec
 from flexnas.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule
 import flexnas.methods.mixprec.quant.nn as qnn
-from flexnas.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
     SimpleMixPrecNN, SimpleExportedNN2D
 
@@ -276,3 +275,7 @@ class TestMixPrecConvert(unittest.TestCase):
                 pass
             else:
                 self.fail("Excluded layer has the output_channel_masker set")
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

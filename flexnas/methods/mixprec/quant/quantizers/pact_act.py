@@ -47,10 +47,10 @@ class PACT_Act(nn.Module, Quantizer):
         self.num_bits = num_bits
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]))
         self.dequantize = dequantize
-        # Buffer is probably wrong choice cause we might need radients (?)
+        # Buffer is probably wrong choice cause we might need gradients (?)
         # self.register_buffer('s_a', torch.Tensor(1))
-        self.s_a = torch.Tensor(1)
-        self.s_a.fill_(0.)
+        # self.s_a = torch.Tensor(1)
+        # self.s_a.fill_(1.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the PACT activartion quantizer.
@@ -63,11 +63,12 @@ class PACT_Act(nn.Module, Quantizer):
         :return: the output fake-quantized activations tensor
         :rtype: torch.Tensor
         """
-        input_q, s_a = PACT_Act_STE.apply(input,
-                                          self.num_bits,
-                                          self.clip_val,
-                                          self.dequantize)
-        self.s_a = 1 / s_a
+        # input_q, s_a = PACT_Act_STE.apply(input,
+        input_q = PACT_Act_STE.apply(input,
+                                     self.num_bits,
+                                     self.clip_val,
+                                     self.dequantize)
+        # self.s_a = 1 / s_a
         return input_q
 
     @staticmethod
@@ -83,6 +84,16 @@ class PACT_Act(nn.Module, Quantizer):
         :type backend: Optional[str]
         """
         raise NotImplementedError("TODO")
+
+    @property
+    def s_a(self) -> torch.Tensor:
+        """Return the computed scale factor which depends upon self.num_bits and
+        self.clip_val
+
+        :return: the scale factor
+        :rtype: torch.Tensor
+        """
+        return self.clip_val.data[0] / (2 ** self.num_bits - 1)
 
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer quantization hyperparameters
@@ -133,7 +144,8 @@ class PACT_Act_STE(torch.autograd.Function):
         output = torch.floor(scale_factor * output)
         if dequantize:
             output = output / scale_factor
-        return output, scale_factor
+        # return output, scale_factor
+        return output
 
     @staticmethod
     def backward(ctx, grad_output):

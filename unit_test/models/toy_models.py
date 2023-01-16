@@ -48,6 +48,27 @@ class ToyAdd(nn.Module):
         return y
 
 
+class ToyAdd_2D(nn.Module):
+    def __init__(self):
+        super(ToyAdd_2D, self).__init__()
+        self.input_shape = (3, 15, 15)
+        self.conv0 = nn.Conv2d(3, 10, (3, 3), padding='same')
+        self.conv1 = nn.Conv2d(3, 10, (3, 3), padding='same')
+        self.conv2 = nn.Conv2d(10, 20, (5, 5), padding='same')
+        self.reluadd = nn.ReLU()
+        self.pool = nn.MaxPool2d((2, 2))
+        self.fc = nn.Linear(20 * 7 * 7, 2)
+
+    def forward(self, x):
+        a = self.conv0(x)
+        b = self.conv1(x)
+        x = self.reluadd(a + b)
+        y = self.conv2(self.pool(x))
+        y = torch.flatten(y, 1)
+        y = self.fc(y)
+        return y
+
+
 class ToyTimeCat(nn.Module):
     def __init__(self):
         super(ToyTimeCat, self).__init__()
@@ -225,6 +246,19 @@ class ToyRegression(nn.Module):
         self.input_shape = (1, 10)
         self.conv0 = nn.Conv1d(1, 10, (3,), padding='same')
         self.fc = nn.Linear(100, 1)
+
+    def forward(self, x):
+        x = self.conv0(x)
+        x = torch.flatten(x, 1)
+        return self.fc(x)
+
+
+class ToyRegression_2D(nn.Module):
+    def __init__(self):
+        super(ToyRegression_2D, self).__init__()
+        self.input_shape = (1, 5, 5)
+        self.conv0 = nn.Conv2d(1, 10, (3, 3), padding='same')
+        self.fc = nn.Linear(250, 1)
 
     def forward(self, x):
         x = self.conv0(x)

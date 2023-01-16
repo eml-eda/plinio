@@ -35,29 +35,21 @@ class Quantizer_Bias(nn.Module, Quantizer):
     :type num_bits: int
     :param cout: number of output channels, coincide with len of bias vector
     :type cout: int
-    :param scale_act: activation scale factor
-    :type scale_act: torch.Tensor
-    :param scale_weight: weight scale factor
-    :type scale_weight: torch.Tensor
     :param dequantize: whether the output should be fake-quantized or not
     :type dequantize: bool
     """
     def __init__(self,
                  num_bits: int,
                  cout: int,
-                 scale_act: torch.Tensor,
-                 scale_weight: torch.Tensor,
                  dequantize: bool = True):
         super(Quantizer_Bias, self).__init__()
         self.num_bits = num_bits
-        self.scale_act = scale_act
-        self.scale_weight = scale_weight
         self.dequantize = dequantize
         # self.register_buffer('s_b', torch.Tensor(cout))
         self.s_b = torch.Tensor(cout)
-        self.s_b.fill_(0.)
+        self.s_b.fill_(1.)
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, s_a, s_w) -> torch.Tensor:
         """The forward function of the bias quantizer.
 
         Compute quantization using the scale-factors of weight and activations
@@ -65,11 +57,15 @@ class Quantizer_Bias(nn.Module, Quantizer):
 
         :param input: the input float bias tensor
         :type input: torch.Tensor
+        :param s_a: activation scale factor
+        :type s_a: torch.Tensor
+        :param s_w: weight scale factor
+        :type s_w: torch.Tensor
         :return: the output fake-quantized bias tensor
         :rtype: torch.Tensor
         """
-        s_a = self.scale_act
-        s_w = self.scale_weight
+        # s_a = self.scale_act
+        # s_w = self.scale_weight
         self.s_b = (s_a * s_w).squeeze()
 
         scaled_inp = input / self.s_b
@@ -139,4 +135,4 @@ class Round_STE(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output, None
+        return grad_output

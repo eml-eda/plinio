@@ -24,10 +24,10 @@ from .dscnn import DSCNN
 from .toy_models import ToySequentialConv1d, ToySequentialSeparated, ToyAdd
 from .toy_models import ToyTimeCat, ToyChannelsCat
 from .toy_models import ToyFlatten, ToyMultiPath1, ToyMultiPath2, ToyRegression, \
-    ToyMultiPath1_2D, ToyMultiPath2_2D
+    ToyMultiPath1_2D, ToyMultiPath2_2D, ToyAdd_2D, ToyRegression_2D
 
 __all__ = ['TCResNet14', 'SimpleNN', 'SimpleNN2D', 'SimplePitNN', 'DSCNN',
            'ToySequentialConv1d', 'ToyMultiPath1_2D', 'ToyMultiPath2_2D',
            'ToySequentialSeparated', 'ToyAdd', 'ToyTimeCat', 'ToyChannelsCat',
            'ToyFlatten', 'ToyMultiPath1', 'ToyMultiPath2', 'ToyRegression',
-           'SimpleMixPrecNN', 'SimpleExportedNN2D']
+           'SimpleMixPrecNN', 'SimpleExportedNN2D', 'ToyAdd_2D', 'ToyRegression_2D']

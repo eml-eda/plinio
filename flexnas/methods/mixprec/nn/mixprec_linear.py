@@ -260,8 +260,8 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
             b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
             b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
-            b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
-            b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
+            # b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
+            # b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
             b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
             b_quantizer = cast(Type[Quantizer], b_quantizer)
             # submodule.linear = cast(nn.Linear, submodule.linear)

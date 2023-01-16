@@ -259,6 +259,8 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if isinstance(submodule, nn.MaxPool1d):
             return True
+        if isinstance(submodule, nn.MaxPool2d):
+            return True
         if isinstance(submodule, nn.BatchNorm2d):
             return True
         if isinstance(submodule, nn.Dropout):

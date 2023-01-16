@@ -236,10 +236,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                                    mixprec_w_quantizer)
         mixprec_b_quantizer = cast(Union[MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias],
                                    mixprec_b_quantizer)
-        out_height = n.meta['tensor_meta'].shape[2],
-        out_height = cast(int, out_height)
-        out_width = n.meta['tensor_meta'].shape[3],
-        out_width = cast(int, out_width)
+        out_height = n.meta['tensor_meta'].shape[2]
+        out_width = n.meta['tensor_meta'].shape[3]
         new_submodule = MixPrec_Conv2d(submodule,
                                        out_height,
                                        out_width,
@@ -288,8 +286,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
             b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
             b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
-            b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
-            b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
+            # b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
+            # b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
             b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
             b_quantizer = cast(Type[Quantizer], b_quantizer)
             # submodule.conv = cast(nn.Conv2d, submodule.conv)

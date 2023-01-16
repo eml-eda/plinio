@@ -59,7 +59,7 @@ class FQ_Weight(nn.Module, Quantizer):
                                         requires_grad=train_scale_param)
         # self.register_buffer('s_w', torch.Tensor(cout))
         self.s_w = torch.Tensor(cout)
-        self.s_w.fill_(0.)
+        self.s_w.fill_(1.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the FQ weight quantizer.
