@@ -465,7 +465,7 @@ def add_features_calculator(mod: fx.GraphModule,
             # if flatten includes the channels
             if start_dim == 1 or len(input_shape) - start_dim == 1:
                 flattened_size = math.prod(input_shape[2:end_dim if end_dim != -1 else None])
-                n.meta['features_calculator'] = FlattenFeaturesCalculator(ifc, flattened_size)
+                n.meta['features_calculator'] = FlattenFeaturesCalculator(ifc, int(flattened_size))
             else:
                 n.meta['features_calculator'] = ifc  # just propagate the features
         elif n.meta['squeeze']:
@@ -535,11 +535,7 @@ def associate_input_features(mod: fx.GraphModule):
             else:
                 prev = input_nodes[0]
                 if 'input_features_set_by' in prev.meta:
-                    if prev.meta['features_defining']:
-                        n.meta['input_features_set_by'] = prev
-                    elif prev.meta['features_propagating']:
-                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                    elif prev.meta['flatten']:
+                    if prev.meta['flatten']:
                         input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
                         start_dim = try_get_args(prev, 1, 'start_dim', 0)
                         assert start_dim != 0 and len(input_shape) - start_dim != 0, \
@@ -549,9 +545,30 @@ def associate_input_features(mod: fx.GraphModule):
                             n.meta['input_features_set_by'] = prev
                         else:
                             n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                    elif prev.meta['squeeze']:
+                        input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
+                        dim = try_get_args(prev, 1, 'dim', None)
+                        if dim is None:
+                            raise ValueError("Squeeze without dim not supported")
+                        assert dim != 0 and len(input_shape) - dim != 0, \
+                            "Squeezing the batch is not supported"
+                        if dim == 1 or len(input_shape) - dim == 1:
+                            n.meta['input_features_set_by'] = prev
+                        else:
+                            n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                    elif prev.meta['features_concatenate']:
+                        n.meta['input_features_set_by'] = prev
+                    elif prev.meta['shared_input_features']:
+                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                    elif prev.meta['features_defining']:
+                        n.meta['input_features_set_by'] = prev
+                    elif prev.meta['features_propagating']:
+                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
                     else:
                         raise ValueError("Unsupported node {} (op: {}, target: {})"
                                          .format(n, n.op, n.target))
+                else:
+                    pass
         else:  # input node
             n.meta['input_features_set_by'] = n
 
