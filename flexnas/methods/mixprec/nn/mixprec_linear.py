@@ -26,7 +26,7 @@ from ..quant.quantizers import Quantizer
 from ..quant.nn import Quant_Linear
 from .mixprec_module import MixPrecModule
 from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel, \
-    MixPrec_Qtz_Layer_Bias
+    MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias
 
 
 class MixPrec_Linear(nn.Linear, MixPrecModule):
@@ -202,8 +202,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                                                          b_quantizer_kwargs)
         elif w_mixprec_type == MixPrecType.PER_CHANNEL:
             raise NotImplementedError
-            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(b_precisions,
-                                                           submodule.out_features,
+            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(submodule.out_features,
                                                            b_quantizer,
                                                            b_quantizer_kwargs)
         else:
@@ -252,15 +251,28 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             selected_w_precision = cast(int, selected_w_precision)
             selected_w_quantizer = submodule.selected_w_quantizer
             selected_w_quantizer = cast(Type[Quantizer], selected_w_quantizer)
-            selected_b_quantizer = submodule.selected_b_quantizer
-            selected_b_quantizer = cast(Type[Quantizer], selected_b_quantizer)
-            submodule.linear = cast(nn.Linear, submodule.linear)
-            new_submodule = Quant_Linear(submodule.linear,
+            # selected_b_quantizer = submodule.selected_b_quantizer
+            # selected_b_quantizer = cast(Type[Quantizer], selected_b_quantizer)
+            submodule.mixprec_b_quantizer = cast(MixPrec_Qtz_Layer_Bias,
+                                                 submodule.mixprec_b_quantizer)
+            # Build bias quantizer using s_factors corresponding to selected
+            # act and weights quantizers
+            b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
+            b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
+            b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
+            b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
+            b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
+            b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
+            b_quantizer = cast(Type[Quantizer], b_quantizer)
+            # submodule.linear = cast(nn.Linear, submodule.linear)
+            submodule = cast(nn.Linear, submodule)
+            # new_submodule = Quant_Linear(submodule.linear,
+            new_submodule = Quant_Linear(submodule,
                                          selected_a_precision,
                                          selected_w_precision,
                                          selected_a_quantizer,
                                          selected_w_quantizer,
-                                         selected_b_quantizer)
+                                         b_quantizer)
         # w_mixprec_type is `PER_CHANNEL` => multiple precision/quantizer
         elif submodule.w_mixprec_type == MixPrecType.PER_CHANNEL:
             raise NotImplementedError  # TODO

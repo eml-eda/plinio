@@ -346,7 +346,7 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
                 exclude_names: Iterable[str],
                 exclude_types: Iterable[Type[nn.Module]]):
     """Rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a NAS-able
-    layer with its original nn.Module counterpart
+    layer with its corresponder quant.nn counterpart
 
     :param n: the node to be rewritten
     :type n: fx.Node
@@ -358,11 +358,10 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    raise NotImplementedError
-    if model_graph.is_inherited_layer(n, mod, (PITLayer,)):
+    if model_graph.is_inherited_layer(n, mod, (MixPrecModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
-        layer = cast(PITLayer, mod.get_submodule(str(n.target)))
+        layer = cast(MixPrecModule, mod.get_submodule(str(n.target)))
         layer.export(n, mod)
 
 

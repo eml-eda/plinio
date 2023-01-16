@@ -19,7 +19,7 @@
 from .tc_resnet_14 import TCResNet14
 from .simple_nn import SimpleNN, SimpleNN2D
 from .simple_nn_pit import SimplePitNN
-from .simple_nn_mixprec import SimpleMixPrecNN
+from .simple_nn_mixprec import SimpleMixPrecNN, SimpleExportedNN2D
 from .dscnn import DSCNN
 from .toy_models import ToySequentialConv1d, ToySequentialSeparated, ToyAdd
 from .toy_models import ToyTimeCat, ToyChannelsCat
@@ -30,4 +30,4 @@ __all__ = ['TCResNet14', 'SimpleNN', 'SimpleNN2D', 'SimplePitNN', 'DSCNN',
            'ToySequentialConv1d', 'ToyMultiPath1_2D', 'ToyMultiPath2_2D',
            'ToySequentialSeparated', 'ToyAdd', 'ToyTimeCat', 'ToyChannelsCat',
            'ToyFlatten', 'ToyMultiPath1', 'ToyMultiPath2', 'ToyRegression',
-           'SimpleMixPrecNN']
+           'SimpleMixPrecNN', 'SimpleExportedNN2D']

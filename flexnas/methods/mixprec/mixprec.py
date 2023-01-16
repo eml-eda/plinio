@@ -173,7 +173,7 @@ class MixPrec(DNAS):
         self._regularizer = value
 
     def arch_export(self):
-        """Export the architecture found by the NAS as a `quant.nn` modules
+        """Export the architecture found by the NAS as a `quant.nn` module
 
         The returned model will have the trained weights found during the search filled in, but
         should be fine-tuned for optimal results.
@@ -181,7 +181,13 @@ class MixPrec(DNAS):
         :return: the precision-assignement found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
-        mod, _ = convert(self.seed, self._input_shape, 'export')
+        mod, _ = convert(self.seed,
+                         self._input_shape,
+                         self.activation_precisions,
+                         self.weight_precisions,
+                         self.w_mixprec_type,
+                         self.qinfo,
+                         'export')
 
         return mod
 

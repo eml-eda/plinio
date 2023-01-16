@@ -70,7 +70,7 @@ class Quantizer_Bias(nn.Module, Quantizer):
         """
         s_a = self.scale_act
         s_w = self.scale_weight
-        self.s_b = s_a * s_w
+        self.s_b = (s_a * s_w).squeeze()
 
         scaled_inp = input / self.s_b
         output = Round_STE.apply(scaled_inp)

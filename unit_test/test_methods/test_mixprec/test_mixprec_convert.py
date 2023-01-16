@@ -19,11 +19,14 @@
 
 from typing import cast, Iterable, Tuple, Type
 import unittest
+import torch
 import torch.nn as nn
 from flexnas.methods import MixPrec
 from flexnas.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule
+import flexnas.methods.mixprec.quant.nn as qnn
+from flexnas.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
-    SimpleMixPrecNN
+    SimpleMixPrecNN, SimpleExportedNN2D
 
 
 class TestMixPrecConvert(unittest.TestCase):
@@ -101,6 +104,15 @@ class TestMixPrecConvert(unittest.TestCase):
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
 
+    def test_export_initial_simple(self):
+        """Test the export of a simple sequential model, just after import"""
+        nn_ut = SimpleNN2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         activation_precisions=(8,), weight_precisions=(4, 8))
+        exported_nn = new_nn.arch_export()
+        expected_exported_nn = SimpleExportedNN2D()
+        self._compare_exported(exported_nn, expected_exported_nn)
+
     def _compare_prepared(self,
                           old_mod: nn.Module, new_mod: nn.Module,
                           base_name: str = "",
@@ -139,16 +151,14 @@ class TestMixPrecConvert(unittest.TestCase):
                     # self.assertTrue(torch.all(child.bias == new_child.bias),
                     #                 f"Layer {name} wrong bias values")
 
-    def _compare_identical(self, old_mod: nn.Module, new_mod: nn.Module):
-        """Compare two nn.Modules, where one has been imported and exported by PIT"""
-        for name, child in old_mod.named_children():
-            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                # BN cannot be compared due to folding
-                continue
-            new_child = cast(nn.Module, new_mod._modules[name])
-            self._compare_identical(child, new_child)
-            if isinstance(child, nn.Conv1d):
-                self.assertIsInstance(new_child, nn.Conv1d, "Wrong layer type")
+    def _compare_exported(self, exported_mod: nn.Module, expected_mod: nn.Module):
+        """Compare two nn.Modules, where one has been imported and exported by MixPrec"""
+        for name, child in expected_mod.named_children():
+            new_child = cast(nn.Module, exported_mod._modules[name])
+            # self._compare_exported(child, new_child)
+            if isinstance(child, qnn.Quant_Conv2d):
+                self.assertIsInstance(new_child, qnn.Quant_Conv2d, "Wrong layer type")
+                # Check layer geometry
                 self.assertTrue(child.in_channels == new_child.in_channels)
                 self.assertTrue(child.out_channels == new_child.out_channels)
                 self.assertTrue(child.kernel_size == new_child.kernel_size)
@@ -157,6 +167,22 @@ class TestMixPrecConvert(unittest.TestCase):
                 self.assertTrue(child.dilation == new_child.dilation)
                 self.assertTrue(child.groups == new_child.groups)
                 self.assertTrue(child.padding_mode == new_child.padding_mode)
+                # Check qtz param
+                self.assertTrue(child.a_precision == new_child.a_precision)
+                self.assertTrue(child.w_precision == new_child.w_precision)
+            if isinstance(child, qnn.Quant_Linear):
+                self.assertIsInstance(new_child, qnn.Quant_Linear, "Wrong layer type")
+                # Check layer geometry
+                self.assertTrue(child.in_features == new_child.in_features)
+                self.assertTrue(child.out_features == new_child.out_features)
+                # if child.bias is not None:
+                #     self.assertTrue(torch.all(child.bias == new_child.bias))
+                # else:
+                #     self.assertIsNone(new_child.bias)
+                # Check qtz param
+                self.assertTrue(child.a_precision == new_child.a_precision)
+                self.assertTrue(child.w_precision == new_child.w_precision)
+
                 # Removed due to BN folding
                 # self.assertTrue(torch.all(child.weight == new_child.weight))
                 # if child.bias is not None:
@@ -164,13 +190,59 @@ class TestMixPrecConvert(unittest.TestCase):
                 # else:
                 #     self.assertIsNone(new_child.bias)
 
+    def test_export_with_qparams(self):
+        """Test the conversion of a simple model after forcing the nas/quant
+        params values in some layers"""
+        nn_ut = SimpleNN2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
+
+        conv0 = cast(MixPrec_Conv2d, new_nn.seed.conv0)
+        conv0.mixprec_a_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([0.3, 0.8, 0.99], dtype=torch.float))
+        conv0.mixprec_a_quantizer.mix_qtz[2].clip_val = nn.parameter.Parameter(
+            torch.tensor([5.], dtype=torch.float))
+        conv0.mixprec_w_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([1.5, 0.2, 1], dtype=torch.float))
+
+        conv1 = cast(MixPrec_Conv2d, new_nn.seed.conv1)
+        conv1.mixprec_a_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([0.3, 1.8, 0.99], dtype=torch.float))
+        conv1.mixprec_a_quantizer.mix_qtz[1].clip_val = nn.parameter.Parameter(
+            torch.tensor([1.], dtype=torch.float))
+        conv1.mixprec_w_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([1.5, 0.2, 1.9], dtype=torch.float))
+
+        exported_nn = new_nn.arch_export()
+        # Dummy fwd to fill scale-factors values
+        dummy_inp = torch.rand((2,) + nn_ut.input_shape)
+        with torch.no_grad():
+            exported_nn(dummy_inp)
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv0':
+                child = cast(qnn.Quant_Conv2d, child)
+                # mixprec_child = cast(MixPrec_Conv2d, new_nn.seed._modules[name])
+                self.assertEqual(child.a_precision, 8, "Wrong act precision")
+                self.assertEqual(child.a_quantizer.clip_val, 5.,  # type: ignore
+                                 "Wrong act qtz clip_val")
+                self.assertEqual(child.w_precision, 2, "Wrong weight precision")
+            if name == 'conv1':
+                child = cast(qnn.Quant_Conv2d, child)
+                # mixprec_child = cast(MixPrec_Conv2d, new_nn.seed._modules[name])
+                self.assertEqual(child.a_precision, 4, "Wrong act precision")
+                self.assertEqual(child.a_quantizer.clip_val, 1.,  # type: ignore
+                                 "Wrong act qtz clip_val")
+                self.assertEqual(child.w_precision, 8, "Wrong weight precision")
+
     def _check_target_layers(self, new_nn: MixPrec, exp_tgt: int):
         """Check if number of target layers is as expected"""
         n_tgt = len(new_nn._target_layers)
         self.assertEqual(exp_tgt, n_tgt,
                          "Expected {} target layers, but found {}".format(exp_tgt, n_tgt))
 
-    def _check_shared_quantizers(self, new_nn: MixPrec, check_rules: Iterable[Tuple[str, str, bool]]):
+    def _check_shared_quantizers(self,
+                                 new_nn: MixPrec,
+                                 check_rules: Iterable[Tuple[str, str, bool]]):
         """Check if shared quantizers are set correctly during an autoimport.
 
         The check_dict contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be

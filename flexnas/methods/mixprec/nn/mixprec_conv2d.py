@@ -222,8 +222,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             raise NotImplementedError
             mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
             mixprec_w_quantizer = cast(MixPrec_Qtz_Channel, mixprec_w_quantizer)
-            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(b_precisions,
-                                                           submodule.out_channels,
+            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(submodule.out_channels,
                                                            mixprec_a_quantizer,
                                                            mixprec_w_quantizer,
                                                            b_quantizer,
@@ -235,7 +234,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
         mixprec_w_quantizer = cast(Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
                                    mixprec_w_quantizer)
-        mixprec_b_quantizer = cast(Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
+        mixprec_b_quantizer = cast(Union[MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias],
                                    mixprec_b_quantizer)
         out_height = n.meta['tensor_meta'].shape[2],
         out_height = cast(int, out_height)
@@ -280,15 +279,28 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             selected_w_precision = cast(int, selected_w_precision)
             selected_w_quantizer = submodule.selected_w_quantizer
             selected_w_quantizer = cast(Type[Quantizer], selected_w_quantizer)
-            selected_b_quantizer = submodule.selected_b_quantizer
-            selected_b_quantizer = cast(Type[Quantizer], selected_b_quantizer)
-            submodule.conv = cast(nn.Conv2d, submodule.conv)
-            new_submodule = Quant_Conv2d(submodule.conv,
+            # selected_b_quantizer = submodule.selected_b_quantizer
+            # selected_b_quantizer = cast(Type[Quantizer], selected_b_quantizer)
+            submodule.mixprec_b_quantizer = cast(MixPrec_Qtz_Layer_Bias,
+                                                 submodule.mixprec_b_quantizer)
+            # Build bias quantizer using s_factors corresponding to selected
+            # act and weights quantizers
+            b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
+            b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
+            b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
+            b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
+            b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
+            b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
+            b_quantizer = cast(Type[Quantizer], b_quantizer)
+            # submodule.conv = cast(nn.Conv2d, submodule.conv)
+            submodule = cast(nn.Conv2d, submodule)
+            # new_submodule = Quant_Conv2d(submodule.conv,
+            new_submodule = Quant_Conv2d(submodule,
                                          selected_a_precision,
                                          selected_w_precision,
                                          selected_a_quantizer,
                                          selected_w_quantizer,
-                                         selected_b_quantizer)
+                                         b_quantizer)
         # w_mixprec_type is `PER_CHANNEL` => multiple precision/quantizer
         elif submodule.w_mixprec_type == MixPrecType.PER_CHANNEL:
             raise NotImplementedError  # TODO
@@ -386,19 +398,19 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             qtz = cast(Type[Quantizer], qtz)
             return qtz
 
-    @property
-    def selected_b_quantizer(self) -> Type[Quantizer]:
-        """Return the selected quantizer based on the magnitude of `alpha_prec`
-        components for biases
+    # @property
+    # def selected_b_quantizer(self) -> Type[Quantizer]:
+    #     """Return the selected quantizer based on the magnitude of `alpha_prec`
+    #     components for biases
 
-        :return: the selected quantizer
-        :rtype: Type[Quantizer]
-        """
-        with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_b_quantizer.alpha_prec))
-            qtz = self.mixprec_b_quantizer.mix_qtz[idx]
-            qtz = cast(Type[Quantizer], qtz)
-            return qtz
+    #     :return: the selected quantizer
+    #     :rtype: Type[Quantizer]
+    #     """
+    #     with torch.no_grad():
+    #         idx = int(torch.argmax(self.mixprec_b_quantizer.alpha_prec))
+    #         qtz = self.mixprec_b_quantizer.mix_qtz[idx]
+    #         qtz = cast(Type[Quantizer], qtz)
+    #         return qtz
 
     def get_size(self) -> torch.Tensor:
         """Computes the effective number of weights for the layer

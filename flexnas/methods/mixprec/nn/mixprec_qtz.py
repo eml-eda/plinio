@@ -248,7 +248,7 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         self.quantizer_kwargs['cout'] = cout
         self.quantizer_kwargs['scale_act'] = self.s_a
         self.quantizer_kwargs['scale_weight'] = self.s_w
-        self.qtz = quantizer(**self.quantizer_kwargs)
+        self.qtz_func = quantizer(**self.quantizer_kwargs)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the searchable mixed-precision layer.
@@ -262,8 +262,8 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        self.qtz = cast(nn.Module, self.qtz)
-        y = self.qtz(input)
+        self.qtz_func = cast(nn.Module, self.qtz_func)
+        y = self.qtz_func(input)
         return y
 
 
