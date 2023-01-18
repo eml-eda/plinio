@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List, Type, Tuple, Any, Dict, Optional, Callable
+from typing import List, Type, Tuple, Any, Dict, Callable
 import math
 import operator
 import torch
@@ -25,7 +25,7 @@ import torch.nn.functional as F
 import torch.fx as fx
 import networkx as nx
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, \
-    FlattenFeaturesCalculator, ConcatFeaturesCalculator, FeaturesCalculator
+    FlattenFeaturesCalculator, ConcatFeaturesCalculator
 
 
 def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
@@ -404,6 +404,11 @@ def replace_node_module(node: fx.Node, modules: Dict[str, Any], new_module: torc
 
 
 def add_node_properties(mod: fx.GraphModule):
+    """Adds properties to a dict of each node in the graph by calling ad-hoc function
+
+    :param mod: module
+    :type mod: fx.GraphModule
+    """
     g = mod.graph
     nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
@@ -417,17 +422,23 @@ def add_node_properties(mod: fx.GraphModule):
         n.meta['flatten'] = is_flatten(n, mod)
         n.meta['squeeze'] = is_squeeze(n, mod)
         n.meta['features_concatenate'] = is_features_concatenate(n, mod)
+        n.meta['untouchable'] = is_untouchable_op(n)
+        n.meta['zero_or_one_input'] = is_zero_or_one_input_op(n)
 
         for succ in nx_graph.successors(n):
             queue.append(succ)
 
 
-def add_features_calculator(mod: fx.GraphModule,
-                            extra_rules: List[Callable]
-                            ) -> Optional[FeaturesCalculator]:
-    # List[((fx.node, fx.GraphModule) -> Optional[FeaturesCalculator])]
-    # List[Callable[[fx.node, fx.GraphModule], Optional[FeaturesCalculator]]]
-    # List[Callable]
+def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable]):
+    """Adds a different feature calculator object in the 'meta' dict of each node of the graph
+    depending on the node properties
+
+    :param mod: module
+    :type mod: fx.GraphModule
+    :param extra_rules: list of callable returning NAS specific features calculator
+    :type extra_rules: List[Callable]
+    :raises ValueError: for unsupported nodes
+    """
     g = mod.graph
     nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
@@ -516,6 +527,12 @@ def add_features_calculator(mod: fx.GraphModule,
 
 
 def associate_input_features(mod: fx.GraphModule):
+    """Associates to each node a reference to the node that sets its features
+
+    :param mod: module
+    :type mod: fx.GraphModule
+    :raises ValueError: for unsupported nodes
+    """
     g = mod.graph
     nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
@@ -558,11 +575,11 @@ def associate_input_features(mod: fx.GraphModule):
                             n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
                     elif prev.meta['features_concatenate']:
                         n.meta['input_features_set_by'] = prev
-                    elif prev.meta['shared_input_features']:
-                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
                     elif prev.meta['features_defining']:
                         n.meta['input_features_set_by'] = prev
                     elif prev.meta['features_propagating']:
+                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                    elif prev.meta['shared_input_features']:
                         n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
                     else:
                         raise ValueError("Unsupported node {} (op: {}, target: {})"

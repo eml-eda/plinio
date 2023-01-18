@@ -5,7 +5,14 @@ from .pit_supernet_combiner import PITSuperNetCombiner
 
 
 class PITSuperNetModule(nn.Module):
+    """A nn.Module containing some different layer alternatives.
+    One of these layers will be selected by the PITSuperNet NAS tool for the current layer.
+    This module is for the most part just a placeholder and its logic is contained inside
+    the PITSuperNetCombiner of which instance is defined in the constructor.
 
+    :param input_layers: iterable of possible alternative layers to be selected
+    :type input_layers: Iterable[nn.Module]
+    """
     def __init__(self, input_layers: Iterable[nn.Module]):
         super(PITSuperNetModule, self).__init__()
 
@@ -14,16 +21,26 @@ class PITSuperNetModule(nn.Module):
         self.sn_combiner = PITSuperNetCombiner(list(input_layers))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """Forward function for the PITSuperNetModule that returns a weighted
+        sum of all the outputs of the different input layers.
+        It computes all possible layer outputs and passes the list to the sn_combiner
+        which computes the weighted sum.
+
+        :param input: the input tensor
+        :type input: torch.Tensor
+        :return: the output tensor (weighted sum of all layers output)
+        :rtype: torch.Tensor
+        """
         layers_outputs = [layer(input) for layer in self.sn_input_layers]
         return self.sn_combiner(layers_outputs)
 
     def __getitem__(self, pos: int) -> nn.Module:
         """Get the layer at position pos in the list of all the possible
-        layers for the SuperNetModule
+        layers for the PITSuperNetModule
 
-        :param pos: position of the required layer in the list input_layers
+        :param pos: position of the required module in the list input_layers
         :type pos: int
-        :return: layer at postion pos in the list input_layers
+        :return: module at postion pos in the list input_layers
         :rtype: nn.Module
         """
         return self.sn_input_layers[pos]

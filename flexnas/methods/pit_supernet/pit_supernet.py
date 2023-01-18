@@ -1,4 +1,4 @@
-from typing import Tuple, Any, Iterator
+from typing import Tuple, Any, Iterator, Iterable, Type
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
@@ -6,7 +6,7 @@ from .pit_supernet_graph import convert
 
 
 class PITSuperNet(DNAS):
-    """A class that wraps a nn.Module with the functionality of the SuperNet NAS tool
+    """A class that wraps a nn.Module with the functionality of the PITSuperNet NAS tool
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
@@ -18,18 +18,29 @@ class PITSuperNet(DNAS):
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
+    :param exclude_types: the types of `model` submodules that should be ignored by the NAS
+    when auto-converting defaults to ()
+    :type exclude_types: Iterable[Type[nn.Module]], optional
     """
     def __init__(
             self,
             model: nn.Module,
             input_shape: Tuple[int, ...],
-            regularizer: str = 'size'):
+            regularizer: str = 'size',
+            exclude_names: Iterable[str] = (),
+            exclude_types: Iterable[Type[nn.Module]] = ()):
 
-        super(PITSuperNet, self).__init__(regularizer)
+        super(PITSuperNet, self).__init__(regularizer, exclude_names, exclude_types)
 
         self._input_shape = input_shape
         self._regularizer = regularizer
-        self.seed, self._target_modules = convert(model, self._input_shape, 'import')
+        self.seed, self._target_modules = convert(
+            model,
+            self._input_shape,
+            'autoimport',
+            exclude_names,
+            exclude_types
+        )
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -91,7 +102,7 @@ class PITSuperNet(DNAS):
 
     def arch_export(self, add_bn=True) -> nn.Module:
         """Export the architecture found by the NAS as a 'nn.Module'
-        It replaces each SuperNetModule found in the model with a single layer.
+        It replaces each PITSuperNetModule found in the model with a single layer.
 
         :return: the architecture found by the NAS
         :rtype: nn.Module
@@ -145,54 +156,3 @@ class PITSuperNet(DNAS):
         for name, param in self.seed.named_parameters():
             if name not in exclude:
                 yield name, param
-
-    '''
-    def arch_summary(self) -> Dict[str, str]:
-        """Generates a dictionary representation of the architecture found by the NAS.
-        Only optimized layers are reported
-
-        :return: a dictionary representation of the architecture found by the NAS
-        :rtype: Dict[str, Dict[str, Any]]
-        """
-        arch = {}
-
-        for module in self._target_modules:
-            mod = module[1].export()
-            name = mod.__class__.__name__
-            if (name == "Conv2d"):
-                kernel_size = mod.kernel_size
-                t = (name, kernel_size)
-                arch[module[0]] = t
-            elif (name == "ConvBlock"):
-                children = mod.children()
-                child = next(children)
-                name_child = child.__class__.__name__
-                kernel_size = child.kernel_size
-                t = (name_child, kernel_size)
-                arch[module[0]] = t
-            elif (name == "Sequential"):
-                children = mod.children()
-                child1 = next(children)
-                child2 = next(children)
-                if (child2.__class__.__name__ == "Conv2d"):
-                    arch[module[0]] = "Depthwise Separable"
-                elif (child2.__class__.__name__ == "ConvBlock"):
-                    arch[module[0]] = "Depthwise Separable"
-                else:
-                    name_child = child1.__class__.__name__
-                    kernel_size = child1.kernel_size
-                    t = (name_child, kernel_size)
-                    arch[module[0]] = t
-            else:
-                arch[module[0]] = name
-        return arch
-
-    def __str__(self):
-        """Prints the architecture found by the NAS to screen
-
-        :return: a str representation of the current architecture
-        :rtype: str
-        """
-        arch = self.arch_summary()
-        return str(arch)
-    '''
