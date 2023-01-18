@@ -112,6 +112,31 @@ class TestMixPrecConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN2D()
         self._compare_exported(exported_nn, expected_exported_nn)
 
+    def test_export_initial_cuda(self):
+        """Test the export of a simple sequential model, just after import using
+        GPU (if available)"""
+        # Check CUDA availability
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print("Training on:", device)
+        nn_ut = SimpleNN2D().to(device)
+        # Dummy inference
+        with torch.no_grad():
+            x = torch.rand((1,) + nn_ut.input_shape).to(device)
+            nn_ut(x)
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         activation_precisions=(8,), weight_precisions=(4, 8))
+        new_nn = new_nn.to(device)
+        # Dummy inference
+        with torch.no_grad():
+            new_nn(x)
+        exported_nn = new_nn.arch_export()
+        exported_nn = exported_nn.to(device)
+        # Dummy inference
+        with torch.no_grad():
+            exported_nn(x)
+        expected_exported_nn = SimpleExportedNN2D().to(device)
+        self._compare_exported(exported_nn, expected_exported_nn)
+
     def _compare_prepared(self,
                           old_mod: nn.Module, new_mod: nn.Module,
                           base_name: str = "",

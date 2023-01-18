@@ -179,7 +179,8 @@ class MixPrec_Qtz_Layer(nn.Module):
         """
         soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
                                            dim=0)
-        p_tensor = torch.Tensor(self.precisions)
+        device = self.alpha_prec.device
+        p_tensor = torch.Tensor(self.precisions, device=device)
         eff_prec = (soft_alpha * p_tensor).sum()
         return eff_prec
 
