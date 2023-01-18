@@ -25,7 +25,7 @@ from flexnas.methods import MixPrec
 from flexnas.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule
 import flexnas.methods.mixprec.quant.nn as qnn
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
-    SimpleMixPrecNN, SimpleExportedNN2D
+    SimpleMixPrecNN, SimpleExportedNN2D, SimpleNN2D_NoBN, SimpleExportedNN2D_NoBias
 
 
 class TestMixPrecConvert(unittest.TestCase):
@@ -135,6 +135,15 @@ class TestMixPrecConvert(unittest.TestCase):
         with torch.no_grad():
             exported_nn(x)
         expected_exported_nn = SimpleExportedNN2D().to(device)
+        self._compare_exported(exported_nn, expected_exported_nn)
+
+    def test_export_initial_nobn(self):
+        """Test the export of a simple sequential model with no bn, just after import"""
+        nn_ut = SimpleNN2D_NoBN()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         activation_precisions=(8,), weight_precisions=(4, 8))
+        exported_nn = new_nn.arch_export()
+        expected_exported_nn = SimpleExportedNN2D_NoBias()
         self._compare_exported(exported_nn, expected_exported_nn)
 
     def _compare_prepared(self,

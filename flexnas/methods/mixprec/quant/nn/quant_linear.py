@@ -49,7 +49,7 @@ class Quant_Linear(nn.Linear, QuantModule):
                  w_precision: int,
                  a_quantizer: Type[Quantizer],
                  w_quantizer: Type[Quantizer],
-                 b_quantizer: Type[Quantizer]):
+                 b_quantizer: Optional[Type[Quantizer]]):
         super(Quant_Linear, self).__init__(
             linear.in_features,
             linear.out_features,
@@ -67,6 +67,7 @@ class Quant_Linear(nn.Linear, QuantModule):
         self.a_quantizer = a_quantizer
         self.w_quantizer = w_quantizer
         if self.bias is not None:
+            b_quantizer = cast(Type[Quantizer], b_quantizer)
             self.b_quantizer = b_quantizer
         else:
             self.b_quantizer = lambda *args: None  # Do Nothing
@@ -255,6 +256,7 @@ class Quant_Linear(nn.Linear, QuantModule):
         for name, param in self.w_quantizer.named_quant_parameters(
                 prfx + "w_quantizer", recurse):  # type: ignore
             yield name, param
-        for name, param in self.b_quantizer.named_quant_parameters(
-                prfx + "b_quantizer", recurse):  # type: ignore
-            yield name, param
+        if self.bias is not None:
+            for name, param in self.b_quantizer.named_quant_parameters(
+                    prfx + "b_quantizer", recurse):  # type: ignore
+                yield name, param

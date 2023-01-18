@@ -277,19 +277,22 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             selected_w_precision = cast(int, selected_w_precision)
             selected_w_quantizer = submodule.selected_w_quantizer
             selected_w_quantizer = cast(Type[Quantizer], selected_w_quantizer)
-            # selected_b_quantizer = submodule.selected_b_quantizer
-            # selected_b_quantizer = cast(Type[Quantizer], selected_b_quantizer)
-            submodule.mixprec_b_quantizer = cast(MixPrec_Qtz_Layer_Bias,
-                                                 submodule.mixprec_b_quantizer)
-            # Build bias quantizer using s_factors corresponding to selected
-            # act and weights quantizers
-            b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
-            b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
-            b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
-            # b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
-            # b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
-            b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
-            b_quantizer = cast(Type[Quantizer], b_quantizer)
+            if submodule.bias is not None:
+                # selected_b_quantizer = submodule.selected_b_quantizer
+                # selected_b_quantizer = cast(Type[Quantizer], selected_b_quantizer)
+                submodule.mixprec_b_quantizer = cast(MixPrec_Qtz_Layer_Bias,
+                                                     submodule.mixprec_b_quantizer)
+                # Build bias quantizer using s_factors corresponding to selected
+                # act and weights quantizers
+                b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
+                b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
+                b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
+                # b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
+                # b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
+                b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
+                b_quantizer = cast(Type[Quantizer], b_quantizer)
+            else:
+                b_quantizer = None
             # submodule.conv = cast(nn.Conv2d, submodule.conv)
             submodule = cast(nn.Conv2d, submodule)
             # new_submodule = Quant_Conv2d(submodule.conv,
