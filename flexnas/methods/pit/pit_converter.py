@@ -352,7 +352,7 @@ def fuse_conv_bn(mod: fx.GraphModule):
             # Now that all uses of the batch norm have been replaced, we can
             # safely remove the batch norm.
             mod.graph.erase_node(node)
-    mod.delete_all_unused_submodules()
+            mod.delete_submodule(node.target)
 
 
 def set_input_features(mod: fx.GraphModule):
