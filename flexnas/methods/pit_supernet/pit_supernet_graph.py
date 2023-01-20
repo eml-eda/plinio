@@ -24,27 +24,6 @@ class PITSuperNetTracer(fx.Tracer):
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
 
 
-def add_combiner_properties(mod: fx.GraphModule):
-    """Searches for the combiner nodes in the graph and adds their properties
-
-    :param mod: module
-    :type mod: fx.GraphModule
-    """
-    g = mod.graph
-    nx_graph = model_graph.fx_to_nx_graph(g)
-    queue = model_graph.get_input_nodes(g)
-
-    while queue:
-        n = queue.pop(0)
-
-        if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):
-            n.meta['shared_input_features'] = True
-            n.meta['features_defining'] = True
-
-        for succ in nx_graph.successors(n):
-            queue.append(succ)
-
-
 def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()
@@ -225,6 +204,27 @@ def clean_graph(mod: fx.GraphModule):
     mod.delete_all_unused_submodules()
 
 
+def add_combiner_properties(mod: fx.GraphModule):
+    """Searches for the combiner nodes in the graph and adds their properties
+
+    :param mod: module
+    :type mod: fx.GraphModule
+    """
+    g = mod.graph
+    nx_graph = model_graph.fx_to_nx_graph(g)
+    queue = model_graph.get_input_nodes(g)
+
+    while queue:
+        n = queue.pop(0)
+
+        if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):
+            n.meta['shared_input_features'] = True
+            n.meta['features_defining'] = True
+
+        for succ in nx_graph.successors(n):
+            queue.append(succ)
+
+
 def combiner_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[SoftMaxFeaturesCalculator]:
     """Sets the feature calculator for a PITSuperNetCombiner node
 
@@ -232,7 +232,7 @@ def combiner_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[SoftMaxF
     :type n: fx.Node
     :param mod: the parent module
     :type mod: fx.GraphModule
-    :return: optional feature calculator object for the cominer node
+    :return: optional feature calculator object for the combiner node
     :rtype: SoftMaxFeaturesCalculator
     """
     if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):

@@ -95,7 +95,7 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
         fuse_conv_bn(mod)
         model_graph.add_features_calculator(mod, [pit_features_calc])
         model_graph.associate_input_features(mod)
-        register_input_features(mod)  # il nuovo passo definito poco sopra
+        register_input_features(mod)
     mod.graph.lint()
     mod.recompile()
     return mod, target_layers
@@ -204,29 +204,29 @@ def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMas
         conv_layer_type = pit_layer_map[type(mod.get_submodule(str(n.target)))]
         sm = conv_layer_type.autoimport(n, mod, sm)
         return sm
-    elif model_graph.is_shared_input_features_op(n, mod):
+    elif n.meta['shared_input_features']:
         # modules that require multiple inputs all of the same size
         # create a new shared masker with the common n. of input channels, to be used by
         # predecessors
-        if sm is None or model_graph.is_features_defining_op(n, mod):
+        if sm is None or n.meta['features_defining']:
             input_size = n.all_input_nodes[-1].meta['tensor_meta'].shape[1]
             shared_masker = PITFeaturesMasker(input_size)
         else:
             shared_masker = sm
         return shared_masker
-    elif model_graph.is_flatten(n, mod):
+    elif n.meta['flatten']:
         if sm is not None:
             raise ValueError("Shared channels masks not supported for flatten")
         return None
-    elif model_graph.is_untouchable_op(n):
+    elif n.meta['untouchable']:
         return None
-    elif model_graph.is_features_concatenate(n, mod):
+    elif n.meta['features_concatenate']:
         # if we concatenate over features, we don't need to share the mask
         return None
-    elif model_graph.is_features_propagating_op(n, mod):
+    elif n.meta['features_propagating']:
         # this op has cin = cout, so return what was received as input
         return sm
-    elif model_graph.is_features_defining_op(n, mod):
+    elif n.meta['features_defining']:
         # this op defines its output features, no propagation
         return None
     else:
@@ -333,7 +333,9 @@ def fuse_conv_bn(mod: fx.GraphModule):
     # partially taken from: https://pytorch.org/tutorials/intermediate/fx_conv_bn_fuser.html
     modules = dict(mod.named_modules())
     for node in mod.graph.nodes:
-        if node.op != 'call_module' or node.args[0].op != 'call_module':
+        if node.op != 'call_module':
+            continue
+        if not isinstance(node.args[0], fx.Node) or node.args[0].op != 'call_module':
             continue
         isbn1d = isinstance(modules[node.target], PITBatchNorm1d)
         prevconv1d = isinstance(modules[node.args[0].target], PITConv1d)
@@ -358,8 +360,6 @@ def fuse_conv_bn(mod: fx.GraphModule):
 
 def register_input_features(mod: fx.GraphModule):
     g = mod.graph
-    # convert to networkx graph to have successors information, fx only gives predecessors
-    # unfortunately
     nx_graph = model_graph.fx_to_nx_graph(g)
     queue = model_graph.get_input_nodes(g)
     while queue:
@@ -374,7 +374,16 @@ def register_input_features(mod: fx.GraphModule):
             queue.append(succ)
 
 
-def pit_features_calc(n: fx.Node, mod: fx.GraphModule):
+def pit_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:
+    """Sets the feature calculator for a PIT node
+
+    :param n: node
+    :type n: fx.Node
+    :param mod: the parent module
+    :type mod: fx.GraphModule
+    :return: optional feature calculator object for PIT node
+    :rtype: ModAttrFeaturesCalculator
+    """
     if model_graph.is_inherited_layer(n, mod, (PITModule,)):
         # For PIT NAS-able layers, the "active" output features are stored in the
         # out_features_eff attribute, and the binary mask is in features_mask

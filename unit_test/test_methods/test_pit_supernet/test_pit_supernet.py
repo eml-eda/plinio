@@ -43,12 +43,20 @@ class TestSuperNet(unittest.TestCase):
 
         model = DSCnnPITSN()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = model(dummy_inp)
-        print(out)
-
+        model(dummy_inp)
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
-        out2 = sn_model(dummy_inp)
-        print(out2)
+        sn_model(dummy_inp)
+
+    def test_pit_supernet(self):
+        ch_in = 1
+        in_width = 49
+        in_height = 10
+
+        model = DSCnnPITSN()
+        sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
+
+        print(sn_model._target_modules)
+        # print(sn_model._target_modules[0][1]._pit_layers)
 
     def test_pit_supernet_export(self):
         ch_in = 1
@@ -57,11 +65,11 @@ class TestSuperNet(unittest.TestCase):
         batch_size = 1
 
         model = DSCnnPITSN()
-        sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
+        # exclude_names = ['inputlayer', 'conv1', 'conv2', 'conv3', 'conv4']
+        exclude_names = []
+        sn_model = PITSuperNet(model, (ch_in, in_width, in_height), exclude_names=exclude_names)
 
-        # print(sn_model)
         exp = sn_model.arch_export()
-        print(exp)
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out = exp(dummy_inp)
         print(out)

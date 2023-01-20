@@ -579,8 +579,10 @@ def associate_input_features(mod: fx.GraphModule):
                         n.meta['input_features_set_by'] = prev
                     elif prev.meta['features_propagating']:
                         n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                    elif prev.meta['shared_input_features']:
-                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+                    # pay attention: if order matters for the combiner node
+                    # (features_defining and shared_input_features)
+                    # elif prev.meta['shared_input_features']:
+                        # n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
                     else:
                         raise ValueError("Unsupported node {} (op: {}, target: {})"
                                          .format(n, n.op, n.target))
