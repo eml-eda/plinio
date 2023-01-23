@@ -51,7 +51,7 @@ def add_node_properties(mod: fx.GraphModule):
             queue.append(succ)
 
 
-def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable]):
+def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = []):
     """Adds a different feature calculator object in the 'meta' dict of each node of the graph
     depending on the node properties
 
@@ -77,14 +77,15 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable]):
         if skip_flag:
             continue
 
+        # handle extra rules
         fc = None
-        if extra_rules:
-            for rule in extra_rules:
-                fc = rule(n, mod)
-                if fc:
-                    break
+        for rule in extra_rules:
+            fc = rule(n, mod)
+            if fc:
+                break
         if fc:
             n.meta['features_calculator'] = fc
+        # handle default rules
         elif n.meta['flatten']:
             # For flatten ops, the output features are computed as: input_features * spatial_size
             # note that this is NOT simply equal to the output shape if the preceding layer is a
@@ -119,7 +120,6 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable]):
             # for concatenation over the features axis the number of output features is the sum
             # of the output features of preceding layers as for flatten, this is NOT equal to the
             # input shape of this layer, when one or more predecessors are NAS-able
-            # ifc = ConcatFeaturesCalculator([calc_dict[_] for _ in n.all_input_nodes])
             ifc = ConcatFeaturesCalculator(
                 [prev.meta['features_calculator'] for prev in n.all_input_nodes]
             )

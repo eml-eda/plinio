@@ -61,15 +61,14 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     ShapeProp(mod).propagate(batch_example.to(device))
     add_node_properties(mod)
     add_combiner_properties(mod)
-    # pit_target_layers
+    # first convert Conv/FC layers to/from PIT versions first
     pit_graph.convert_layers(mod, conversion_type, exclude_names, exclude_types)
+    # then import/export SuperNet selection layers
     sn_target_layers = convert_layers(mod, conversion_type)
     sn_target_layers.reverse()
-    compute_shapes(mod, sn_target_layers)
     if conversion_type in ('autoimport', 'import'):
         pit_graph.fuse_conv_bn(mod)
-        add_features_calculator(mod,
-                                            [pit_graph.pit_features_calc, combiner_features_calc])
+        add_features_calculator(mod, [pit_graph.pit_features_calc, combiner_features_calc])
         associate_input_features(mod)
         pit_graph.register_input_features(mod)
 
@@ -106,7 +105,7 @@ def convert_layers(mod: fx.GraphModule,
             if conversion_type == 'export':
                 export_node(n, mod)
             if conversion_type in ('import', 'autoimport'):
-                add_to_targets(n, mod, target_layers)
+                import_node(n, mod, target_layers)
 
             for pred in n.all_input_nodes:
                 queue.append(pred)
@@ -130,10 +129,10 @@ def export_node(n: fx.Node, mod: fx.GraphModule):
         layer.export(n, mod)
 
 
-def add_to_targets(n: fx.Node, mod: fx.GraphModule,
+def import_node(n: fx.Node, mod: fx.GraphModule,
                    target_layers: List[Tuple[str, PITSuperNetCombiner]]):
     """Optionally adds the layer corresponding to a torch.fx.Node to the list of NAS target
-    layers
+    layers and computes the number of MACs and parameters for each "fixed" (i.e., not-prunable) branch
 
     :param n: the node to be added
     :type n: fx.Node
@@ -143,24 +142,10 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule,
     :type target_layers: List[Tuple[str, PITSuperNetCombiner]]
     """
     if is_layer(n, mod, (PITSuperNetCombiner,)):
-        target_layers.append((str(n.target),
-                             cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))))
-
-
-def compute_shapes(mod: fx.GraphModule, target_modules: List[Tuple[str, PITSuperNetCombiner]]):
-    """This function computes the input shape for each PITSuperNetModule in the target modules
-    """
-    if (target_modules):
-        g = mod.graph
-
-        for t in target_modules:
-            for n in g.nodes:
-                if t[0] == n.target:
-                    t[1].input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
-
-        for target in target_modules:
-            target[1].compute_layers_sizes()
-            target[1].compute_layers_macs()
+        submod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
+        submod.compute_layers_sizes()
+        submod.compute_layers_macs()
+        target_layers.append((str(n.target), submod))
 
 
 def clean_graph(mod: fx.GraphModule):

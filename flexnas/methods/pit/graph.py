@@ -128,15 +128,16 @@ def convert_layers(mod: fx.GraphModule,
     queue = get_output_nodes(g)
     # the shared_masker_queue is only used in 'autoimport' mode.
     # initialied with Frozen maskers to ensure output layers are never trainable
-    shared_masker_queue: List[Optional[PITFeaturesMasker]] = [
-        PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1]) for n in queue]
+    shared_masker_dict: Dict[fx.Node, List[Optional[PITFeaturesMasker]]] = {
+        n: [PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1])] for n in queue
+    }
     # the list of target layers is only used in 'import' and 'autoimport' modes. Empty for export
     target_layers = []
     visited = []
     while queue:
         n = queue.pop(0)
-        shared_masker = shared_masker_queue.pop(0)
-        if n not in visited:
+        if n not in visited and all(_ in visited for _ in list(n.users.keys())):
+            shared_masker = merge_maskers(shared_masker_dict[n])
             if conversion_type == 'autoimport':
                 shared_masker = autoimport_node(n, mod, shared_masker, exclude_names, exclude_types)
                 # shared_masker = update_shared_masker(n, mod, shared_masker)
@@ -149,9 +150,24 @@ def convert_layers(mod: fx.GraphModule,
 
             for pred in n.all_input_nodes:
                 queue.append(pred)
-                shared_masker_queue.append(shared_masker)
+                if pred in shared_masker_dict:
+                    shared_masker_dict[pred].append(shared_masker)
+                else:
+                    shared_masker_dict[pred] = [shared_masker]
             visited.append(n)
     return target_layers
+
+
+def merge_maskers(sm_list: List[Optional[PITFeaturesMasker]]) -> Optional[PITFeaturesMasker]:
+    """Combine channel masks passed from successors to current node. Currently fails unless at most 1 mask is not None"""
+    merged_sm = None
+    for sm in sm_list:
+        if sm is not None:
+            if merged_sm is not None:
+                raise ValueError("PIT Conversion: receiving two incompatible feature masks from successors.")
+            else:
+                merged_sm = sm
+    return merged_sm
 
 
 def exclude(n: fx.Node, mod: fx.GraphModule,

@@ -75,7 +75,6 @@ class PITSuperNetCombiner(nn.Module):
             for module in layer.modules():
                 if isinstance(module, PITModule):
                     cast(List[PITModule], self._pit_layers[i]).append(module)
-                    # self._pit_layers[i].append(module)
                     size = 0
                     for param in module.parameters():
                         size += torch.prod(torch.tensor(param.shape))

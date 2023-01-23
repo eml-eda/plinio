@@ -19,6 +19,7 @@
 
 from abc import abstractmethod
 from typing import Dict, Any, Optional, Iterator, Tuple
+import torch
 import torch.fx as fx
 import torch.nn as nn
 from .features_masker import PITFeaturesMasker
@@ -113,6 +114,24 @@ class PITModule:
         """
         raise NotImplementedError("Calling arch_parameters on base abstract PITLayer class")
 
+    @abstractmethod
+    def get_size(self) -> torch.Tensor:
+        """Method that computes the number of weights for the layer
+
+        :return: the number of weights
+        :rtype: torch.Tensor
+        """
+        raise NotImplementedError("Calling arch_parameters on base abstract PITLayer class")
+
+    @abstractmethod
+    def get_macs(self) -> torch.Tensor:
+        """Method that computes the number of MAC operations for the layer
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        raise NotImplementedError("Calling arch_parameters on base abstract PITLayer class")
+
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the architectural parameters (masks) of this layer
 
@@ -123,3 +142,4 @@ class PITModule:
         """
         for name, param in self.named_nas_parameters(recurse=recurse):
             yield param
+
