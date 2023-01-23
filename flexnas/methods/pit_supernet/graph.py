@@ -7,8 +7,8 @@ from torch.fx.passes.shape_prop import ShapeProp
 from flexnas.graph.annotation import add_node_properties, add_features_calculator, \
         associate_input_features
 from flexnas.graph.inspection import is_layer, get_output_nodes, get_input_nodes
-from flexnas.graph.utils import fx_to_nx_graph
 from flexnas.graph.features_calculation import SoftMaxFeaturesCalculator
+from flexnas.graph.utils import all_output_nodes
 from .nn.combiner import PITSuperNetCombiner
 from flexnas.methods.pit import graph as pit_graph
 from flexnas.methods.pit.nn import PITModule
@@ -157,7 +157,6 @@ def clean_graph(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
     visited = []
     prev_args = None
@@ -183,7 +182,7 @@ def clean_graph(mod: fx.GraphModule):
                 prev_args = None
 
         visited.append(n)
-        for succ in nx_graph.successors(n):
+        for succ in all_output_nodes(n):
             queue.append(succ)
 
     for node in mod.graph.nodes:
@@ -200,9 +199,7 @@ def add_combiner_properties(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
-
     while queue:
         n = queue.pop(0)
 
@@ -210,7 +207,7 @@ def add_combiner_properties(mod: fx.GraphModule):
             n.meta['shared_input_features'] = True
             n.meta['features_defining'] = True
 
-        for succ in nx_graph.successors(n):
+        for succ in all_output_nodes(n):
             queue.append(succ)
 
 

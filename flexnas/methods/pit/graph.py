@@ -33,7 +33,7 @@ from flexnas.graph.annotation import add_features_calculator, add_node_propertie
         associate_input_features
 from flexnas.graph.inspection import is_layer, get_output_nodes, is_inherited_layer, \
         get_input_nodes
-from flexnas.graph.utils import fx_to_nx_graph
+from flexnas.graph.utils import all_output_nodes
 from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
 
 # add new supported layers here:
@@ -390,7 +390,6 @@ def fuse_conv_bn(mod: fx.GraphModule):
 
 def register_input_features(mod: fx.GraphModule):
     g = mod.graph
-    nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
     while queue:
         n = queue.pop(0)
@@ -400,7 +399,7 @@ def register_input_features(mod: fx.GraphModule):
             fc = n.meta['input_features_set_by'].meta['features_calculator']
             sub_mod.input_features_calculator = fc
 
-        for succ in nx_graph.successors(n):
+        for succ in all_output_nodes(n):
             queue.append(succ)
 
 

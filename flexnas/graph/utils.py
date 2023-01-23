@@ -16,31 +16,38 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Any
+from typing import Any, List
 import torch.fx as fx
-import networkx as nx
-
-
-def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
-    """Transforms a `torch.fx.Graph` into an equivalent `networkx.DiGraph` for easier visits.
-
-    :param fx_graph: the `torch.fx.Graph` instance.
-    :type fx_graph: fx.Graph
-    :return: the corresponding `networkx.DiGraph`
-    :rtype: nx.DiGraph
-    """
-    nx_graph = nx.DiGraph()
-    for n in fx_graph.nodes:
-        for i in n.all_input_nodes:
-            nx_graph.add_edge(i, n)
-    return nx_graph
 
 
 def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> Any:
     """Look for an argument in a fx.Node. First looks within n.args, then n.kwargs.
     If not found, returns a default.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param args_idx: the index of the searched arg in the positional arguments
+    :type args_idx: int
+    :param kwargs_str: the name of the searched arg in the keyword arguments
+    :type kwargs_str: str
+    :param default: the default value to return in case the searched argument is not found
+    :type n: Any
+    :return: the searched argument or the default value
+    :rtype: Any
     """
     if len(n.args) > args_idx:
         return n.args[args_idx]
     arg = n.kwargs.get(kwargs_str)
     return arg if arg is not None else default
+
+
+def all_output_nodes(n: fx.Node) -> List[fx.Node]:
+    """Return the list of successors for a fx.Node since
+    torch.fx does not provide this functionality, but only gives input nodes
+
+    :param n: the target node
+    :type n:  fx.Node
+    :return: the list of successors
+    :rtype: List[fx.Node]
+    """
+    return list(n.users.keys())

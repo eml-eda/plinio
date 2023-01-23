@@ -21,7 +21,7 @@ import math
 import torch.fx as fx
 from .features_calculation import FlattenFeaturesCalculator, ConcatFeaturesCalculator, \
         ConstFeaturesCalculator
-from .utils import fx_to_nx_graph, try_get_args
+from .utils import all_output_nodes, try_get_args
 from .inspection import is_features_propagating_op, is_features_defining_op, \
         is_shared_input_features_op, is_flatten, is_squeeze, is_features_concatenate, \
         is_untouchable_op, is_zero_or_one_input_op, get_input_nodes
@@ -34,9 +34,7 @@ def add_node_properties(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
-
     while queue:
         n = queue.pop(0)
 
@@ -49,7 +47,7 @@ def add_node_properties(mod: fx.GraphModule):
         n.meta['untouchable'] = is_untouchable_op(n)
         n.meta['zero_or_one_input'] = is_zero_or_one_input_op(n)
 
-        for succ in nx_graph.successors(n):
+        for succ in all_output_nodes(n):
             queue.append(succ)
 
 
@@ -64,19 +62,11 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
     :raises ValueError: for unsupported nodes
     """
     g = mod.graph
-    nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
-
     while queue:
         n = queue.pop(0)
-        # skip nodes for which predecessors have not yet been processed completely, we'll come
-        # back to them later
-        skip_flag = False
-        if len(n.all_input_nodes) > 0:
-            for i in n.all_input_nodes:
-                if 'features_calculator' not in i.meta:
-                    skip_flag = True
-        if skip_flag:
+        # skip nodes for which predecessors have not yet been processed completely
+        if any(['features_calculator' not in _.meta for _ in n.all_input_nodes]):
             continue
 
         # handle extra rules
@@ -109,6 +99,7 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
             ifc = n.all_input_nodes[0].meta['features_calculator']
             input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
             dim = try_get_args(n, 1, 'dim', None)
+            # TODO: add support for no dim by looking at which dimensions are 1
             if dim is None:
                 raise ValueError("Squeeze without dim not supported")
             assert dim != 0 and len(input_shape) - dim != 0, \
@@ -130,7 +121,7 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
             # for nodes that require identical number of features in all their inputs (e.g., add)
             # we simply assume that we can take any of the output features calculators from
             # predecessors
-            # this is enforced for NAS-able layers by the use of shared maskers (see above)
+            # this is enforced for NAS-able layers by the use of shared maskers
             n.meta['features_calculator'] = n.all_input_nodes[0].meta['features_calculator']
         elif n.meta['features_defining']:
             # these are "static" (i.e., non NAS-able) nodes that alter the number of output
@@ -144,7 +135,7 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
         else:
             raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
 
-        for succ in nx_graph.successors(n):
+        for succ in all_output_nodes(n):
             queue.append(succ)
 
 
@@ -156,9 +147,7 @@ def associate_input_features(mod: fx.GraphModule):
     :raises ValueError: for unsupported nodes
     """
     g = mod.graph
-    nx_graph = fx_to_nx_graph(g)
     queue = get_input_nodes(g)
-
     while queue:
         n = queue.pop(0)
 
@@ -201,10 +190,6 @@ def associate_input_features(mod: fx.GraphModule):
                         n.meta['input_features_set_by'] = prev
                     elif prev.meta['features_propagating']:
                         n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                    # pay attention: if order matters for the combiner node
-                    # (features_defining and shared_input_features)
-                    # elif prev.meta['shared_input_features']:
-                        # n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
                     else:
                         raise ValueError("Unsupported node {} (op: {}, target: {})"
                                          .format(n, n.op, n.target))
@@ -213,5 +198,5 @@ def associate_input_features(mod: fx.GraphModule):
         else:  # input node
             n.meta['input_features_set_by'] = n
 
-        for succ in nx_graph.successors(n):
+        for succ in all_output_nodes(n):
             queue.append(succ)
