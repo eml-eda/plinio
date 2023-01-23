@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 from torchinfo import summary
-from flexnas.methods.pit import PITModule
+from flexnas.methods.pit.nn import PITModule
 
 
 class PITSuperNetCombiner(nn.Module):

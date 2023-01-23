@@ -1,9 +1,9 @@
 import torch.nn as nn
 import torch.nn.functional as F
-from flexnas.methods.pit.pit_conv1d import PITConv1d
-from flexnas.methods.pit.pit_features_masker import PITFeaturesMasker
-from flexnas.methods.pit.pit_timestep_masker import PITTimestepMasker
-from flexnas.methods.pit.pit_dilation_masker import PITDilationMasker
+from flexnas.methods.pit.nn.conv1d import PITConv1d
+from flexnas.methods.pit.nn.features_masker import PITFeaturesMasker
+from flexnas.methods.pit.nn.timestep_masker import PITTimestepMasker
+from flexnas.methods.pit.nn.dilation_masker import PITDilationMasker
 
 
 class SimplePitNN(nn.Module):

@@ -22,9 +22,9 @@ import torch.nn as nn
 import torch.fx as fx
 import torch.nn.functional as F
 from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
-from .pit_module import PITModule
-from .pit_features_masker import PITFeaturesMasker
-from .pit_binarizer import PITBinarizer
+from .module import PITModule
+from .features_masker import PITFeaturesMasker
+from .binarizer import PITBinarizer
 
 
 class PITLinear(nn.Linear, PITModule):

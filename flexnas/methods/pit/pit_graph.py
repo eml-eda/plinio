@@ -22,13 +22,13 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from flexnas.methods.pit.pit_conv1d import PITConv1d
-from flexnas.methods.pit.pit_conv2d import PITConv2d
-from flexnas.methods.pit.pit_linear import PITLinear
-from flexnas.methods.pit.pit_batchnorm_1d import PITBatchNorm1d
-from flexnas.methods.pit.pit_batchnorm_2d import PITBatchNorm2d
-from .pit_module import PITModule
-from .pit_features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
+from .nn.conv1d import PITConv1d
+from .nn.conv2d import PITConv2d
+from .nn.linear import PITLinear
+from .nn.batchnorm_1d import PITBatchNorm1d
+from .nn.batchnorm_2d import PITBatchNorm2d
+from .nn.module import PITModule
+from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from flexnas.utils import model_graph
 from flexnas.utils.features_calculator import ModAttrFeaturesCalculator
 

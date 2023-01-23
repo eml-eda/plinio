@@ -22,8 +22,8 @@ import math
 import random
 import torch
 from flexnas.methods import PIT
-from flexnas.methods.pit import PITConv1d
-from flexnas.methods.pit.pit_binarizer import PITBinarizer
+from flexnas.methods.pit.nn import PITConv1d
+from flexnas.methods.pit.nn.binarizer import PITBinarizer
 from unit_test.models import SimpleNN, TCResNet14
 from unit_test.models import ToyAdd, ToyChannelsCat
 from torch.nn.parameter import Parameter

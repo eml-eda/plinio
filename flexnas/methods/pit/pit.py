@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
 from .pit_graph import convert
-from .pit_module import PITModule
+from .nn.module import PITModule
 
 
 class PIT(DNAS):

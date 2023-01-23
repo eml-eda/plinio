@@ -21,8 +21,8 @@ import unittest
 import torch
 import torch.nn as nn
 from flexnas.methods import PIT
-from flexnas.methods.pit import PITConv1d, PITConv2d
-from flexnas.methods.pit import PITModule
+from flexnas.methods.pit.nn import PITConv1d, PITConv2d
+from flexnas.methods.pit.nn import PITModule
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN

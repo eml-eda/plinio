@@ -1,7 +1,7 @@
 from torch import nn
 from flexnas.methods.pit_supernet import PITSuperNetModule
-from flexnas.methods.pit import PITConv2d
-from flexnas.methods.pit.pit_features_masker import PITFeaturesMasker
+from flexnas.methods.pit.nn import PITConv2d
+from flexnas.methods.pit.nn.features_masker import PITFeaturesMasker
 
 
 class StandardPITSNModule(nn.Module):

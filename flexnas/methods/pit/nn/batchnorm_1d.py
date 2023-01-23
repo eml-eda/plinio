@@ -20,9 +20,9 @@ from typing import Dict, Any, Optional, cast
 import torch
 import torch.nn as nn
 import torch.fx as fx
-from .pit_features_masker import PITFeaturesMasker
+from .features_masker import PITFeaturesMasker
 from flexnas.utils.features_calculator import FeaturesCalculator
-from .pit_module import PITModule
+from .module import PITModule
 
 
 class PITBatchNorm1d(nn.BatchNorm1d, PITModule):
