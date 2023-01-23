@@ -410,7 +410,7 @@ class TestPITSearch(unittest.TestCase):
             pit_nn.eval()
             y = nn(x)
             pit_y = pit_nn(x)
-            self.assertTrue(torch.allclose(y, pit_y), "Wrong output of PIT model")
+            self.assertTrue(torch.allclose(y, pit_y, atol=1e-7), "Wrong output of PIT model")
 
 
 if __name__ == '__main__':

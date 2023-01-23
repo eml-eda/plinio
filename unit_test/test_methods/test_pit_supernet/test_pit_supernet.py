@@ -5,7 +5,7 @@ from unit_test.models.pit_supernet_nn import StandardPITSNModule
 from unit_test.models.kws_pit_sn_model import DSCnnPITSN
 
 
-class TestSuperNet(unittest.TestCase):
+class TestPITSuperNet(unittest.TestCase):
 
     # StandardSNModule
     def test_standard_pit_sn_module(self):
