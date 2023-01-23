@@ -29,9 +29,11 @@ from .nn.batchnorm_1d import PITBatchNorm1d
 from .nn.batchnorm_2d import PITBatchNorm2d
 from .nn.module import PITModule
 from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
-from flexnas.graph import *
-from flexnas.graph.inspection import *
-from flexnas.graph.utils import *
+from flexnas.graph.annotation import add_features_calculator, add_node_properties, \
+        associate_input_features
+from flexnas.graph.inspection import is_layer, get_output_nodes, is_inherited_layer, \
+        get_input_nodes
+from flexnas.graph.utils import fx_to_nx_graph
 from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
 
 # add new supported layers here:
@@ -159,12 +161,22 @@ def convert_layers(mod: fx.GraphModule,
 
 
 def merge_maskers(sm_list: List[Optional[PITFeaturesMasker]]) -> Optional[PITFeaturesMasker]:
-    """Combine channel masks passed from successors to current node. Currently fails unless at most 1 mask is not None"""
+    """Combine channel masks passed from successors to current node.
+    Currently fails unless at most 1 mask is not None
+
+    :param sm_list: the list of PITFeaturesMasker instances (or None) received from successor
+    nodes
+    :type sm_list: List[Optional[PITFeaturesMasker]]
+    :return: the merged feature masker
+    :rtype: Optional[PITFeaturesMasker]
+    """
     merged_sm = None
     for sm in sm_list:
         if sm is not None:
             if merged_sm is not None:
-                raise ValueError("PIT Conversion: receiving two incompatible feature masks from successors.")
+                raise ValueError(
+                   "PIT Conversion: receiving two incompatible feature masks from successors."
+                )
             else:
                 merged_sm = sm
     return merged_sm

@@ -24,4 +24,3 @@ from .batchnorm_1d import PITBatchNorm1d
 from .batchnorm_2d import PITBatchNorm2d
 
 __all__ = ['PITModule', 'PITConv1d', 'PITConv2d', 'PITLinear', 'PITBatchNorm1d', 'PITBatchNorm2d']
-

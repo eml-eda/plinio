@@ -20,4 +20,3 @@ from .module import PITSuperNetModule
 from .combiner import PITSuperNetCombiner
 
 __all__ = ['PITSuperNetModule', 'PITSuperNetCombiner']
-

@@ -20,6 +20,7 @@ from typing import Any
 import torch.fx as fx
 import networkx as nx
 
+
 def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
     """Transforms a `torch.fx.Graph` into an equivalent `networkx.DiGraph` for easier visits.
 
@@ -34,6 +35,7 @@ def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
             nx_graph.add_edge(i, n)
     return nx_graph
 
+
 def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> Any:
     """Look for an argument in a fx.Node. First looks within n.args, then n.kwargs.
     If not found, returns a default.
@@ -42,6 +44,3 @@ def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> An
         return n.args[args_idx]
     arg = n.kwargs.get(kwargs_str)
     return arg if arg is not None else default
-
-
-

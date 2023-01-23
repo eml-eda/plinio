@@ -21,8 +21,10 @@ import math
 import torch.fx as fx
 from .features_calculation import FlattenFeaturesCalculator, ConcatFeaturesCalculator, \
         ConstFeaturesCalculator
-from .utils import fx_to_nx_graph
-from .inspection import *
+from .utils import fx_to_nx_graph, try_get_args
+from .inspection import is_features_propagating_op, is_features_defining_op, \
+        is_shared_input_features_op, is_flatten, is_squeeze, is_features_concatenate, \
+        is_untouchable_op, is_zero_or_one_input_op, get_input_nodes
 
 
 def add_node_properties(mod: fx.GraphModule):
@@ -213,4 +215,3 @@ def associate_input_features(mod: fx.GraphModule):
 
         for succ in nx_graph.successors(n):
             queue.append(succ)
-

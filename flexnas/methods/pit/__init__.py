@@ -19,4 +19,3 @@
 from .pit import PIT
 
 __all__ = ['PIT']
-

@@ -4,10 +4,11 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from flexnas.graph import *
+from flexnas.graph.annotation import add_node_properties, add_features_calculator, \
+        associate_input_features
+from flexnas.graph.inspection import is_layer, get_output_nodes, get_input_nodes
+from flexnas.graph.utils import fx_to_nx_graph
 from flexnas.graph.features_calculation import SoftMaxFeaturesCalculator
-from flexnas.graph.inspection import *
-from flexnas.graph.utils import *
 from .nn.combiner import PITSuperNetCombiner
 from flexnas.methods.pit import graph as pit_graph
 from flexnas.methods.pit.nn import PITModule
@@ -130,9 +131,10 @@ def export_node(n: fx.Node, mod: fx.GraphModule):
 
 
 def import_node(n: fx.Node, mod: fx.GraphModule,
-                   target_layers: List[Tuple[str, PITSuperNetCombiner]]):
+                target_layers: List[Tuple[str, PITSuperNetCombiner]]):
     """Optionally adds the layer corresponding to a torch.fx.Node to the list of NAS target
-    layers and computes the number of MACs and parameters for each "fixed" (i.e., not-prunable) branch
+    layers and computes the number of MACs and parameters for each "fixed" (i.e., not-prunable)
+    branch
 
     :param n: the node to be added
     :type n: fx.Node

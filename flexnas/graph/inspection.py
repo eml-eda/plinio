@@ -365,5 +365,3 @@ def parent_name(target: str) -> Tuple[str, str]:
     # https://github.com/pytorch/pytorch/blob/master/torch/fx/experimental/optimization.py
     *parent, name = target.rsplit('.', 1)
     return parent[0] if parent else '', name
-
-

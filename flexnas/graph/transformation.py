@@ -30,4 +30,3 @@ def replace_node_module(node: fx.Node, modules: Dict[str, Any], new_module: torc
     assert isinstance(node.target, str)
     pn, name = parent_name(node.target)
     setattr(modules[pn], name, new_module)
-

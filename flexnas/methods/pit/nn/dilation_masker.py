@@ -16,7 +16,6 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-
 from typing import cast
 import math
 import torch

@@ -16,7 +16,6 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-
 from abc import abstractmethod
 from typing import Dict, Any, Optional, Iterator, Tuple
 import torch
@@ -142,4 +141,3 @@ class PITModule:
         """
         for name, param in self.named_nas_parameters(recurse=recurse):
             yield param
-

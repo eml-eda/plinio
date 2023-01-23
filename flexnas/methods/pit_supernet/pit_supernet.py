@@ -100,7 +100,7 @@ class PITSuperNet(DNAS):
             raise ValueError(f"Invalid regularizer {value}")
         self._regularizer = value
 
-    def arch_export(self, add_bn=True) -> nn.Module:
+    def arch_export(self) -> nn.Module:
         """Export the architecture found by the NAS as a 'nn.Module'
         It replaces each PITSuperNetModule found in the model with a single layer.
 
