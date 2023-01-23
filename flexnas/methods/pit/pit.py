@@ -21,7 +21,7 @@ from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
-from .pit_graph import convert
+from .graph import convert
 from .nn.module import PITModule
 
 
