@@ -25,7 +25,19 @@ import torch.fx as fx
 from .utils import try_get_args
 
 
-def get_input_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
+def all_output_nodes(n: fx.Node) -> List[fx.Node]:
+    """Return the list of successors for a fx.Node since
+    torch.fx does not provide this functionality, but only gives input nodes
+
+    :param n: the target node
+    :type n:  fx.Node
+    :return: the list of successors
+    :rtype: List[fx.Node]
+    """
+    return list(n.users.keys())
+
+
+def get_graph_inputs(fx_graph: fx.Graph) -> List[fx.Node]:
     """From a `torch.fx.Graph`, return the list of nodes that correspond to network inputs.
 
     Basically finds all nodes of type 'placeholder'.
@@ -42,7 +54,7 @@ def get_input_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
     return ret
 
 
-def get_output_nodes(fx_graph: fx.Graph) -> List[fx.Node]:
+def get_graph_outputs(fx_graph: fx.Graph) -> List[fx.Node]:
     """From a `torch.fx.Graph`, return the list of nodes that correspond to network outputs.
 
     Basically finds all nodes of type 'output'.

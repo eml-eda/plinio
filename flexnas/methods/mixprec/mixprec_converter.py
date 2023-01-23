@@ -27,7 +27,7 @@ from flexnas.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, \
     MixPrecModule
 from flexnas.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
 from flexnas.methods.mixprec.quant.quantizers import Quantizer
-from flexnas.graph import get_output_nodes
+from flexnas.graph import get_graph_outputs
 from flexnas.graph import inspection
 
 # add new supported layers here:
@@ -160,7 +160,7 @@ def convert_layers(mod: fx.GraphModule,
     :rtype: List[nn.Module]
     """
     g = mod.graph
-    queue = get_output_nodes(g)
+    queue = get_graph_outputs(g)
     # the shared_quantizer_queue is only used in 'autoimport' mode.
     # We consider the case of shared quantizer for activations
     # TODO: Understand if weight/bias quantizer might be shared or not

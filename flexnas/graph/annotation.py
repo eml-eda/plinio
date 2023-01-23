@@ -21,10 +21,10 @@ import math
 import torch.fx as fx
 from .features_calculation import FlattenFeaturesCalculator, ConcatFeaturesCalculator, \
         ConstFeaturesCalculator
-from .utils import all_output_nodes, try_get_args
+from .utils import try_get_args
 from .inspection import is_features_propagating_op, is_features_defining_op, \
         is_shared_input_features_op, is_flatten, is_squeeze, is_features_concatenate, \
-        is_untouchable_op, is_zero_or_one_input_op, get_input_nodes
+        is_untouchable_op, is_zero_or_one_input_op, get_graph_inputs, all_output_nodes
 
 
 def add_node_properties(mod: fx.GraphModule):
@@ -34,7 +34,7 @@ def add_node_properties(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    queue = get_input_nodes(g)
+    queue = get_graph_inputs(g)
     while queue:
         n = queue.pop(0)
 
@@ -62,7 +62,7 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
     :raises ValueError: for unsupported nodes
     """
     g = mod.graph
-    queue = get_input_nodes(g)
+    queue = get_graph_inputs(g)
     while queue:
         n = queue.pop(0)
         # skip nodes for which predecessors have not yet been processed completely
@@ -147,7 +147,7 @@ def associate_input_features(mod: fx.GraphModule):
     :raises ValueError: for unsupported nodes
     """
     g = mod.graph
-    queue = get_input_nodes(g)
+    queue = get_graph_inputs(g)
     while queue:
         n = queue.pop(0)
 

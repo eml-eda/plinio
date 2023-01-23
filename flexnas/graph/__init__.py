@@ -19,7 +19,7 @@
 from .annotation import add_node_properties, add_features_calculator, \
         associate_input_features
 
-from .inspection import get_input_nodes, get_output_nodes
+from .inspection import get_graph_inputs, get_graph_outputs
 
 from .transformation import replace_node_module
 
@@ -27,7 +27,7 @@ __all__ = [
         'add_node_properties',
         'add_features_calculator',
         'associate_input_features',
-        'get_input_nodes',
-        'get_output_nodes',
+        'get_graph_inputs',
+        'get_graph_outputs',
         'replace_node_module',
         ]

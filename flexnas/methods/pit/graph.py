@@ -31,9 +31,8 @@ from .nn.module import PITModule
 from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from flexnas.graph.annotation import add_features_calculator, add_node_properties, \
         associate_input_features
-from flexnas.graph.inspection import is_layer, get_output_nodes, is_inherited_layer, \
-        get_input_nodes
-from flexnas.graph.utils import all_output_nodes
+from flexnas.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
+        get_graph_inputs, all_output_nodes
 from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
 
 # add new supported layers here:
@@ -127,7 +126,7 @@ def convert_layers(mod: fx.GraphModule,
     :rtype: List[nn.Module]
     """
     g = mod.graph
-    queue = get_output_nodes(g)
+    queue = get_graph_outputs(g)
     # the shared_masker_queue is only used in 'autoimport' mode.
     # initialied with Frozen maskers to ensure output layers are never trainable
     shared_masker_dict: Dict[fx.Node, List[Optional[PITFeaturesMasker]]] = {
@@ -390,7 +389,7 @@ def fuse_conv_bn(mod: fx.GraphModule):
 
 def register_input_features(mod: fx.GraphModule):
     g = mod.graph
-    queue = get_input_nodes(g)
+    queue = get_graph_inputs(g)
     while queue:
         n = queue.pop(0)
 
