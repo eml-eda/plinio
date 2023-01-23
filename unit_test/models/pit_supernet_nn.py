@@ -1,5 +1,5 @@
 from torch import nn
-from flexnas.methods import PITSuperNetModule
+from flexnas.methods.pit_supernet import PITSuperNetModule
 from flexnas.methods.pit import PITConv2d
 from flexnas.methods.pit.pit_features_masker import PITFeaturesMasker
 

@@ -18,11 +18,7 @@
 # *----------------------------------------------------------------------------*
 from .dnas_base import DNAS
 from .pit import PIT
-from .supernet import SuperNet, SuperNetTracer
-from .supernet import SuperNetModule
-from .supernet import PaddedModule
-from .pit_supernet import PITSuperNetModule, PITSuperNet, PITSuperNetCombiner
+from .pit_supernet import PITSuperNet
 from .mixprec import MixPrec
 
-__all__ = ['DNAS', 'PIT', 'SuperNet', 'SuperNetModule', 'PaddedModule', 'SuperNetTracer',
-           'PITSuperNetModule', 'PITSuperNet', 'PITSuperNetCombiner', 'MixPrec']
+__all__ = ['DNAS', 'PIT', 'PITSuperNet', 'MixPrec']
