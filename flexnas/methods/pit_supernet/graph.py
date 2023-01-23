@@ -4,8 +4,10 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from flexnas.utils import model_graph
-from flexnas.utils.features_calculator import SoftMaxFeaturesCalculator
+from flexnas.graph import *
+from flexnas.graph.features_calculation import SoftMaxFeaturesCalculator
+from flexnas.graph.inspection import *
+from flexnas.graph.utils import *
 from .nn.combiner import PITSuperNetCombiner
 from flexnas.methods.pit import graph as pit_graph
 from flexnas.methods.pit.nn import PITModule
@@ -57,7 +59,7 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     batch_example = torch.stack([torch.rand(input_shape)] * 32, 0)
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
-    model_graph.add_node_properties(mod)
+    add_node_properties(mod)
     add_combiner_properties(mod)
     # pit_target_layers
     pit_graph.convert_layers(mod, conversion_type, exclude_names, exclude_types)
@@ -66,9 +68,9 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     compute_shapes(mod, sn_target_layers)
     if conversion_type in ('autoimport', 'import'):
         pit_graph.fuse_conv_bn(mod)
-        model_graph.add_features_calculator(mod,
+        add_features_calculator(mod,
                                             [pit_graph.pit_features_calc, combiner_features_calc])
-        model_graph.associate_input_features(mod)
+        associate_input_features(mod)
         pit_graph.register_input_features(mod)
 
     if conversion_type == 'export':
@@ -93,7 +95,7 @@ def convert_layers(mod: fx.GraphModule,
     :rtype: List[Tuple[str, PITSuperNetCombiner]]
     """
     g = mod.graph
-    queue = model_graph.get_output_nodes(g)
+    queue = get_output_nodes(g)
 
     target_layers = []
     visited = []
@@ -122,7 +124,7 @@ def export_node(n: fx.Node, mod: fx.GraphModule):
     :param mod: the parent module, where the new node has to be optionally inserted
     :type mod: fx.GraphModule
     """
-    if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):
+    if is_layer(n, mod, (PITSuperNetCombiner,)):
         sub_mod = mod.get_submodule(str(n.target))
         layer = cast(PITSuperNetCombiner, sub_mod)
         layer.export(n, mod)
@@ -140,7 +142,7 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule,
     :param target_layers: the list of current target layers
     :type target_layers: List[Tuple[str, PITSuperNetCombiner]]
     """
-    if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):
+    if is_layer(n, mod, (PITSuperNetCombiner,)):
         target_layers.append((str(n.target),
                              cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))))
 
@@ -168,8 +170,8 @@ def clean_graph(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    nx_graph = model_graph.fx_to_nx_graph(g)
-    queue = model_graph.get_input_nodes(g)
+    nx_graph = fx_to_nx_graph(g)
+    queue = get_input_nodes(g)
     visited = []
     prev_args = None
     while queue:
@@ -211,13 +213,13 @@ def add_combiner_properties(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    nx_graph = model_graph.fx_to_nx_graph(g)
-    queue = model_graph.get_input_nodes(g)
+    nx_graph = fx_to_nx_graph(g)
+    queue = get_input_nodes(g)
 
     while queue:
         n = queue.pop(0)
 
-        if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):
+        if is_layer(n, mod, (PITSuperNetCombiner,)):
             n.meta['shared_input_features'] = True
             n.meta['features_defining'] = True
 
@@ -235,7 +237,7 @@ def combiner_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[SoftMaxF
     :return: optional feature calculator object for the combiner node
     :rtype: SoftMaxFeaturesCalculator
     """
-    if model_graph.is_layer(n, mod, (PITSuperNetCombiner,)):
+    if is_layer(n, mod, (PITSuperNetCombiner,)):
         sub_mod = mod.get_submodule(str(n.target))
         prev_features = [_.meta['features_calculator'] for _ in n.all_input_nodes]
         return SoftMaxFeaturesCalculator(sub_mod, 'alpha', prev_features)

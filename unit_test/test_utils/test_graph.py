@@ -19,7 +19,7 @@
 import unittest
 from torch.fx import symbolic_trace
 from unit_test.models import SimpleNN
-from flexnas.utils.model_graph import fx_to_nx_graph
+from flexnas.graph.utils import fx_to_nx_graph
 
 
 class TestGraph(unittest.TestCase):

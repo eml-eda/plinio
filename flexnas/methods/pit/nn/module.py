@@ -22,7 +22,7 @@ from typing import Dict, Any, Optional, Iterator, Tuple
 import torch.fx as fx
 import torch.nn as nn
 from .features_masker import PITFeaturesMasker
-from flexnas.utils.features_calculator import FeaturesCalculator
+from flexnas.graph.features_calculation import FeaturesCalculator
 
 
 class PITModule:

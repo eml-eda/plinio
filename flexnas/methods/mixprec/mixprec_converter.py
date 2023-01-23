@@ -27,7 +27,8 @@ from flexnas.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, \
     MixPrecModule
 from flexnas.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
 from flexnas.methods.mixprec.quant.quantizers import Quantizer
-from flexnas.utils import model_graph
+from flexnas.graph import get_output_nodes
+from flexnas.graph import inspection
 
 # add new supported layers here:
 # TODO: can we fill this automatically based on classes that inherit from PITLayer?
@@ -159,7 +160,7 @@ def convert_layers(mod: fx.GraphModule,
     :rtype: List[nn.Module]
     """
     g = mod.graph
-    queue = model_graph.get_output_nodes(g)
+    queue = get_output_nodes(g)
     # the shared_quantizer_queue is only used in 'autoimport' mode.
     # We consider the case of shared quantizer for activations
     # TODO: Understand if weight/bias quantizer might be shared or not
@@ -263,7 +264,7 @@ def autoimport_node(n: fx.Node,
     :return: the updated shared_quantizer
     :rtype: Optional[Quantizer]
     """
-    if model_graph.is_layer(n, mod, tuple(mixprec_layer_map.keys())) and \
+    if inspection.is_layer(n, mod, tuple(mixprec_layer_map.keys())) and \
        not exclude(n, mod, exclude_names, exclude_types):
         conv_layer_type = mixprec_layer_map[type(mod.get_submodule(str(n.target)))]
         # TODO: Define some utility quantization function to do all this stuff
@@ -293,10 +294,10 @@ def autoimport_node(n: fx.Node,
                                         w_quantizer_kwargs,
                                         b_quantizer_kwargs)
         return sq
-    elif model_graph.is_shared_input_features_op(n, mod):
+    elif inspection.is_shared_input_features_op(n, mod):
         # modules that require same activation quantizer
         # creates a new shared quantizer to be used by predecessors
-        if sq is None or model_graph.is_features_defining_op(n, mod):
+        if sq is None or inspection.is_features_defining_op(n, mod):
             a_quantizer = qinfo['a_quantizer']['quantizer']
             a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
             cout = n.all_input_nodes[-1].meta['tensor_meta'].shape[1]
@@ -308,16 +309,16 @@ def autoimport_node(n: fx.Node,
         else:
             shared_quantizer = sq
         return shared_quantizer
-    elif model_graph.is_flatten(n, mod):
+    elif inspection.is_flatten(n, mod):
         if sq is not None:
             raise ValueError("Shared channels masks not supported for flatten")
         return None
-    elif model_graph.is_untouchable_op(n):
+    elif inspection.is_untouchable_op(n):
         return None
-    elif model_graph.is_features_concatenate(n, mod):
+    elif inspection.is_features_concatenate(n, mod):
         # if we concatenate over features, we need to share the mask
         # then we create a new shared quantizer to be used by predecessors
-        if sq is None or model_graph.is_features_defining_op(n, mod):
+        if sq is None or inspection.is_features_defining_op(n, mod):
             a_quantizer = qinfo['a_quantizer']['quantizer']
             a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
             # Computes cout after cat operation
@@ -332,10 +333,10 @@ def autoimport_node(n: fx.Node,
         else:
             shared_quantizer = sq
         return shared_quantizer
-    elif model_graph.is_features_propagating_op(n, mod):
+    elif inspection.is_features_propagating_op(n, mod):
         # this op has cin = cout, so return what was received as input
         return sq
-    elif model_graph.is_features_defining_op(n, mod):
+    elif inspection.is_features_defining_op(n, mod):
         # this op defines its output features, no propagation
         return None
     else:
@@ -358,7 +359,7 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (MixPrecModule,)):
+    if inspection.is_inherited_layer(n, mod, (MixPrecModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         layer = cast(MixPrecModule, mod.get_submodule(str(n.target)))
@@ -385,11 +386,11 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (MixPrecModule,)):
+    if inspection.is_inherited_layer(n, mod, (MixPrecModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         # only conv and FC, exclude BN
-        if model_graph.is_layer(n, mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
+        if inspection.is_layer(n, mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
             return
         target_layers.append(mod.get_submodule(str(n.target)))
 
@@ -460,7 +461,7 @@ def fuse_conv_bn(mod: fx.GraphModule):
             assert isinstance(conv, MixPrec_Conv2d)
             fuse_conv_bn_inplace(conv, bn)
             # next line removed because we modify inplace
-            # model_graph.replace_node_module(node.args[0], modules, fused_conv)
+            # inspection.replace_node_module(node.args[0], modules, fused_conv)
             node.replace_all_uses_with(node.args[0])
             # Now that all uses of the batch norm have been replaced, we can
             # safely remove the batch norm.

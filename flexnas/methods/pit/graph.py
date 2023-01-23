@@ -29,8 +29,10 @@ from .nn.batchnorm_1d import PITBatchNorm1d
 from .nn.batchnorm_2d import PITBatchNorm2d
 from .nn.module import PITModule
 from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
-from flexnas.utils import model_graph
-from flexnas.utils.features_calculator import ModAttrFeaturesCalculator
+from flexnas.graph import *
+from flexnas.graph.inspection import *
+from flexnas.graph.utils import *
+from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
 
 # add new supported layers here:
 # TODO: can we fill this automatically based on classes that inherit from PITLayer?
@@ -89,12 +91,12 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     # TODO: this is not very robust. Find a better way
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
-    model_graph.add_node_properties(mod)
+    add_node_properties(mod)
     target_layers = convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
         fuse_conv_bn(mod)
-        model_graph.add_features_calculator(mod, [pit_features_calc])
-        model_graph.associate_input_features(mod)
+        add_features_calculator(mod, [pit_features_calc])
+        associate_input_features(mod)
         register_input_features(mod)
     mod.graph.lint()
     mod.recompile()
@@ -123,7 +125,7 @@ def convert_layers(mod: fx.GraphModule,
     :rtype: List[nn.Module]
     """
     g = mod.graph
-    queue = model_graph.get_output_nodes(g)
+    queue = get_output_nodes(g)
     # the shared_masker_queue is only used in 'autoimport' mode.
     # initialied with Frozen maskers to ensure output layers are never trainable
     shared_masker_queue: List[Optional[PITFeaturesMasker]] = [
@@ -199,7 +201,7 @@ def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMas
     :return: the updated shared_masker
     :rtype: Optional[PITChannelMasker]
     """
-    if model_graph.is_layer(n, mod, tuple(pit_layer_map.keys())) and not exclude(
+    if is_layer(n, mod, tuple(pit_layer_map.keys())) and not exclude(
             n, mod, exclude_names, exclude_types):
         conv_layer_type = pit_layer_map[type(mod.get_submodule(str(n.target)))]
         sm = conv_layer_type.autoimport(n, mod, sm)
@@ -249,7 +251,7 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (PITModule,)):
+    if is_inherited_layer(n, mod, (PITModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         layer = cast(PITModule, mod.get_submodule(str(n.target)))
@@ -276,11 +278,11 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if model_graph.is_inherited_layer(n, mod, (PITModule,)):
+    if is_inherited_layer(n, mod, (PITModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         # only conv and FC, exclude BN
-        if model_graph.is_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d)):
+        if is_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d)):
             return
         target_layers.append(mod.get_submodule(str(n.target)))
 
@@ -350,7 +352,7 @@ def fuse_conv_bn(mod: fx.GraphModule):
             assert (isinstance(conv, PITConv1d) or isinstance(conv, PITConv2d))
             fuse_conv_bn_inplace(conv, bn)
             # next line removed because we modify inplace
-            # model_graph.replace_node_module(node.args[0], modules, fused_conv)
+            # replace_node_module(node.args[0], modules, fused_conv)
             node.replace_all_uses_with(node.args[0])
             # Now that all uses of the batch norm have been replaced, we can
             # safely remove the batch norm.
@@ -360,12 +362,12 @@ def fuse_conv_bn(mod: fx.GraphModule):
 
 def register_input_features(mod: fx.GraphModule):
     g = mod.graph
-    nx_graph = model_graph.fx_to_nx_graph(g)
-    queue = model_graph.get_input_nodes(g)
+    nx_graph = fx_to_nx_graph(g)
+    queue = get_input_nodes(g)
     while queue:
         n = queue.pop(0)
 
-        if model_graph.is_inherited_layer(n, mod, (PITModule,)):
+        if is_inherited_layer(n, mod, (PITModule,)):
             sub_mod = cast(PITModule, mod.get_submodule(str(n.target)))
             fc = n.meta['input_features_set_by'].meta['features_calculator']
             sub_mod.input_features_calculator = fc
@@ -384,7 +386,7 @@ def pit_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeatur
     :return: optional feature calculator object for PIT node
     :rtype: ModAttrFeaturesCalculator
     """
-    if model_graph.is_inherited_layer(n, mod, (PITModule,)):
+    if is_inherited_layer(n, mod, (PITModule,)):
         # For PIT NAS-able layers, the "active" output features are stored in the
         # out_features_eff attribute, and the binary mask is in features_mask
         sub_mod = mod.get_submodule(str(n.target))

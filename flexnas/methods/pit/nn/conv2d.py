@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, cast, Iterator, Tuple
 import torch
 import torch.nn as nn
 import torch.fx as fx
-from flexnas.utils.features_calculator import ConstFeaturesCalculator, FeaturesCalculator
+from flexnas.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 from .features_masker import PITFeaturesMasker
 from .binarizer import PITBinarizer
 from .module import PITModule
