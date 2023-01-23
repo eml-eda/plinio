@@ -6,7 +6,7 @@ from torch.fx.passes.shape_prop import ShapeProp
 
 from flexnas.utils import model_graph
 from flexnas.utils.features_calculator import SoftMaxFeaturesCalculator
-from .pit_supernet_combiner import PITSuperNetCombiner
+from .nn.combiner import PITSuperNetCombiner
 from flexnas.methods.pit import graph as pit_graph
 from flexnas.methods.pit.nn import PITModule
 

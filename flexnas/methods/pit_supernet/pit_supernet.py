@@ -2,7 +2,7 @@ from typing import Tuple, Any, Iterator, Iterable, Type
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
-from .pit_supernet_graph import convert
+from .graph import convert
 
 
 class PITSuperNet(DNAS):
