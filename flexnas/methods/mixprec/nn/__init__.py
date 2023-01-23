@@ -14,15 +14,16 @@
 # * See the License for the specific language governing permissions and        *
 # * limitations under the License.                                             *
 # *                                                                            *
-# * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
+# * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from .dnas_base import DNAS
-from .pit import PIT
-from .supernet import SuperNet, SuperNetTracer
-from .supernet import SuperNetModule
-from .supernet import PaddedModule
-from .pit_supernet import PITSuperNetModule, PITSuperNet, PITSuperNetCombiner
-from .mixprec import MixPrec
 
-__all__ = ['DNAS', 'PIT', 'SuperNet', 'SuperNetModule', 'PaddedModule', 'SuperNetTracer',
-           'PITSuperNetModule', 'PITSuperNet', 'PITSuperNetCombiner', 'MixPrec']
+from .mixprec_module import MixPrecModule
+from .mixprec_identity import MixPrec_Identity
+from .mixprec_relu import MixPrec_ReLU
+from .mixprec_linear import MixPrec_Linear
+from .mixprec_conv2d import MixPrec_Conv2d
+
+__all__ = [
+    'MixPrecModule', 'MixPrec_Identity', 'MixPrec_ReLU',
+    'MixPrec_Linear', 'MixPrec_Conv2d',
+]

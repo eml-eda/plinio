@@ -14,15 +14,21 @@
 # * See the License for the specific language governing permissions and        *
 # * limitations under the License.                                             *
 # *                                                                            *
-# * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
+# * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from .dnas_base import DNAS
-from .pit import PIT
-from .supernet import SuperNet, SuperNetTracer
-from .supernet import SuperNetModule
-from .supernet import PaddedModule
-from .pit_supernet import PITSuperNetModule, PITSuperNet, PITSuperNetCombiner
-from .mixprec import MixPrec
 
-__all__ = ['DNAS', 'PIT', 'SuperNet', 'SuperNetModule', 'PaddedModule', 'SuperNetTracer',
-           'PITSuperNetModule', 'PITSuperNet', 'PITSuperNetCombiner', 'MixPrec']
+from enum import Enum, auto
+
+
+class Backend(Enum):
+    ONNX = auto()
+    DORY = auto()
+    DIANA = auto()
+    # Add new backends here
+
+
+def backend_solver(layer_type, backend):
+    """Depending on the specific `layer_type` and specified `backend` returns
+    the appropriate backend-specific layer implementation
+    """
+    raise NotImplementedError
