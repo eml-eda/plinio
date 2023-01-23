@@ -16,7 +16,6 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-
 from abc import abstractmethod
 from typing import List, cast
 import torch
