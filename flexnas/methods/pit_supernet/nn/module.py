@@ -17,7 +17,6 @@ class PITSuperNetModule(nn.Module):
         super(PITSuperNetModule, self).__init__()
 
         self.sn_input_layers = nn.ModuleList(list(input_layers))
-        self.input_shape = None
         self.sn_combiner = PITSuperNetCombiner(list(input_layers))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:

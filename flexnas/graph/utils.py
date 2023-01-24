@@ -22,7 +22,7 @@ import networkx as nx
 
 
 def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
-    """Transforms a `torch.fx.Graph` into an equivalent `networkx.DiGraph` for easier visits.
+    """Transforms a `torch.fx.Graph` into an equivalent `networkx.DiGraph` for easier analysis.
     :param fx_graph: the `torch.fx.Graph` instance.
     :type fx_graph: fx.Graph
     :return: the corresponding `networkx.DiGraph`

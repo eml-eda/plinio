@@ -181,7 +181,7 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if n.target == torch.squeeze:
             return True
-        # TODO: add others
+        #  add others
     # are there any modules that require same input size? if so, add them below. Same for methods
     # if n.op == 'call_module':
     # if n.op == 'call_method':
@@ -219,8 +219,6 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
                 return True
         if isinstance(submodule, nn.Linear):
             return True
-        # if isinstance(submodule, nn.Sequential):
-            # return True
     return False
 
 
@@ -281,7 +279,7 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
                 return True
             else:
                 return False
-        # TODO: add others
+        # add others
     if n.op == 'call_function':
         if n.target == F.relu:
             return True
