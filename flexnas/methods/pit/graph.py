@@ -38,7 +38,6 @@ from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
 from flexnas.graph.utils import fx_to_nx_graph
 
 # add new supported layers here:
-# TODO: can we fill this automatically based on classes that inherit from PITLayer?
 pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {
     nn.Conv1d: PITConv1d,
     nn.Conv2d: PITConv2d,
@@ -149,7 +148,18 @@ def convert_layers(mod: fx.GraphModule,
 
 
 def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesMasker]:
-    # build a sharing graph by removing incoming edges to nodes that alter the n. of features
+    """Create a map from fx.Node instances to instances of PITFeaturesMasker to be used by PIT
+    to optimize the number of features of that node. Handles the sharing of masks among
+    multiple nodes.
+
+    :param mod: the fx-converted GraphModule
+    :type mod: fx.GraphModule
+    :return: a map (node -> feature masker)
+    :rtype: Dict[fx.Node, PITFeaturesMasker]
+    """
+    # build a compatibility graph ("sharing graph") with paths between all nodes that must share
+    # the same features masker. This is obtained by taking the original NN graph and removing
+    # incoming edges to nodes whose output features are not dependent on the input features
     sharing_graph = fx_to_nx_graph(mod.graph)
     for n in sharing_graph.nodes:
         n = cast(fx.Node, n)
@@ -159,19 +169,21 @@ def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesM
             for i in pred:
                 sharing_graph.remove_edge(i, n)
 
-    # each weakly connected component of this graph must share the features masker
+    # each weakly connected component of the sharing graph must share the same features masker
     sm_dict = {}
     for c in nx.weakly_connected_components(sharing_graph):
         sm = None
         for n in c:
+            # identify a node which can give us the number of features with 100% certainty
+            # nodes such as flatten/squeeze etc make this necessary
             if n.meta['features_defining'] or n.meta['untouchable'] and sm is None:
                 sm = PITFeaturesMasker(n.meta['tensor_meta'].shape[1])
             if n in get_graph_outputs(mod.graph):
-                # distinguish the case in which the number of features is "frozen"
-                # aka output connected components
+                # distinguish the case in which the number of features must "frozen"
+                # i.e. the case of output-connected components
+                # this may overwrite a previously set "sm"
                 sm = PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1])
                 break
-        # assign the shared masker to all nodes of the connected component
         for n in c:
             sm_dict[n] = sm
     return sm_dict

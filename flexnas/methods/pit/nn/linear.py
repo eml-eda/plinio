@@ -86,30 +86,25 @@ class PITLinear(nn.Linear, PITModule):
         return y
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]
-                   ) -> Optional[PITFeaturesMasker]:
+    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
         """Create a new fx.Node relative to a PITLinear layer, starting from the fx.Node
         of a nn.Linear layer, and replace it into the parent fx.GraphModule
 
-        :param n: a fx.Node corresponding to a nn.Linear layer, with shape annotations
+        :param n: a fx.Node corresponding to a nn.Conv1d layer, with shape annotations
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param sm: An optional shared output channel masker derived from subsequent layers
-        :type sm: Optional[PITChannelMasker]
+        :param fm: the output features masker to use for this layer
+        :type fm: PITFeaturesMasker
         :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared_masker
-        :rtype: Optional[PITChannelMasker]
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Linear:
             raise TypeError(f"Trying to generate PITLinear from layer of type{type(submodule)}")
         # here, this is guaranteed
         submodule = cast(nn.Linear, submodule)
-        chan_masker = sm if sm is not None else PITFeaturesMasker(submodule.out_features)
-        new_submodule = PITLinear(submodule, out_features_masker=chan_masker)
+        new_submodule = PITLinear(submodule, out_features_masker=fm)
         mod.add_submodule(str(n.target), new_submodule)
-        return None
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):

@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 from abc import abstractmethod
-from typing import Dict, Any, Optional, Iterator, Tuple
+from typing import Dict, Any, Iterator, Tuple
 import torch
 import torch.fx as fx
 import torch.nn as nn
@@ -30,7 +30,7 @@ class PITModule:
     """
     @abstractmethod
     def __init__(self):
-        raise NotImplementedError("Calling init on base abstract PITLayer class")
+        raise NotImplementedError("Calling init on base abstract PITModule class")
 
     @property
     @abstractmethod
@@ -42,7 +42,7 @@ class PITModule:
         this layer.
         :rtype: FeaturesCalculator
         """
-        raise NotImplementedError("Trying to get input features on base abstract PITLayer class")
+        raise NotImplementedError("Trying to get input features on base abstract PITModule class")
 
     @input_features_calculator.setter
     @abstractmethod
@@ -54,32 +54,27 @@ class PITModule:
         for this layer
         :type calc: FeaturesCalculator
         """
-        raise NotImplementedError("Trying to set input features on base abstract PITLayer class")
+        raise NotImplementedError("Trying to set input features on base abstract PITModule class")
 
     @staticmethod
     @abstractmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]
-                   ) -> Optional[PITFeaturesMasker]:
-        """Create a new fx.Node relative to a PITLayer layer, starting from the fx.Node
+    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
+        """Create a new fx.Node relative to a PITModule layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
 
-        Also returns a channel mask in case it needs to be shared with previous layers
-
-        :param n: a fx.Node corresponding to a standard nn.Module layer, with shape annotations
+        :param n: a fx.Node corresponding to a nn.Module layer, with shape annotations
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param sm: An optional shared output channel masker derived from subsequent layers
-        :type sm: Optional[PITChannelMasker]
+        :param fm: the output features masker to use for this layer
+        :type fm: PITFeaturesMasker
         :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared_masker
-        :rtype: Optional[PITChannelMasker]
         """
         raise NotImplementedError("Trying to import layer using the base abstract class")
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):
-        """Replaces a fx.Node corresponding to a PITLayer, with a standard nn.Module layer
+        """Replaces a fx.Node corresponding to a PITModule, with a standard nn.Module layer
         within a fx.GraphModule
 
         :param n: the node to be rewritten
@@ -96,7 +91,7 @@ class PITModule:
         :return: a dictionary containing the optimized layer hyperparameter values
         :rtype: Dict[str, Any]
         """
-        raise NotImplementedError("Calling summary on base abstract PITLayer class")
+        raise NotImplementedError("Calling summary on base abstract PITModule class")
 
     @abstractmethod
     def named_nas_parameters(
@@ -106,12 +101,12 @@ class PITModule:
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :param recurse: kept for uniformity with pytorch API, but PITModules never have sub-layers
         :type recurse: bool
         :return: an iterator over the architectural parameters (masks) of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract PITLayer class")
+        raise NotImplementedError("Calling arch_parameters on base abstract PITModule class")
 
     @abstractmethod
     def get_size(self) -> torch.Tensor:
@@ -120,7 +115,7 @@ class PITModule:
         :return: the number of weights
         :rtype: torch.Tensor
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract PITLayer class")
+        raise NotImplementedError("Calling arch_parameters on base abstract PITModule class")
 
     @abstractmethod
     def get_macs(self) -> torch.Tensor:
@@ -129,12 +124,12 @@ class PITModule:
         :return: the number of MACs
         :rtype: torch.Tensor
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract PITLayer class")
+        raise NotImplementedError("Calling arch_parameters on base abstract PITModule class")
 
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the architectural parameters (masks) of this layer
 
-        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :param recurse: kept for uniformity with pytorch API, but PITModules never have sub-layers
         :type recurse: bool
         :return: an iterator over the architectural parameters (masks) of this layer
         :rtype: Iterator[nn.Parameter]

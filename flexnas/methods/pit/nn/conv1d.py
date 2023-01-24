@@ -128,8 +128,7 @@ class PITConv1d(nn.Conv1d, PITModule):
         return y
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]
-                   ) -> Optional[PITFeaturesMasker]:
+    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
         """Create a new fx.Node relative to a PITConv1d layer, starting from the fx.Node
         of a nn.Conv1d layer, and replace it into the parent fx.GraphModule
 
@@ -137,18 +136,15 @@ class PITConv1d(nn.Conv1d, PITModule):
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param sm: An optional shared output channel masker derived from subsequent layers
-        :type sm: Optional[PITChannelMasker]
+        :param fm: the output features masker to use for this layer
+        :type fm: PITFeaturesMasker
         :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared_masker
-        :rtype: Optional[PITChannelMasker]
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Conv1d:
             raise TypeError(f"Trying to generate PITConv1d from layer of type{type(submodule)}")
         # here, this is guaranteed
         submodule = cast(nn.Conv1d, submodule)
-        chan_masker = sm if sm is not None else PITFeaturesMasker(submodule.out_channels)
         rf = submodule.kernel_size[0]
         stride = submodule.stride if isinstance(submodule.stride, int) else submodule.stride[0]
         # PIT cannot optimize rf and dilation with stride != 1
@@ -157,16 +153,11 @@ class PITConv1d(nn.Conv1d, PITModule):
         new_submodule = PITConv1d(
             submodule,
             out_length=n.meta['tensor_meta'].shape[2],
-            out_features_masker=chan_masker,
+            out_features_masker=fm,
             timestep_masker=time_masker,
             dilation_masker=dil_masker,
         )
         mod.add_submodule(str(n.target), new_submodule)
-        is_depthwise = (submodule.groups == submodule.in_channels) and (
-            submodule.groups == submodule.out_channels)
-        if is_depthwise:
-            return chan_masker
-        return None
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):

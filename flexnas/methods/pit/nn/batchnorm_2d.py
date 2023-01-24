@@ -49,20 +49,17 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITModule):
             self.bias.copy_(bn.bias)
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker]
-                   ) -> Optional[PITFeaturesMasker]:
+    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
         """Create a new fx.Node relative to a PITBatchNorm2d layer, starting from the fx.Node
         of a nn.BatchNorm2d layer, and replace it into the parent fx.GraphModule
 
-        :param n: a fx.Node corresponding to a nn.BatchNorm2d layer, with shape annotations
+        :param n: a fx.Node corresponding to a nn.BatchNorm1d layer, with shape annotations
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param sm: An optional shared output channel masker derived from subsequent layers
-        :type sm: Optional[PITChannelMasker]
+        :param fm: The output features masker to use for this layer
+        :type fm: PITFeaturesMasker
         :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared_masker
-        :rtype: Optional[PITChannelMasker]
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.BatchNorm2d:
@@ -72,7 +69,6 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITModule):
         submodule = cast(nn.BatchNorm2d, submodule)
         new_submodule = PITBatchNorm2d(submodule)
         mod.add_submodule(str(n.target), new_submodule)
-        return sm
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):
