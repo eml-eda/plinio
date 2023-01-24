@@ -157,7 +157,7 @@ def clean_graph(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    queue = get_graph_outputs(g)
+    queue = get_graph_inputs(g)
     visited = []
     prev_args = None
     while queue:

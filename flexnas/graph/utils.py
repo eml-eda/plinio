@@ -18,6 +18,21 @@
 # *----------------------------------------------------------------------------*
 from typing import Any, List
 import torch.fx as fx
+import networkx as nx
+
+
+def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
+    """Transforms a `torch.fx.Graph` into an equivalent `networkx.DiGraph` for easier visits.
+    :param fx_graph: the `torch.fx.Graph` instance.
+    :type fx_graph: fx.Graph
+    :return: the corresponding `networkx.DiGraph`
+    :rtype: nx.DiGraph
+    """
+    nx_graph = nx.DiGraph()
+    for n in fx_graph.nodes:
+        for i in n.all_input_nodes:
+            nx_graph.add_edge(i, n)
+    return nx_graph
 
 
 def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> Any:

@@ -17,6 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 from typing import cast, List, Iterable, Type, Tuple, Optional, Dict
+import networkx as nx
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -34,6 +35,7 @@ from flexnas.graph.annotation import add_features_calculator, add_node_propertie
 from flexnas.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
         get_graph_inputs, all_output_nodes
 from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
+from flexnas.graph.utils import fx_to_nx_graph
 
 # add new supported layers here:
 # TODO: can we fill this automatically based on classes that inherit from PITLayer?
@@ -89,7 +91,6 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     mod = fx.GraphModule(tracer.root, graph, name)
     # create a "fake" minibatch of 32 inputs for shape prop
     batch_example = torch.stack([torch.rand(input_shape)] * 32, 0)
-    # TODO: this is not very robust. Find a better way
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
     add_node_properties(mod)
@@ -127,58 +128,53 @@ def convert_layers(mod: fx.GraphModule,
     """
     g = mod.graph
     queue = get_graph_outputs(g)
-    # the shared_masker_queue is only used in 'autoimport' mode.
-    # initialied with Frozen maskers to ensure output layers are never trainable
-    shared_masker_dict: Dict[fx.Node, List[Optional[PITFeaturesMasker]]] = {
-        n: [PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1])] for n in queue
-    }
-    # the list of target layers is only used in 'import' and 'autoimport' modes. Empty for export
+    # dictionary of shared feature maskers. Used only in 'autoimport' mode.
+    sm_dict = build_shared_features_map(mod)
+    # the list of target layers is only used in 'import' and 'autoimport' modes.
     target_layers = []
     visited = []
     while queue:
         n = queue.pop(0)
-        if n not in visited and all(_ in visited for _ in list(n.users.keys())):
-            shared_masker = merge_maskers(shared_masker_dict[n])
+        if n not in visited:
             if conversion_type == 'autoimport':
-                shared_masker = autoimport_node(n, mod, shared_masker, exclude_names, exclude_types)
-                # shared_masker = update_shared_masker(n, mod, shared_masker)
-            if conversion_type == 'export':
-                export_node(n, mod, exclude_names, exclude_types)
+                autoimport_node(n, mod, sm_dict, exclude_names, exclude_types)
             if conversion_type in ('import', 'autoimport'):
                 add_to_targets(n, mod, target_layers, exclude_names, exclude_types)
-            if conversion_type != 'autoimport':
-                shared_masker = None
-
+            if conversion_type == 'export':
+                export_node(n, mod, exclude_names, exclude_types)
             for pred in n.all_input_nodes:
                 queue.append(pred)
-                if pred in shared_masker_dict:
-                    shared_masker_dict[pred].append(shared_masker)
-                else:
-                    shared_masker_dict[pred] = [shared_masker]
             visited.append(n)
     return target_layers
 
 
-def merge_maskers(sm_list: List[Optional[PITFeaturesMasker]]) -> Optional[PITFeaturesMasker]:
-    """Combine channel masks passed from successors to current node.
-    Currently fails unless at most 1 mask is not None
+def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesMasker]:
+    # build a sharing graph by removing incoming edges to nodes that alter the n. of features
+    sharing_graph = fx_to_nx_graph(mod.graph)
+    for n in sharing_graph.nodes:
+        n = cast(fx.Node, n)
+        if n.meta['untouchable'] or n.meta['features_concatenate'] or n.meta['features_defining']:
+            # remove all incoming edges to this node from the "shared features graph"
+            pred = list(sharing_graph.predecessors(n))
+            for i in pred:
+                sharing_graph.remove_edge(i, n)
 
-    :param sm_list: the list of PITFeaturesMasker instances (or None) received from successor
-    nodes
-    :type sm_list: List[Optional[PITFeaturesMasker]]
-    :return: the merged feature masker
-    :rtype: Optional[PITFeaturesMasker]
-    """
-    merged_sm = None
-    for sm in sm_list:
-        if sm is not None:
-            if merged_sm is not None:
-                raise ValueError(
-                   "PIT Conversion: receiving two incompatible feature masks from successors."
-                )
-            else:
-                merged_sm = sm
-    return merged_sm
+    # each weakly connected component of this graph must share the features masker
+    sm_dict = {}
+    for c in nx.weakly_connected_components(sharing_graph):
+        sm = None
+        for n in c:
+            if n.meta['features_defining'] or n.meta['untouchable'] and sm is None:
+                sm = PITFeaturesMasker(n.meta['tensor_meta'].shape[1])
+            if n in get_graph_outputs(mod.graph):
+                # distinguish the case in which the number of features is "frozen"
+                # aka output connected components
+                sm = PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1])
+                break
+        # assign the shared masker to all nodes of the connected component
+        for n in c:
+            sm_dict[n] = sm
+    return sm_dict
 
 
 def exclude(n: fx.Node, mod: fx.GraphModule,
@@ -205,61 +201,29 @@ def exclude(n: fx.Node, mod: fx.GraphModule,
     return exc_type or (str(n.target) in exclude_names)
 
 
-def autoimport_node(n: fx.Node, mod: fx.GraphModule, sm: Optional[PITFeaturesMasker],
+def autoimport_node(n: fx.Node, mod: fx.GraphModule,
+                    sm_dict: Dict[fx.Node, PITFeaturesMasker],
                     exclude_names: Iterable[str],
-                    exclude_types: Iterable[Type[nn.Module]]) -> Optional[PITFeaturesMasker]:
-    """Rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a standard
-    nn.Module with its corresponding NAS-able version.
-
-    Also determines if the currently processed node requires that its predecessor share a common
-    features mask.
+                    exclude_types: Iterable[Type[nn.Module]]):
+    """Possibly rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a
+    standard nn.Module with its corresponding NAS-able version.
 
     :param n: the node to be rewritten
     :type n: fx.Node
     :param mod: the parent module, where the new node has to be optionally inserted
     :type mod: fx.GraphModule
-    :param sm: an optional shared features mask derived from subsequent layers
-    :type sm: Optional[PITFeaturesMasker]
+    :param sm_dict: the dictionary containing the shared feature maskers for all nodes
+    :type sm_dict: Dict[fx.Node, PITFeaturesMasker]
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
-    :return: the updated shared_masker
-    :rtype: Optional[PITChannelMasker]
     """
     if is_layer(n, mod, tuple(pit_layer_map.keys())) and not exclude(
             n, mod, exclude_names, exclude_types):
         conv_layer_type = pit_layer_map[type(mod.get_submodule(str(n.target)))]
-        sm = conv_layer_type.autoimport(n, mod, sm)
-        return sm
-    elif n.meta['shared_input_features']:
-        # modules that require multiple inputs all of the same size
-        # create a new shared masker with the common n. of input channels, to be used by
-        # predecessors
-        if sm is None or n.meta['features_defining']:
-            input_size = n.all_input_nodes[-1].meta['tensor_meta'].shape[1]
-            shared_masker = PITFeaturesMasker(input_size)
-        else:
-            shared_masker = sm
-        return shared_masker
-    elif n.meta['flatten']:
-        if sm is not None:
-            raise ValueError("Shared channels masks not supported for flatten")
-        return None
-    elif n.meta['untouchable']:
-        return None
-    elif n.meta['features_concatenate']:
-        # if we concatenate over features, we don't need to share the mask
-        return None
-    elif n.meta['features_propagating']:
-        # this op has cin = cout, so return what was received as input
-        return sm
-    elif n.meta['features_defining']:
-        # this op defines its output features, no propagation
-        return None
-    else:
-        raise ValueError("Unsupported node {} (op: {}, target: {})".format(n, n.op, n.target))
+        conv_layer_type.autoimport(n, mod, sm_dict[n])
 
 
 def export_node(n: fx.Node, mod: fx.GraphModule,

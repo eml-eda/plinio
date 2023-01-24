@@ -219,8 +219,8 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
                 return True
         if isinstance(submodule, nn.Linear):
             return True
-        if isinstance(submodule, nn.Sequential):
-            return True
+        # if isinstance(submodule, nn.Sequential):
+            # return True
     return False
 
 
