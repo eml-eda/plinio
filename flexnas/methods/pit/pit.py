@@ -97,6 +97,7 @@ class PIT(DNAS):
 
     def get_size(self) -> torch.Tensor:
         """Computes the total number of parameters of all NAS-able layers
+        using float version of masks
 
         :return: the total number of parameters
         :rtype: torch.Tensor
@@ -108,8 +109,23 @@ class PIT(DNAS):
             size = size + layer.get_size()
         return size
 
+    def get_size_binarized(self) -> torch.Tensor:
+        """Computes the total number of parameters of all NAS-able layers
+        using binary masks
+
+        :return: the total number of parameters
+        :rtype: torch.Tensor
+        """
+        size = torch.tensor(0, dtype=torch.float32)
+        # size = torch.tensor(0)
+        for layer in self._target_layers:
+            # size += layer.get_size()
+            size = size + layer.get_size_binarized()
+        return size
+
     def get_macs(self) -> torch.Tensor:
         """Computes the total number of MACs in all NAS-able layers
+        using float version of masks
 
         :return: the total number of MACs
         :rtype: torch.Tensor
@@ -119,6 +135,20 @@ class PIT(DNAS):
         for layer in self._target_layers:
             # macs += layer.get_macs()
             macs = macs + layer.get_macs()
+        return macs
+
+    def get_macs_binarized(self) -> torch.Tensor:
+        """Computes the total number of MACs in all NAS-able layers
+        using binary masks
+
+        :return: the total number of MACs
+        :rtype: torch.Tensor
+        """
+        macs = torch.tensor(0, dtype=torch.float32)
+        # macs = torch.tensor(0)
+        for layer in self._target_layers:
+            # macs += layer.get_macs()
+            macs = macs + layer.get_macs_binarized()
         return macs
 
     @property

@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Optional, cast, Dict, Any, Iterator, Tuple
+from typing import cast, Dict, Any, Iterator, Tuple
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -210,6 +210,20 @@ class PITLinear(nn.Linear, PITModule):
         cost = cin * self.out_features_eff
         return cost
 
+    def get_size_binarized(self) -> torch.Tensor:
+        """Method that computes the number of weights for the layer considering
+        binarized masks
+
+        :return: the number of weights
+        :rtype: torch.Tensor
+        """
+        cin_mask = self.input_features_calculator.features_mask
+        cin = torch.sum(PITBinarizer.apply(cin_mask, self._binarization_threshold))
+        cout_mask = self.out_features_masker.theta
+        cout = torch.sum(PITBinarizer.apply(cout_mask, self._binarization_threshold))
+        cost = cin * cout
+        return cost
+
     def get_macs(self) -> torch.Tensor:
         """Method that computes the number of MAC operations for the layer
 
@@ -218,6 +232,16 @@ class PITLinear(nn.Linear, PITModule):
         """
         # size and MACs are roughly the same for a Linear layer
         return self.get_size()
+
+    def get_macs_binarized(self) -> torch.Tensor:
+        """Method that computes the number of MAC operations for the layer considering
+        binarized masks
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        # size and MACs are roughly the same for a Linear layer
+        return self.get_size_binarized()
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:
