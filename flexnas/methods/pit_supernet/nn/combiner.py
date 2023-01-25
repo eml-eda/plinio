@@ -13,10 +13,9 @@ class PITSuperNetCombiner(nn.Module):
     :param input_layers: list of possible alternative layers to be selected
     :type input_layers: List[nn.Module]
     """
-    def __init__(self, input_layers: List[nn.Module]):
+    def __init__(self, input_layers: nn.ModuleList):
         super(PITSuperNetCombiner, self).__init__()
-
-        self.sn_input_layers = input_layers
+        self.sn_input_layers = [_ for _ in input_layers]
         self.input_shape = None
         self.n_layers = len(input_layers)
         self.alpha = nn.Parameter(
@@ -28,6 +27,12 @@ class PITSuperNetCombiner(nn.Module):
 
         self.layers_sizes = []
         self.layers_macs = []
+
+    def update_input_layers(self, input_layers: nn.Module):
+        """TODO
+        """
+        il = [cast(nn.Module, input_layers.__getattr__(str(_))) for _ in range(self.n_layers)]
+        self.sn_input_layers = il
 
     def forward(self, layers_outputs: List[torch.Tensor]):
         """Forward function for the PITSuperNetCombiner that returns a weighted
@@ -45,19 +50,10 @@ class PITSuperNetCombiner(nn.Module):
         y = torch.stack(y, dim=0).sum(dim=0)
         return y
 
-    def export(self, n: fx.Node, mod: fx.GraphModule):
-        """Overwrites the module of a fx.Node corresponding to the PITSuperNetCombiner,
-        with the layer selected by the NAS within a fx.GraphModule
-
-        :param n: the node to be rewritten, corresponds to the sn_combiner node
-        :type n: fx.Node
-        :param mod: the parent module, where the new node has to be inserted
-        :type mod: fx.GraphModule
+    def best_layer_index(self) -> int:
+        """TODO
         """
-        index = torch.argmax(self.alpha).item()
-        submodule = self.sn_input_layers[int(index)]
-        target = str(n.target)
-        mod.add_submodule(target, submodule)
+        return int(torch.argmax(self.alpha).item())
 
     def compute_layers_sizes(self):
         """Computes the size of each possible layer of the PITSuperNetModule

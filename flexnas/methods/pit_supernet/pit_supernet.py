@@ -108,14 +108,7 @@ class PITSuperNet(DNAS):
         :rtype: nn.Module
         """
         model = self.seed
-        '''
-        if not add_bn:
-            for layer in self._target_layers:
-                if hasattr(layer, 'following_bn_args'):
-                    layer.following_bn_args = None
-        '''
         model, _ = convert(model, self._input_shape, 'export')
-
         return model
 
     def named_nas_parameters(

@@ -15,9 +15,8 @@ class PITSuperNetModule(nn.Module):
     """
     def __init__(self, input_layers: Iterable[nn.Module]):
         super(PITSuperNetModule, self).__init__()
-
         self.sn_input_layers = nn.ModuleList(list(input_layers))
-        self.sn_combiner = PITSuperNetCombiner(list(input_layers))
+        self.sn_combiner = PITSuperNetCombiner(self.sn_input_layers)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """Forward function for the PITSuperNetModule that returns a weighted

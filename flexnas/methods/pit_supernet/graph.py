@@ -9,7 +9,8 @@ from flexnas.graph.annotation import add_node_properties, add_features_calculato
 from flexnas.graph.inspection import is_layer, get_graph_outputs, get_graph_inputs, \
         all_output_nodes
 from flexnas.graph.features_calculation import SoftMaxFeaturesCalculator
-from .nn.combiner import PITSuperNetCombiner
+from flexnas.graph.utils import fx_to_nx_graph
+from .nn import PITSuperNetCombiner, PITSuperNetModule
 from flexnas.methods.pit import graph as pit_graph
 from flexnas.methods.pit.nn import PITModule
 
@@ -64,27 +65,25 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     add_combiner_properties(mod)
     # first convert Conv/FC layers to/from PIT versions first
     pit_graph.convert_layers(mod, conversion_type, exclude_names, exclude_types)
-    # then import/export SuperNet selection layers
-    sn_target_layers = convert_layers(mod, conversion_type)
-    sn_target_layers.reverse()
     if conversion_type in ('autoimport', 'import'):
+        # then, for import, perform additional graph passes needed mostly for PIT
         pit_graph.fuse_conv_bn(mod)
         add_features_calculator(mod, [pit_graph.pit_features_calc, combiner_features_calc])
         associate_input_features(mod)
         pit_graph.register_input_features(mod)
-
-    if conversion_type == 'export':
-        clean_graph(mod)
+        # lastly, import SuperNet selection layers
+        sn_target_layers = import_layers(mod)
+    else:
+        export_graph(mod)
+        sn_target_layers = []
 
     mod.graph.lint()
     mod.recompile()
     return mod, sn_target_layers
 
 
-def convert_layers(mod: fx.GraphModule,
-                   conversion_type: str) -> List[Tuple[str, PITSuperNetCombiner]]:
-    """Exports the PITSuperNetModule layers if in 'export' mode or creates a list of the
-    PITSuperNetModules as target_layers if in 'import'/'autoimport' mode.
+def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
+    """
 
     :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to
     determine the sizes of PIT masks.
@@ -103,31 +102,13 @@ def convert_layers(mod: fx.GraphModule,
         n = queue.pop(0)
 
         if n not in visited:
-            if conversion_type == 'export':
-                export_node(n, mod)
-            if conversion_type in ('import', 'autoimport'):
-                import_node(n, mod, target_layers)
+            import_node(n, mod, target_layers)
 
             for pred in n.all_input_nodes:
                 queue.append(pred)
 
             visited.append(n)
     return target_layers
-
-
-def export_node(n: fx.Node, mod: fx.GraphModule):
-    """Rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a NAS-able
-    layer with its PITSuperNet choice
-
-    :param n: the node to be rewritten
-    :type n: fx.Node
-    :param mod: the parent module, where the new node has to be optionally inserted
-    :type mod: fx.GraphModule
-    """
-    if is_layer(n, mod, (PITSuperNetCombiner,)):
-        sub_mod = mod.get_submodule(str(n.target))
-        layer = cast(PITSuperNetCombiner, sub_mod)
-        layer.export(n, mod)
 
 
 def import_node(n: fx.Node, mod: fx.GraphModule,
@@ -144,51 +125,36 @@ def import_node(n: fx.Node, mod: fx.GraphModule,
     :type target_layers: List[Tuple[str, PITSuperNetCombiner]]
     """
     if is_layer(n, mod, (PITSuperNetCombiner,)):
-        submod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
-        submod.compute_layers_sizes()
-        submod.compute_layers_macs()
-        target_layers.append((str(n.target), submod))
+        parent_name = n.target.removesuffix('.sn_combiner')
+        sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
+        parent_mod = cast(PITSuperNetModule, mod.get_submodule(parent_name))
+        sub_mod.update_input_layers(parent_mod.sn_input_layers)
+        sub_mod.compute_layers_sizes()
+        sub_mod.compute_layers_macs()
+        target_layers.append((str(n.target), sub_mod))
 
 
-def clean_graph(mod: fx.GraphModule):
-    """This function cleans the mod from unused nodes and modules after the export
-
-    :param mod: the module
-    :type mod: fx.GraphModule
+def export_graph(mod: fx.GraphModule):
+    """TODO
     """
-    g = mod.graph
-    queue = get_graph_inputs(g)
-    visited = []
-    prev_args = None
-    while queue:
-        n = queue.pop(0)
-        # skip nodes for which predecessors have not yet been processed completely, we'll come
-        # back to them later
-        skip_flag = False
-        if len(n.all_input_nodes) > 0:
-            for i in n.all_input_nodes:
-                if i not in visited:
-                    skip_flag = True
-        if skip_flag:
-            continue
-
-        if n.op == 'call_module':
-            if 'sn_input_layers' in str(n.target):
-                if prev_args is None:
-                    prev_args = n.args
-                n.args = ()
-            if 'sn_combiner' in str(n.target):
-                n.args = cast(Tuple, prev_args)
-                prev_args = None
-
-        visited.append(n)
-        for succ in all_output_nodes(n):
-            queue.append(succ)
-
-    for node in mod.graph.nodes:
-        if node.op == 'call_module':
-            if 'sn_input_layers' in node.target:
-                mod.graph.erase_node(node)
+    nxg = fx_to_nx_graph(mod.graph)
+    for n in nxg.nodes:
+        if 'sn_combiner' in str(n.target):
+            sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(n.target))
+            best_idx = sub_mod.best_layer_index()
+            best_branch_name = 'sn_input_layers.' + str(best_idx)
+            to_erase = []
+            for ni in n.all_input_nodes:
+                if best_branch_name in str(ni.target):
+                    n.replace_all_uses_with(ni)
+                else:
+                    to_erase.append(ni)
+            n.args = ()
+            mod.graph.erase_node(n)
+            for ni in to_erase:
+                ni.args = ()
+                mod.graph.erase_node(ni)
+    mod.graph.eliminate_dead_code()
     mod.delete_all_unused_submodules()
 
 

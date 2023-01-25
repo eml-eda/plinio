@@ -68,7 +68,9 @@ class TestPITSuperNet(unittest.TestCase):
         # exclude_names = ['inputlayer', 'conv1', 'conv2', 'conv3', 'conv4']
         exclude_names = []
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height), exclude_names=exclude_names)
-
+        dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
+        out = sn_model(dummy_inp)
+        sn_model.get_size()
         exp = sn_model.arch_export()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out = exp(dummy_inp)
