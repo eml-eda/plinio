@@ -102,9 +102,71 @@ class TestPITSearch(unittest.TestCase):
         pit_net.regularizer = 'size'
         self.assertEqual(pit_net.get_regularization_loss(), pit_net.get_size())
 
-    def test_regularization_loss_binarized(self):
-        """Test the binarized regularization loss computation on a model
-        with random masks."""
+    def test_regularization_loss_binarized_1D(self):
+        """Test the binarized regularization loss computation on a model with 1D
+        convolutions with random masks."""
+        # we use ToyAdd to make sure that mask sharing does not create errors on regloss
+        # computation
+        net = ToyAdd()
+
+        input_shape = net.input_shape
+        pit_net = PIT(net, input_shape=input_shape, regularizer='macs')
+        # Check the number of weights for a single conv layer
+        # conv1 has Cin=3, Cout=10, K=3
+        exp_size_conv1 = 3 * 10 * 3
+        conv1 = cast(PITConv1d, pit_net.seed.conv1)
+        self.assertEqual(conv1.get_size_binarized(), exp_size_conv1, "Wrong layer size")
+        # Now lets suppose to mask half of the output channels and reducing K to 2
+        exp_size_conv1_masked = 3 * 6 * 2  # N.B., 6 'cause last ch is always kept alive
+        conv1.out_features_masker.alpha = nn.Parameter(
+            torch.Tensor([1, 0, 1, 0, 1, 0, 1, 0, 1, 0]))
+        conv1.timestep_masker.beta = nn.Parameter(
+            torch.Tensor([0, 1, 1]))
+        self.assertEqual(conv1.get_size_binarized(), exp_size_conv1_masked, "Wrong layer size")
+        # Check the number of MACs for a single conv layer
+        # all convs have "same" padding
+        exp_macs_conv1_masked = exp_size_conv1_masked * input_shape[1]
+        self.assertEqual(conv1.get_macs_binarized(), exp_macs_conv1_masked, "Wrong layer MACs")
+
+        # Check the number of weights for the whole net
+        # conv0 is identical to conv1 concerning channels (due to shared_masker)
+        # but conv0 kernel is 3 while conv1 kernel is 2
+        # conv2 will have Cin=6, Cout=20, K=5
+        # the final FC has 140 input features and 2 output features
+        exp_size_conv0 = 3 * 6 * 3
+        exp_size_conv2 = 6 * 20 * 5
+        exp_size_fc = 140 * 2
+        exp_size_net = exp_size_conv0 + exp_size_conv1_masked + exp_size_conv2 + exp_size_fc
+        self.assertEqual(pit_net.get_size_binarized(), exp_size_net, "Wrong net size")
+        # Check the number of MACs for the whole net
+        # conv2 has half the output length due to pooling
+        exp_macs_conv0 = exp_size_conv0 * input_shape[1]
+        exp_macs_net = exp_macs_conv0 + exp_macs_conv1_masked + \
+            (exp_size_conv2 * (input_shape[1] // 2))
+        # for FC, macs and size are equal
+        exp_macs_net = exp_macs_net + exp_size_fc
+        self.assertEqual(pit_net.get_macs_binarized(), exp_macs_net, "Wrong net MACs")
+
+        # Now lets force a dilation=2 in conv2, this means that the actual kernel
+        # will become K=3 to maintain same receptive-field
+        exp_size_conv2_masked = 6 * 20 * 3
+        conv2 = cast(PITConv1d, pit_net.seed.conv2)
+        conv2.dilation_masker.gamma = nn.Parameter(
+            torch.Tensor([0, 1, 1]))
+        exp_size_net = exp_size_conv0 + exp_size_conv1_masked + \
+            exp_size_conv2_masked + exp_size_fc
+        self.assertEqual(pit_net.get_size_binarized(), exp_size_net, "Wrong net size")
+        # Check the number of MACs for the whole net
+        # conv2 has half the output length due to pooling
+        exp_macs_net = exp_macs_conv0 + exp_macs_conv1_masked + \
+            (exp_size_conv2_masked * (input_shape[1] // 2))
+        # for FC, macs and size are equal
+        exp_macs_net = exp_macs_net + exp_size_fc
+        self.assertEqual(pit_net.get_macs_binarized(), exp_macs_net, "Wrong net MACs")
+
+    def test_regularization_loss_binarized_2D(self):
+        """Test the binarized regularization loss computation on a model with 2D
+        convolutions with random masks."""
         # we use ToyAdd_2D to make sure that mask sharing does not create errors on regloss
         # computation
         net = ToyAdd_2D()

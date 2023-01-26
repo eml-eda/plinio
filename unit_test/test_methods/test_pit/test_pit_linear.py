@@ -32,7 +32,7 @@ class TestPITLinear(unittest.TestCase):
         to the output of the correspondent nn.Module"""
         in_feat = 256
         out_feat = 128
-        batch_size = 32
+        batch_size = 4
         fc_ut = Linear(in_feat, out_feat, bias=False)
         pitfc_ut = PITLinear(
             fc_ut,

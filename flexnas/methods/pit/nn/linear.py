@@ -217,10 +217,13 @@ class PITLinear(nn.Linear, PITModule):
         :return: the number of weights
         :rtype: torch.Tensor
         """
+        # Compute actual integer number of input channels
         cin_mask = self.input_features_calculator.features_mask
         cin = torch.sum(PITBinarizer.apply(cin_mask, self._binarization_threshold))
+        # Compute actual integer number of output channels
         cout_mask = self.out_features_masker.theta
         cout = torch.sum(PITBinarizer.apply(cout_mask, self._binarization_threshold))
+        # Finally compute cost
         cost = cin * cout
         return cost
 
