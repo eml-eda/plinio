@@ -1,23 +1,34 @@
-# FlexNAS
+<div align="center">
+<img src=".assets/plinio_text.png" width="700"/>
+</div>
 
-A flexible library for testing and comparing different (differentiable) NAS techniques
+---
 
-## Folders structure:
-- `flexnas`: main library code
-  * `methods`: NAS code
-    * `dnas_base`: common code for all DNASes
-    * `pit`: PIT-specific code
-      * `pit_model.py`: class for PIT NAS models
-      * `pit_conv1d.py`: class defining a PIT Conv1D layer (template for other layers)
-      * `pit_binarizer.py`: the elementary STE-based mask binarizer for all PIT masks
-      * `pit_XXX_masker.py`: different type of mask layers for PIT
-      * `pit_converter.py`: a set of functions that handles the conversion of models to/from PIT format using `torch.fx`
-  * `utils`: other utility code
-    * `features_calculator.py`: different classes to compute the number of features in a layer (see PITModel class)
-    * `model_graph.py`: utility functions to process a model graph
-    * `model_info.py`: utility functions to get information about a model
-- `unit_test`: unit tests
-  - `models`: some DNNs used to test the library
-  - `test_methods`: unit tests for DNAS methods
-  - `test_utils`: unit tests for utility functions
-- `benchmarks`: sub-module importing the main benchmarks
+**PLiNIO** is a Python package built on-top of the PyTorch ecosystem that provides a **P**lug-and-play **Li**ghtweight tool for the **I**nference **O**ptimization of Deep **N**eural networks (DNNs).
+
+PLiNIO allows to automatically optimize your DNN's architecture with ***no more than three additional lines of code*** to your original training loop.
+
+<div align="center">
+<img src=".assets/train_loop_plinio.png" width="500"/>
+</div>
+
+PLiNIO exploits as main optimization engine Differentiable Neural Architecture Search (DNAS) algorithms which notoriusly balance flexibility and lightness.
+
+At the current state, PLiNIO implements the following methods:
+- [PIT](flexnas/methods/pit/README.md)
+- [PIT-SuperNet](flexnas/methods/pit_supernet/README.md)
+- [Mixed Precision](flexnas/methods/mixprec/README.md) **[N.B., this feature is experimental and currently under development]**
+
+You can consult the specific linked pages to gather more information on the usage and the capabilieties of such tools.
+
+# Installation
+To install the latest release:
+
+```
+$ git clone https://github.com/eml-eda/plinio
+$ cd plinio
+$ python setup.py install
+```
+
+# License
+PLiNIO entire codebase is released under **ADD LICENSE FILE**.
