@@ -62,13 +62,14 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
     add_node_properties(mod)
-    add_combiner_properties(mod)
+    set_combiner_properties(mod, add=['shared_input_features', 'features_propagating'])
     # first convert Conv/FC layers to/from PIT versions first
     pit_graph.convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
         # then, for import, perform additional graph passes needed mostly for PIT
         pit_graph.fuse_conv_bn(mod)
         add_features_calculator(mod, [pit_graph.pit_features_calc, combiner_features_calc])
+        set_combiner_properties(mod, add=['features_defining'], remove=['features_propagating'])
         associate_input_features(mod)
         pit_graph.register_input_features(mod)
         # lastly, import SuperNet selection layers
@@ -158,8 +159,11 @@ def export_graph(mod: fx.GraphModule):
     mod.delete_all_unused_submodules()
 
 
-def add_combiner_properties(mod: fx.GraphModule):
-    """Searches for the combiner nodes in the graph and adds their properties
+def set_combiner_properties(
+        mod: fx.GraphModule,
+        add: List[str] = [],
+        remove: List[str] = []):
+    """Searches for the combiner nodes in the graph and sets their properties
 
     :param mod: module
     :type mod: fx.GraphModule
@@ -170,8 +174,10 @@ def add_combiner_properties(mod: fx.GraphModule):
         n = queue.pop(0)
 
         if is_layer(n, mod, (PITSuperNetCombiner,)):
-            n.meta['shared_input_features'] = True
-            n.meta['features_defining'] = True
+            for p in add:
+                n.meta[p] = True
+            for p in remove:
+                n.meta[p] = False
 
         for succ in all_output_nodes(n):
             queue.append(succ)

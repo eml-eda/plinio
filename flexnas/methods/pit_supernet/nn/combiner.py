@@ -1,4 +1,4 @@
-from typing import List, cast, Iterator, Tuple
+from typing import List, cast, Iterator, Tuple, Any, Dict
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -126,6 +126,34 @@ class PITSuperNetCombiner(nn.Module):
                 var_macs += pl.get_macs()
             macs = macs + (soft_alpha[i] * (self.layers_macs[i] + var_macs))
         return macs
+
+    def summary(self) -> Dict[str, Any]:
+        """Export a dictionary with the optimized SN hyperparameters
+        TODO: cleanup
+
+        :return: a dictionary containing the optimized layer hyperparameter values
+        :rtype: Dict[str, Any]
+        """
+        with torch.no_grad():
+            soft_alpha = nn.functional.softmax(self.alpha, dim=0)
+
+        res = {"supernet_branches": {}}
+        for i, branch in enumerate(self.sn_input_layers):
+            if hasattr(branch, "summary") and callable(branch.summary):
+                branch_arch = branch.summary()
+            else:
+                branch_arch = {}
+            branch_arch['type'] = branch.__class__.__name__
+            branch_arch['alpha'] = soft_alpha[i].item()
+            branch_layers = branch._modules
+            for layer_name in branch_layers:
+                layer = cast(nn.Module, branch_layers[layer_name])
+                if hasattr(layer, "summary") and callable(layer.summary):
+                    layer_arch = branch_layers[layer_name].summary()
+                    layer_arch['type'] = branch_layers[layer_name].__class__.__name__
+                    branch_arch[layer_name] = layer_arch
+            res["supernet_branches"][f"branch_{i}"] = branch_arch
+        return res
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:

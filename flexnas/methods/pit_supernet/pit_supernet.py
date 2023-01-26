@@ -1,7 +1,8 @@
-from typing import Tuple, Any, Iterator, Iterable, Type
+from typing import Tuple, Any, Iterator, Iterable, Type, Dict, cast
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
+from flexnas.methods.pit_supernet.nn.combiner import PITSuperNetCombiner
 from .graph import convert
 
 
@@ -110,6 +111,20 @@ class PITSuperNet(DNAS):
         model = self.seed
         model, _ = convert(model, self._input_shape, 'export')
         return model
+
+    def arch_summary(self) -> Dict[str, Dict[str, Any]]:
+        """Generates a dictionary representation of the architecture found by the NAS.
+        Only optimized layers are reported
+
+        :return: a dictionary representation of the architecture found by the NAS
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        arch = {}
+        for name, layer in self._target_modules:
+            layer = cast(PITSuperNetCombiner, layer)
+            arch[name] = layer.summary()
+            arch[name]['type'] = layer.__class__.__name__
+        return arch
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:

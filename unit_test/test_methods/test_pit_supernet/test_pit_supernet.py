@@ -105,6 +105,14 @@ class TestPITSuperNet(unittest.TestCase):
         print(out)
     '''
 
+    def test_pitsn_summary(self):
+        ch_in = 32
+        in_width = 64
+        in_height = 64
+        model = StandardPITSNModule()
+        sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
+        sn_model.arch_summary()
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
