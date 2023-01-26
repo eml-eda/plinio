@@ -1,7 +1,5 @@
 from torch import nn
 from flexnas.methods.pit_supernet import PITSuperNetModule
-from flexnas.methods.pit.nn import PITConv2d
-from flexnas.methods.pit.nn.features_masker import PITFeaturesMasker
 
 
 class StandardPITSNModule(nn.Module):
@@ -11,12 +9,10 @@ class StandardPITSNModule(nn.Module):
         self.input_shape = input_shape
 
         self.conv1 = PITSuperNetModule([
-            PITConv2d(nn.Conv2d(32, 32, 3, padding='same'),
-                      32, 32, out_features_masker=PITFeaturesMasker(32)),
+            nn.Conv2d(32, 32, 3, padding='same'),
             nn.Sequential(
                 nn.Conv2d(32, 32, 3, padding='same'),
-                PITConv2d(nn.Conv2d(32, 32, 3, padding='same'),
-                          32, 32, out_features_masker=PITFeaturesMasker(32)),
+                nn.Conv2d(32, 32, 3, padding='same'),
             ),
             nn.Conv2d(32, 32, 5, padding='same'),
             nn.Identity()

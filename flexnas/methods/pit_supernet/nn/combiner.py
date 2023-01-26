@@ -34,7 +34,7 @@ class PITSuperNetCombiner(nn.Module):
         il = [cast(nn.Module, input_layers.__getattr__(str(_))) for _ in range(self.n_layers)]
         self.sn_input_layers = il
 
-    def forward(self, layers_outputs: List[torch.Tensor]):
+    def forward(self, layers_outputs: List[torch.Tensor]) -> torch.Tensor:
         """Forward function for the PITSuperNetCombiner that returns a weighted
         sum of all the outputs of the different alternative layers.
 

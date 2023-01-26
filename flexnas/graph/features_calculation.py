@@ -210,7 +210,19 @@ class ConcatFeaturesCalculator(FeaturesCalculator):
 
 
 class SoftMaxFeaturesCalculator(FeaturesCalculator):
+    """A `FeaturesCalculator` that computes the number of features for
+    a PITSuperNetCombiner softmax operation.
 
+    For PITSuperNetCombiner softmax, the number of output features is a linear combination of all
+    the possible layers of a PITSuperNetModule.
+
+    :param mod: the parent module
+    :type mod: fx.GraphModule
+    :param attr_name: attribute name where coefficients are saved
+    :type attr_name: str
+    :param inputs: the list of `FeaturesCalculator` instances relative to the predecessors
+    :type inputs: List[FeaturesCalculator]
+    """
     def __init__(self, mod: nn.Module, attr_name: str, inputs: List[FeaturesCalculator]):
         super(SoftMaxFeaturesCalculator, self).__init__()
         self.inputs = inputs
@@ -219,26 +231,21 @@ class SoftMaxFeaturesCalculator(FeaturesCalculator):
 
     @property
     def features(self) -> torch.Tensor:
-        # combinazione lineare con ogni coeff (alpha) che moltiplica il corrispondente input,
-        # non so se si fa cosi in torch, consideriamolo pseudo-codice
         coeff = nn.functional.softmax(getattr(self.mod, self.attr_name), dim=0)
         prev = [_.features for _ in self.inputs]
 
-        outfeat = torch.zeros()
+        outfeat = torch.tensor(0, dtype=torch.float32)
         for i, input in enumerate(prev):
             other = coeff[i] * input
-            torch.add(outfeat, other, out=outfeat)
-
+            outfeat = torch.add(outfeat, other)
         return outfeat
 
     @property
     def features_mask(self) -> torch.Tensor:
-        # maschera dell'input corrispondente all'argmax, anche qui pseudo-codice
         amax = torch.argmax(getattr(self.mod, self.attr_name)).item()
         return self.inputs[int(amax)].features_mask
 
     def register(self, mod: nn.Module, prefix: str = ""):
-        # uguale al caso del concat
         # recursively ensure that predecessors are registers
         for i, fc in enumerate(self.inputs):
             prefix = f"prev_{i}" + prefix
