@@ -352,6 +352,36 @@ class PITConv1d(nn.Conv1d, PITModule):
         cost = cost / self.groups
         return cost
 
+    def get_size_binarized(self) -> torch.Tensor:
+        """Method that computes the number of weights for the layer considering
+        binarized masks
+
+        :return: the number of weights
+        :rtype: torch.Tensor
+        """
+        # TODO: Understand if it make sense to move part of this calculation
+        # in specific properties.
+        # E.g., the calculation of `k` is same of self.kernel_size_opt but such
+        # property neglects gradient accumulation which conversely are needed here.
+
+        # Compute actual integer number of input channels
+        cin_mask = self.input_features_calculator.features_mask
+        cin = torch.sum(PITBinarizer.apply(cin_mask, self._binarization_threshold))
+        # Compute actual integer number of output channels
+        cout_mask = self.out_features_masker.theta
+        cout = torch.sum(PITBinarizer.apply(cout_mask, self._binarization_threshold))
+        # Compute actual integer kernel size
+        theta_gamma = self.dilation_masker.theta
+        bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+        theta_beta = self.timestep_masker.theta
+        bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
+        bg_prod = torch.mul(bin_theta_gamma, bin_theta_beta)
+        k = torch.sum(bg_prod)
+        # Finally compute cost
+        cost = cin * cout * k
+        cost = cost / self.groups
+        return cost
+
     def get_macs(self) -> torch.Tensor:
         """Method that computes the number of MAC operations for the layer
 
@@ -359,6 +389,15 @@ class PITConv1d(nn.Conv1d, PITModule):
         :rtype: torch.Tensor
         """
         return self.get_size() * self.out_length
+
+    def get_macs_binarized(self) -> torch.Tensor:
+        """Method that computes the number of MAC operations for the layer
+        considering binarized masks
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        return self.get_size_binarized() * self.out_length
 
     def _generate_norm_constants(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Method called at construction time to generate the normalization constants for the

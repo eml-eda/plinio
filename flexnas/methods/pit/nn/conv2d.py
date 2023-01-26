@@ -269,6 +269,24 @@ class PITConv2d(nn.Conv2d, PITModule):
         cost = cost / self.groups
         return cost
 
+    def get_size_binarized(self) -> torch.Tensor:
+        """Method that computes the number of weights for the layer considering
+        binarized masks
+
+        :return: the number of weights
+        :rtype: torch.Tensor
+        """
+        # Compute actual integer number of input channels
+        cin_mask = self.input_features_calculator.features_mask
+        cin = torch.sum(PITBinarizer.apply(cin_mask, self._binarization_threshold))
+        # Compute actual integer number of output channels
+        cout_mask = self.out_features_masker.theta
+        cout = torch.sum(PITBinarizer.apply(cout_mask, self._binarization_threshold))
+        # Finally compute cost
+        cost = cin * cout * self.kernel_size[0] * self.kernel_size[1]
+        cost = cost / self.groups
+        return cost
+
     def get_macs(self) -> torch.Tensor:
         """Method that computes the number of MAC operations for the layer
 
@@ -276,6 +294,15 @@ class PITConv2d(nn.Conv2d, PITModule):
         :rtype: torch.Tensor
         """
         return self.get_size() * self.out_height * self.out_width
+
+    def get_macs_binarized(self) -> torch.Tensor:
+        """Method that computes the number of MAC operations for the layer
+        considering binarized masks
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        return self.get_size_binarized() * self.out_height * self.out_width
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:
