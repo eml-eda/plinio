@@ -84,62 +84,31 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
 
 
 def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
-    """
+    """TODO
 
     :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to
     determine the sizes of PIT masks.
     :type mod: fx.GraphModule
-    :param conversion_type: a string specifying the type of conversion
-    :type conversion_type: str
     :return: the list of target layers that will be optimized by the NAS
     :rtype: List[Tuple[str, PITSuperNetCombiner]]
     """
-    g = mod.graph
-    queue = get_graph_outputs(g)
-
     target_layers = []
-    visited = []
-    while queue:
-        n = queue.pop(0)
-
-        if n not in visited:
-            import_node(n, mod, target_layers)
-
-            for pred in n.all_input_nodes:
-                queue.append(pred)
-
-            visited.append(n)
+    for n in mod.graph.nodes:
+        if is_layer(n, mod, (PITSuperNetCombiner,)):
+            parent_name = n.target.removesuffix('.sn_combiner')
+            sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
+            parent_mod = cast(PITSuperNetModule, mod.get_submodule(parent_name))
+            sub_mod.update_input_layers(parent_mod.sn_input_layers)
+            sub_mod.compute_layers_sizes()
+            sub_mod.compute_layers_macs()
+            target_layers.append((str(n.target), sub_mod))
     return target_layers
-
-
-def import_node(n: fx.Node, mod: fx.GraphModule,
-                target_layers: List[Tuple[str, PITSuperNetCombiner]]):
-    """Optionally adds the layer corresponding to a torch.fx.Node to the list of NAS target
-    layers and computes the number of MACs and parameters for each "fixed" (i.e., not-prunable)
-    branch
-
-    :param n: the node to be added
-    :type n: fx.Node
-    :param mod: the parent module
-    :type mod: fx.GraphModule
-    :param target_layers: the list of current target layers
-    :type target_layers: List[Tuple[str, PITSuperNetCombiner]]
-    """
-    if is_layer(n, mod, (PITSuperNetCombiner,)):
-        parent_name = n.target.removesuffix('.sn_combiner')
-        sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
-        parent_mod = cast(PITSuperNetModule, mod.get_submodule(parent_name))
-        sub_mod.update_input_layers(parent_mod.sn_input_layers)
-        sub_mod.compute_layers_sizes()
-        sub_mod.compute_layers_macs()
-        target_layers.append((str(n.target), sub_mod))
 
 
 def export_graph(mod: fx.GraphModule):
     """TODO
     """
-    nxg = fx_to_nx_graph(mod.graph)
-    for n in nxg.nodes:
+    for n in mod.graph.nodes:
         if 'sn_combiner' in str(n.target):
             sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(n.target))
             best_idx = sub_mod.best_layer_index()
@@ -170,8 +139,11 @@ def set_combiner_properties(
     """
     g = mod.graph
     queue = get_graph_inputs(g)
+    visited = []
     while queue:
         n = queue.pop(0)
+        if n in visited:
+            continue
 
         if is_layer(n, mod, (PITSuperNetCombiner,)):
             for p in add:
@@ -181,6 +153,7 @@ def set_combiner_properties(
 
         for succ in all_output_nodes(n):
             queue.append(succ)
+        visited.append(n)
 
 
 def combiner_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[SoftMaxFeaturesCalculator]:

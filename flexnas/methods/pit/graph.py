@@ -134,16 +134,17 @@ def convert_layers(mod: fx.GraphModule,
     visited = []
     while queue:
         n = queue.pop(0)
-        if n not in visited:
-            if conversion_type == 'autoimport':
-                autoimport_node(n, mod, sm_dict, exclude_names, exclude_types)
-            if conversion_type in ('import', 'autoimport'):
-                add_to_targets(n, mod, target_layers, exclude_names, exclude_types)
-            if conversion_type == 'export':
-                export_node(n, mod, exclude_names, exclude_types)
-            for pred in n.all_input_nodes:
-                queue.append(pred)
-            visited.append(n)
+        if n in visited:
+            continue
+        if conversion_type == 'autoimport':
+            autoimport_node(n, mod, sm_dict, exclude_names, exclude_types)
+        if conversion_type in ('import', 'autoimport'):
+            add_to_targets(n, mod, target_layers, exclude_names, exclude_types)
+        if conversion_type == 'export':
+            export_node(n, mod, exclude_names, exclude_types)
+        for pred in n.all_input_nodes:
+            queue.append(pred)
+        visited.append(n)
     return target_layers
 
 
@@ -364,18 +365,11 @@ def fuse_conv_bn(mod: fx.GraphModule):
 
 
 def register_input_features(mod: fx.GraphModule):
-    g = mod.graph
-    queue = get_graph_inputs(g)
-    while queue:
-        n = queue.pop(0)
-
+    for n in mod.graph.nodes:
         if is_inherited_layer(n, mod, (PITModule,)):
             sub_mod = cast(PITModule, mod.get_submodule(str(n.target)))
             fc = n.meta['input_features_set_by'].meta['features_calculator']
             sub_mod.input_features_calculator = fc
-
-        for succ in all_output_nodes(n):
-            queue.append(succ)
 
 
 def pit_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:

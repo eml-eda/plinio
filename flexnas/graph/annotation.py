@@ -35,8 +35,11 @@ def add_node_properties(mod: fx.GraphModule):
     """
     g = mod.graph
     queue = get_graph_inputs(g)
+    visited = []
     while queue:
         n = queue.pop(0)
+        if n in visited:
+            continue
 
         n.meta['features_propagating'] = is_features_propagating_op(n, mod)
         n.meta['features_defining'] = is_features_defining_op(n, mod)
@@ -49,6 +52,7 @@ def add_node_properties(mod: fx.GraphModule):
 
         for succ in all_output_nodes(n):
             queue.append(succ)
+        visited.append(n)
 
 
 def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = []):
@@ -63,8 +67,11 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
     """
     g = mod.graph
     queue = get_graph_inputs(g)
+    visited = []
     while queue:
         n = queue.pop(0)
+        if n in visited:
+            continue
         # skip nodes for which predecessors have not yet been processed completely
         if any(['features_calculator' not in _.meta for _ in n.all_input_nodes]):
             continue
@@ -137,6 +144,7 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
 
         for succ in all_output_nodes(n):
             queue.append(succ)
+        visited.append(n)
 
 
 def associate_input_features(mod: fx.GraphModule):
@@ -148,55 +156,52 @@ def associate_input_features(mod: fx.GraphModule):
     """
     g = mod.graph
     queue = get_graph_inputs(g)
+    visited = []
     while queue:
         n = queue.pop(0)
+        if n in visited:
+            continue
+        # skip nodes for which predecessors have not yet been processed completely
+        if any(['input_features_set_by' not in _.meta for _ in n.all_input_nodes]):
+            continue
 
-        input_nodes = n.all_input_nodes
-        if len(input_nodes) > 0:
-            skip = False
-            if n.meta['features_concatenate']:
-                for inode in input_nodes:
-                    if 'input_features_set_by' not in inode.meta:
-                        skip = True
-                if not skip:
-                    n.meta['input_features_set_by'] = input_nodes
-            else:
-                prev = input_nodes[0]
-                if 'input_features_set_by' in prev.meta:
-                    if prev.meta['flatten']:
-                        input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
-                        start_dim = try_get_args(prev, 1, 'start_dim', 0)
-                        assert start_dim != 0 and len(input_shape) - start_dim != 0, \
-                            "Flattening the batch not supported"
-                        # if flatten includes the channels
-                        if start_dim == 1 or len(input_shape) - start_dim == 1:
-                            n.meta['input_features_set_by'] = prev
-                        else:
-                            n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                    elif prev.meta['squeeze']:
-                        input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
-                        dim = try_get_args(prev, 1, 'dim', None)
-                        if dim is None:
-                            raise ValueError("Squeeze without dim not supported")
-                        assert dim != 0 and len(input_shape) - dim != 0, \
-                            "Squeezing the batch is not supported"
-                        if dim == 1 or len(input_shape) - dim == 1:
-                            n.meta['input_features_set_by'] = prev
-                        else:
-                            n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                    elif prev.meta['features_concatenate']:
-                        n.meta['input_features_set_by'] = prev
-                    elif prev.meta['features_defining']:
-                        n.meta['input_features_set_by'] = prev
-                    elif prev.meta['features_propagating']:
-                        n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
-                    else:
-                        raise ValueError("Unsupported node {} (op: {}, target: {})"
-                                         .format(n, n.op, n.target))
-                else:
-                    pass
-        else:  # input node
+        prev = n if len(n.all_input_nodes) == 0 else n.all_input_nodes[0]
+
+        if len(n.all_input_nodes) == 0:  # input node
             n.meta['input_features_set_by'] = n
+        elif n.meta['features_concatenate']:
+            n.meta['input_features_set_by'] = n.all_input_nodes
+        elif prev.meta['flatten']:
+            input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
+            start_dim = try_get_args(prev, 1, 'start_dim', 0)
+            assert start_dim != 0 and len(input_shape) - start_dim != 0, \
+                "Flattening the batch not supported"
+            # if flatten includes the channels
+            if start_dim == 1 or len(input_shape) - start_dim == 1:
+                n.meta['input_features_set_by'] = prev
+            else:
+                n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+        elif prev.meta['squeeze']:
+            input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
+            dim = try_get_args(prev, 1, 'dim', None)
+            if dim is None:
+                raise ValueError("Squeeze without dim not supported")
+            assert dim != 0 and len(input_shape) - dim != 0, \
+                "Squeezing the batch is not supported"
+            if dim == 1 or len(input_shape) - dim == 1:
+                n.meta['input_features_set_by'] = prev
+            else:
+                n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+        elif prev.meta['features_concatenate']:
+            n.meta['input_features_set_by'] = prev
+        elif prev.meta['features_defining']:
+            n.meta['input_features_set_by'] = prev
+        elif prev.meta['features_propagating']:
+            n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+        else:
+            raise ValueError("Unsupported node {} (op: {}, target: {})"
+                             .format(n, n.op, n.target))
 
         for succ in all_output_nodes(n):
             queue.append(succ)
+        visited.append(n)

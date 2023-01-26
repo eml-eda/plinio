@@ -85,7 +85,6 @@ class TestPITSuperNet(unittest.TestCase):
         out = exp(dummy_inp)
         print(out)
 
-    '''
     # VWW PITSN Model
     def test_vww_pitsn_export(self):
         ch_in = 3
@@ -103,7 +102,6 @@ class TestPITSuperNet(unittest.TestCase):
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out = exp(dummy_inp)
         print(out)
-    '''
 
     def test_pitsn_summary(self):
         ch_in = 32

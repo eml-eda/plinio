@@ -350,7 +350,8 @@ class MobileNetPITSN(torch.nn.Module):
         x = self.depthpoint14(x)
 
         x = self.avgpool(x)         # [ 1,  1, 256]
-        x = torch.squeeze(x)        # [256]
+        # x = torch.squeeze(x)        # [256]
+        x = torch.flatten(x, start_dim=1)        # [256]
         x = self.out(x)             # [2]
 
         return x
