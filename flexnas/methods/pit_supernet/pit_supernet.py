@@ -16,6 +16,9 @@ class PITSuperNet(DNAS):
     :type input_shape: Tuple[int, ...]
     :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
     :type regularizer: Optional[str], optional
+    :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
+    defaults to True
+    :type autoconvert_layers: bool, optional
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
@@ -28,6 +31,7 @@ class PITSuperNet(DNAS):
             model: nn.Module,
             input_shape: Tuple[int, ...],
             regularizer: str = 'size',
+            autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
 
@@ -38,7 +42,7 @@ class PITSuperNet(DNAS):
         self.seed, self._target_modules = convert(
             model,
             self._input_shape,
-            'autoimport',
+            'autoimport' if autoconvert_layers else 'import',
             exclude_names,
             exclude_types
         )
