@@ -33,6 +33,18 @@ class PITSuperNetCombiner(nn.Module):
         il = [cast(nn.Module, input_layers.__getattr__(str(_))) for _ in range(self.n_layers)]
         self.sn_input_layers = il
 
+        # update the size and macs removing PIT Modules from the "static" baseline
+        for i, layer in enumerate(self.sn_input_layers):
+            for module in layer.modules():
+                if isinstance(module, PITModule):
+                    cast(List[PITModule], self._pit_layers[i]).append(module)
+                    self.layers_sizes[i] = self.layers_sizes[i] - module.get_size()
+
+        for i, layer in enumerate(self.sn_input_layers):
+            for module in layer.modules():
+                if isinstance(module, PITModule):
+                    self.layers_macs[i] = self.layers_macs[i] - module.get_macs()
+
     def forward(self, layers_outputs: List[torch.Tensor]) -> torch.Tensor:
         """Forward function for the PITSuperNetCombiner that returns a weighted
         sum of all the outputs of the different alternative layers.
@@ -66,15 +78,6 @@ class PITSuperNetCombiner(nn.Module):
                 layer_size = layer_size + torch.prod(torch.tensor(param.shape))
             self.layers_sizes.append(layer_size)
 
-        for i, layer in enumerate(self.sn_input_layers):
-            for module in layer.modules():
-                if isinstance(module, PITModule):
-                    cast(List[PITModule], self._pit_layers[i]).append(module)
-                    size = 0
-                    for param in module.parameters():
-                        size = size + torch.prod(torch.tensor(param.shape))
-                    self.layers_sizes[i] = self.layers_sizes[i] - size
-
     def compute_layers_macs(self, input_shape: Tuple[int, ...]):
         """Computes the MACs of each possible layer of the PITSuperNetModule
         and stores the values in a list.
@@ -84,14 +87,6 @@ class PITSuperNetCombiner(nn.Module):
         for layer in self.sn_input_layers:
             stats = summary(layer, input_shape, verbose=0, mode='eval')
             self.layers_macs.append(stats.total_mult_adds)
-
-        for i, layer in enumerate(self.sn_input_layers):
-            for module in layer.modules():
-                if isinstance(module, PITModule):
-                    # cast(List[PITModule], self._pit_layers[i]).append(module)
-                    # already done in compute_layers_sizes
-                    stats = summary(module, input_shape, verbose=0, mode='eval')
-                    self.layers_macs[i] = self.layers_macs[i] - stats.total_mult_adds
 
     def get_size(self) -> torch.Tensor:
         """Method that returns the number of weights for the module

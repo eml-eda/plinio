@@ -99,10 +99,15 @@ def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
             parent_name = n.target.replace('.sn_combiner', '')
             sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
             parent_mod = cast(PITSuperNetModule, mod.get_submodule(parent_name))
+            # TODO: fix this mess
+            prev = n.all_input_nodes[0]
+            while '.sn_input_layers' in prev.target:
+                prev = prev.all_input_nodes[0]
+            input_shape = prev.meta['tensor_meta'].shape
+            sub_mod.compute_layers_sizes()
+            sub_mod.compute_layers_macs(input_shape)
             sub_mod.update_input_layers(parent_mod.sn_input_layers)
             sub_mod.train_selection = True
-            sub_mod.compute_layers_sizes()
-            sub_mod.compute_layers_macs(n.all_input_nodes[0].meta['tensor_meta'].shape)
             target_layers.append((str(n.target), sub_mod))
     return target_layers
 

@@ -111,6 +111,15 @@ class TestPITSuperNet(unittest.TestCase):
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
         sn_model.arch_summary()
 
+    def test_pitsn_getmacs(self):
+        ch_in = 32
+        in_width = 64
+        in_height = 64
+        model = StandardPITSNModule()
+        sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
+        macs = sn_model.get_macs()
+        self.assertGreater(macs.item(), 0.0)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
