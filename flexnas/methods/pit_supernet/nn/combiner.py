@@ -64,7 +64,7 @@ class PITSuperNetCombiner(nn.Module):
         for layer in self.sn_input_layers:
             layer_size = 0
             for param in layer.parameters():
-                layer_size += torch.prod(torch.tensor(param.shape))
+                layer_size = layer_size + torch.prod(torch.tensor(param.shape))
             self.layers_sizes.append(layer_size)
 
         for i, layer in enumerate(self.sn_input_layers):
@@ -73,7 +73,7 @@ class PITSuperNetCombiner(nn.Module):
                     cast(List[PITModule], self._pit_layers[i]).append(module)
                     size = 0
                     for param in module.parameters():
-                        size += torch.prod(torch.tensor(param.shape))
+                        size = size + torch.prod(torch.tensor(param.shape))
                     self.layers_sizes[i] = self.layers_sizes[i] - size
 
     def compute_layers_macs(self):
@@ -107,7 +107,7 @@ class PITSuperNetCombiner(nn.Module):
         for i in range(self.n_layers):
             var_size = torch.tensor(0, dtype=torch.float32)
             for pl in cast(List[PITModule], self._pit_layers[i]):
-                var_size += pl.get_size()
+                var_size = var_size + pl.get_size()
             size = size + (soft_alpha[i] * (self.layers_sizes[i] + var_size))
         return size
 
@@ -123,7 +123,7 @@ class PITSuperNetCombiner(nn.Module):
         for i in range(self.n_layers):
             var_macs = torch.tensor(0, dtype=torch.float32)
             for pl in cast(List[PITModule], self._pit_layers[i]):
-                var_macs += pl.get_macs()
+                var_macs = var_macs + pl.get_macs()
             macs = macs + (soft_alpha[i] * (self.layers_macs[i] + var_macs))
         return macs
 
