@@ -95,7 +95,8 @@ def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
     target_layers = []
     for n in mod.graph.nodes:
         if is_layer(n, mod, (PITSuperNetCombiner,)):
-            parent_name = n.target.removesuffix('.sn_combiner')
+            # parent_name = n.target.removesuffix('.sn_combiner')
+            parent_name = n.target.replace('.sn_combiner', '')
             sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
             parent_mod = cast(PITSuperNetModule, mod.get_submodule(parent_name))
             sub_mod.update_input_layers(parent_mod.sn_input_layers)
