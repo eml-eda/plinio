@@ -1,7 +1,6 @@
 from typing import List, cast, Iterator, Tuple, Any, Dict
 import torch
 import torch.nn as nn
-import torch.fx as fx
 from torchinfo import summary
 from flexnas.methods.pit.nn import PITModule
 
@@ -18,8 +17,9 @@ class PITSuperNetCombiner(nn.Module):
         self.sn_input_layers = [_ for _ in input_layers]
         self.input_shape = None
         self.n_layers = len(input_layers)
+        # initially alpha set non-trainable to allow warmup of the "user-defined" model
         self.alpha = nn.Parameter(
-            (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=True)
+            (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=False)
 
         self._pit_layers = list()
         for _ in range(self.n_layers):
@@ -154,6 +154,24 @@ class PITSuperNetCombiner(nn.Module):
                     branch_arch[layer_name] = layer_arch
             res["supernet_branches"][f"branch_{i}"] = branch_arch
         return res
+
+    @property
+    def train_selection(self) -> bool:
+        """True if the choice of layers is being optimized by the Combiner
+
+        :return: True if the choice of layers is being optimized by the Combiner
+        :rtype: bool
+        """
+        return self.alpha.requires_grad
+
+    @train_selection.setter
+    def train_selection(self, value: bool):
+        """Set to True in order to let the Combiner optimize the choice of layers
+
+        :param value: set to True in order to let the Combine optimize the choice of layers
+        :type value: bool
+        """
+        self.alpha.requires_grad = value
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
