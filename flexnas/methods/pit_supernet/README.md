@@ -50,7 +50,9 @@ Then, similarly to [PIT](../pit/README.md#basic-usage) we need to follow three s
     from plinio.methods import PITSuperNet
 
     net = SimpleSuperNet()
-    pitsn_net = PITSuperNet(net, input_shape=input_shape, regularizer='macs')
+    pitsn_net = PITSuperNet(net,
+                            input_shape=input_shape,
+                            regularizer='macs')
     ```
 2. Inside the training loop compute regularization-loss and add it to task-loss to optimize the two quantities together. N.B., we suggest to control the relative balance between the two losses by multiplying a scalar `strength` value to the regularization loss.
     ```python
@@ -77,5 +79,5 @@ Nevertheless, if the user want to avoid the PIT-like optimization and only perfo
 
 ## Supported Regularizers
 At the current state the following regularization strategies are supported:
-- **Size**: this strategy tries to reduce the total number of parameters of the target layers. It can be used by specificying the argument `regularizer` of `PIT()` with the string `'size'`.
-- **MACs**: this strategy tries to reduce the total number of operations of the target layers. It can be used by specificying the argument `regularizer` of `PIT()` with the string `'macs'`.
+- **Size**: this strategy tries to reduce the total number of parameters of the target layers. It can be used by specificying the argument `regularizer` of `PITSuperNet()` with the string `'size'`.
+- **MACs**: this strategy tries to reduce the total number of operations of the target layers. It can be used by specificying the argument `regularizer` of `PITSuperNet()` with the string `'macs'`.
