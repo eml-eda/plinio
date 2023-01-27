@@ -11,9 +11,9 @@ To optimize your model with PIT you will need in most situations only **three ad
 1. Import the `PIT` conversion module and use it to automatically convert your `model` in an optimizable format. In its basic usage, `PIT` requires as arguments:
     - the `model` to be optimized
     - the `input_shape` of an imput tensor (without batch-size)
-    - the `regularizer` to be used (i.e., `'size'` or `'macs'`) which dictates the metric that will be optimized.
+    - the `regularizer` to be used (consult [supported regularizers](#supported-regularizers) to know the different alternatives) which dictates the metric that will be optimized.
     ```python
-    from plinio import PIT
+    from plinio.methods import PIT
     pit_model = PIT(model, input_shape=input_shape, regularizer='size')
     ```
 2. Inside the training loop compute regularization-loss and add it to task-loss to optimize the two quantities together. N.B., we suggest to control the relative balance between the two losses by multiplying a scalar `strength` value to the regularization loss.
@@ -33,8 +33,6 @@ To optimize your model with PIT you will need in most situations only **three ad
     ```python
     exported_model = pit_model.arch_export()
     ```
-
-To see an end-to-end example you can consult the **TODO Tutorial**.
 
 ### Exclude layers from the optimization
 In general, when `plinio.PIT` is applied to a network all the [supported layers](#supported-layers) are automatically marked as optimizable.
