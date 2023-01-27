@@ -14,7 +14,9 @@ To optimize your model with PIT you will need in most situations only **three ad
     - the `regularizer` to be used (consult [supported regularizers](#supported-regularizers) to know the different alternatives) which dictates the metric that will be optimized.
     ```python
     from plinio.methods import PIT
-    pit_model = PIT(model, input_shape=input_shape, regularizer='size')
+    pit_model = PIT(model,
+                    input_shape=input_shape,
+                    regularizer='size')
     ```
 2. Inside the training loop compute regularization-loss and add it to task-loss to optimize the two quantities together. N.B., we suggest to control the relative balance between the two losses by multiplying a scalar `strength` value to the regularization loss.
     ```python
@@ -100,7 +102,7 @@ At the current state the following regularization strategies are supported:
 - **MACs**: this strategy tries to reduce the total number of operations of the target layers. It can be used by specificying the argument `regularizer` of `PIT()` with the string `'macs'`.
 
 ## Supported Layers
-At the current state the optimization of the following layers are supported:
+At the current state the optimization of the following layers is supported:
 |Layer   | Hyper-Parameters  |
 |:-:|:-:|
 | Conv1d  | Output-Channels, Kernel-Size, Dilation |
