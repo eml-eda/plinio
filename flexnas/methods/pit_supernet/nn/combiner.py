@@ -15,7 +15,6 @@ class PITSuperNetCombiner(nn.Module):
     def __init__(self, input_layers: nn.ModuleList):
         super(PITSuperNetCombiner, self).__init__()
         self.sn_input_layers = [_ for _ in input_layers]
-        self.input_shape = None
         self.n_layers = len(input_layers)
         # initially alpha set non-trainable to allow warmup of the "user-defined" model
         self.alpha = nn.Parameter(
@@ -76,14 +75,14 @@ class PITSuperNetCombiner(nn.Module):
                         size = size + torch.prod(torch.tensor(param.shape))
                     self.layers_sizes[i] = self.layers_sizes[i] - size
 
-    def compute_layers_macs(self):
+    def compute_layers_macs(self, input_shape: Tuple[int, ...]):
         """Computes the MACs of each possible layer of the PITSuperNetModule
         and stores the values in a list.
         It removes the MACs of the PIT modules contained in each layer because
         these MACs will be computed and re-added at training time.
         """
         for layer in self.sn_input_layers:
-            stats = summary(layer, self.input_shape, verbose=0, mode='eval')
+            stats = summary(layer, input_shape, verbose=0, mode='eval')
             self.layers_macs.append(stats.total_mult_adds)
 
         for i, layer in enumerate(self.sn_input_layers):
@@ -91,7 +90,7 @@ class PITSuperNetCombiner(nn.Module):
                 if isinstance(module, PITModule):
                     # cast(List[PITModule], self._pit_layers[i]).append(module)
                     # already done in compute_layers_sizes
-                    stats = summary(module, self.input_shape, verbose=0, mode='eval')
+                    stats = summary(module, input_shape, verbose=0, mode='eval')
                     self.layers_macs[i] = self.layers_macs[i] - stats.total_mult_adds
 
     def get_size(self) -> torch.Tensor:

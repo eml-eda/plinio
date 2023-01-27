@@ -102,7 +102,7 @@ def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
             sub_mod.update_input_layers(parent_mod.sn_input_layers)
             sub_mod.train_selection = True
             sub_mod.compute_layers_sizes()
-            sub_mod.compute_layers_macs()
+            sub_mod.compute_layers_macs(n.all_input_nodes[0].meta['tensor_meta'].shape)
             target_layers.append((str(n.target), sub_mod))
     return target_layers
 
