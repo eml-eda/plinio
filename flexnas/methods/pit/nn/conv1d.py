@@ -204,6 +204,27 @@ class PITConv1d(nn.Conv1d, PITModule):
             if submodule.bias is not None:
                 cast(nn.parameter.Parameter, new_submodule.bias).copy_(submodule.bias[cout_mask])
         mod.add_submodule(str(n.target), new_submodule)
+        # Adjust Padding
+        if submodule.padding in ('valid', 0, (0,)):
+            pad_amount = (submodule.kernel_size_opt[0] - 1) * submodule.dilation_opt[0]
+            new_pad = nn.ConstantPad1d(
+                padding=(pad_amount, 0),
+                value=0
+            )
+            # If explicit padding nn.Module exist is simply substituted with new_pad
+            # else a new node is created and new_pad inserted
+            for inp in n.args:
+                inp = cast(fx.Node, inp)
+                if inp.op == 'call_module':
+                    if isinstance(mod.get_submodule(str(inp.target)), nn.ConstantPad1d):
+                        mod.add_submodule(str(inp.target), new_pad)
+                        break  # Found it, we can exit and go on
+            else:  # Did not find anything
+                mod.add_submodule(str(n.target) + "_pad", new_pad)
+                with mod.graph.inserting_before(n):
+                    new_node = mod.graph.call_module(
+                        str(n.target) + "_pad",
+                        args=n.args)
         # unfuse the BatchNorm
         if submodule.following_bn_args is not None:
             new_bn = nn.BatchNorm1d(

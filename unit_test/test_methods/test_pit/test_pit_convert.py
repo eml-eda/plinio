@@ -249,6 +249,88 @@ class TestPITConvert(unittest.TestCase):
                     torch.all(child.weight[0:55, 2, 0:2] == pit_child.weight[0:55, 3, 0:6:4]),
                     "Wrong weight values for Cin=2")
 
+    def test_export_with_masks_advanced(self):
+        """Test the conversion of a ResNet-like model
+        after forcing the mask values in some layers"""
+        nn_ut = TCResNet14(self.tc_resnet_config)
+        new_nn = PIT(nn_ut, input_shape=(6, 50))
+
+        tcn = cast(nn.Module, new_nn.seed.tcn)
+
+        # block0.tcn1
+        block0 = cast(nn.Module, cast(nn.Module, tcn.network)._modules['0'])
+        tcn1 = cast(PITConv1d, block0.tcn1)
+        # Force masking of channels
+        tcn1.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, ] * 34 + [0, 1], dtype=torch.float))
+        # Force masking of receptive-field
+        tcn1.timestep_masker.beta = nn.parameter.Parameter(
+            torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1], dtype=torch.float))
+        # Force masking of dilation
+        tcn1.dilation_masker.gamma = nn.parameter.Parameter(
+            torch.tensor([0, 1, 1, 1], dtype=torch.float))
+        exported_nn = new_nn.arch_export()
+
+        # block1.tcn1
+        block1 = cast(nn.Module, cast(nn.Module, tcn.network)._modules['1'])
+        tcn1 = cast(PITConv1d, block1.tcn1)
+        # Force masking of channels
+        tcn1.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, ] * 33 + [0, 0, 1], dtype=torch.float))
+        # Force masking of receptive-field
+        tcn1.timestep_masker.beta = nn.parameter.Parameter(
+            torch.tensor([0, 0, 1, 1, 1, 1, 1, 1, 1], dtype=torch.float))
+        # Force masking of dilation
+        tcn1.dilation_masker.gamma = nn.parameter.Parameter(
+            torch.tensor([1, 1, 1, 1], dtype=torch.float))
+        exported_nn = new_nn.arch_export()
+
+        # Checks on 'tcn.network.0.tcn1'
+        _, mod = cast(Tuple, next(
+            filter(lambda x: x[0] == 'tcn.network.0.tcn1', exported_nn.named_modules()),
+            None))
+        mod = cast(nn.Conv1d, mod)
+        _, pad_mod = cast(Tuple, next(
+            filter(lambda x: x[0] == 'tcn.network.0.pad1', exported_nn.named_modules()),
+            None))
+        pad_mod = cast(nn.ConstantPad1d, pad_mod)
+        self.assertEqual(mod.out_channels, 35, "Wrong output channels exported")
+        self.assertEqual(mod.in_channels, 36, "Wrong input channels exported")
+        self.assertEqual(mod.kernel_size, (2,), "Wrong kernel size exported")
+        self.assertEqual(mod.dilation, (2,), "Wrong dilation exported")
+        # check that the output sequence length is the expecyed one
+        # N.B., the tcn1 layer of TCResNet14 converges on a node sum of
+        # a residual branch with stride=2. To sum toghether the sequences
+        # their lenghts must match.
+        dummy_tcn1_res_branch_oup = torch.rand((1, 35, 25))  # stride = 2
+        dummy_tcn1_inp = torch.rand((1, 36, 25))
+        dummy_tcn1_oup = mod(pad_mod(dummy_tcn1_inp))
+        self.assertTrue(dummy_tcn1_oup.shape == dummy_tcn1_res_branch_oup.shape,
+                        "Output Sequence legnth does not match on res branch")
+
+        # Checks on 'tcn.network.1.tcn1'
+        _, mod = cast(Tuple, next(
+            filter(lambda x: x[0] == 'tcn.network.1.tcn1', exported_nn.named_modules()),
+            None))
+        mod = cast(nn.Conv1d, mod)
+        _, pad_mod = cast(Tuple, next(
+            filter(lambda x: x[0] == 'tcn.network.1.pad1', exported_nn.named_modules()),
+            None))
+        pad_mod = cast(nn.ConstantPad1d, pad_mod)
+        self.assertEqual(mod.out_channels, 34, "Wrong output channels exported")
+        self.assertEqual(mod.in_channels, 36, "Wrong input channels exported")
+        self.assertEqual(mod.kernel_size, (7,), "Wrong kernel size exported")
+        self.assertEqual(mod.dilation, (2,), "Wrong dilation exported")
+        # check that the output sequence length is the expecyed one
+        # N.B., the tcn1 layer of TCResNet14 converges on a node sum of
+        # a residual branch with stride=1. To sum toghether the sequences
+        # their lenghts must match.
+        dummy_tcn1_res_branch_oup = torch.rand((1, 34, 25))  # stride = 1
+        dummy_tcn1_inp = torch.rand((1, 36, 25))
+        dummy_tcn1_oup = mod(pad_mod(dummy_tcn1_inp))
+        self.assertTrue(dummy_tcn1_oup.shape == dummy_tcn1_res_branch_oup.shape,
+                        "Output Sequence legnth does not match on res branch")
+
     def test_export_with_masks_depthwise(self):
         """Test the conversion of a model with depthwise conv after forcing the
         mask values in some layers"""
