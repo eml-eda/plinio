@@ -38,12 +38,14 @@ class PITSuperNetCombiner(nn.Module):
             for module in layer.modules():
                 if isinstance(module, PITModule):
                     cast(List[PITModule], self._pit_layers[i]).append(module)
-                    self.layers_sizes[i] = self.layers_sizes[i] - module.get_size()
+                    with torch.no_grad():
+                        self.layers_sizes[i] = self.layers_sizes[i] - module.get_size()
 
         for i, layer in enumerate(self.sn_input_layers):
             for module in layer.modules():
                 if isinstance(module, PITModule):
-                    self.layers_macs[i] = self.layers_macs[i] - module.get_macs()
+                    with torch.no_grad():
+                        self.layers_macs[i] = self.layers_macs[i] - module.get_macs()
 
     def forward(self, layers_outputs: List[torch.Tensor]) -> torch.Tensor:
         """Forward function for the PITSuperNetCombiner that returns a weighted
