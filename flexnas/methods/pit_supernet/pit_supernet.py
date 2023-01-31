@@ -92,7 +92,7 @@ class PITSuperNet(DNAS):
         :type value: float
         """
         for module in self._target_modules:
-            module[1].softmax_temperature = module[1].softmax_temperature * value
+            module[1].softmax_temperature = value
 
 
     @property
