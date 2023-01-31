@@ -85,6 +85,16 @@ class PITSuperNet(DNAS):
             macs = macs + t[1].get_macs()
         return macs
 
+    def update_softmax_temperature(self, value):
+        """Update softmax temperature of all submodules
+
+        :param value: value
+        :type value: float
+        """
+        for module in self._target_modules:
+            module[1].softmax_temperature = module[1].softmax_temperature * value
+
+
     @property
     def regularizer(self) -> str:
         """Returns the regularizer type

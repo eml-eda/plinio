@@ -19,7 +19,7 @@ class PITSuperNetCombiner(nn.Module):
         # initially alpha set non-trainable to allow warmup of the "user-defined" model
         self.alpha = nn.Parameter(
             (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=False)
-
+        self._softmax_temperature = 1
         self._pit_layers = list()
         for _ in range(self.n_layers):
             self._pit_layers.append(list())
@@ -56,7 +56,7 @@ class PITSuperNetCombiner(nn.Module):
         :return: the output tensor (weighted sum of all layers output)
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha, dim=0)
+        soft_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
         y = []
         for i, yi in enumerate(layers_outputs):
             y.append(soft_alpha[i] * yi)
@@ -90,6 +90,24 @@ class PITSuperNetCombiner(nn.Module):
             stats = summary(layer, input_shape, verbose=0, mode='eval')
             self.layers_macs.append(stats.total_mult_adds)
 
+    @property
+    def softmax_temperature(self) -> float:
+        """Value of the temperature that divide the alpha for layer choice
+
+        :return: Value of softmax_temperature
+        :rtype: float
+        """
+        return self._softmax_temperature
+
+    @softmax_temperature.setter
+    def softmax_temperature(self, value: float):
+        """Set the value of the temperature that divide the alpha for layer choice
+
+        :param value: value
+        :type value: float
+        """
+        self._softmax_temperature = value
+
     def get_size(self) -> torch.Tensor:
         """Method that returns the number of weights for the module
         computed as a weighted sum of the number of weights of each layer.
@@ -97,7 +115,7 @@ class PITSuperNetCombiner(nn.Module):
         :return: number of weights of the module (weighted sum)
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha, dim=0)
+        soft_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
 
         size = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):
@@ -113,7 +131,7 @@ class PITSuperNetCombiner(nn.Module):
         :return: the number of MACs
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha, dim=0)
+        soft_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
 
         macs = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):
