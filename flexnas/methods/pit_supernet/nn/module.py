@@ -13,10 +13,13 @@ class PITSuperNetModule(nn.Module):
     :param input_layers: iterable of possible alternative layers to be selected
     :type input_layers: Iterable[nn.Module]
     """
-    def __init__(self, input_layers: Iterable[nn.Module]):
+    def __init__(self,
+                 input_layers: Iterable[nn.Module],
+                 gumbel_softmax: bool = False,
+                 hard_softmax: bool = False):
         super(PITSuperNetModule, self).__init__()
         self.sn_input_layers = nn.ModuleList(list(input_layers))
-        self.sn_combiner = PITSuperNetCombiner(self.sn_input_layers)
+        self.sn_combiner = PITSuperNetCombiner(self.sn_input_layers, gumbel_softmax, hard_softmax)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """Forward function for the PITSuperNetModule that returns a weighted

@@ -11,24 +11,35 @@ class PITSuperNetCombiner(nn.Module):
 
     :param input_layers: list of possible alternative layers to be selected
     :type input_layers: List[nn.Module]
+    :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SofrMax
+    :type gumbel_softmax: bool
+    :param hard_softmax: use hard Gumbel SoftMax sampling (only applies when gumbel_softmax = True)
+    :type hard_softmax: bool
     """
-    def __init__(self, input_layers: nn.ModuleList):
+    def __init__(self, input_layers: nn.ModuleList, gumbel_softmax: bool, hard_softmax: bool):
         super(PITSuperNetCombiner, self).__init__()
         self.sn_input_layers = [_ for _ in input_layers]
         self.n_layers = len(input_layers)
         # initially alpha set non-trainable to allow warmup of the "user-defined" model
         self.alpha = nn.Parameter(
             (1 / self.n_layers) * torch.ones(self.n_layers, dtype=torch.float), requires_grad=False)
+        self.register_buffer('theta_alpha', torch.tensor(self.n_layers, dtype=torch.float32))
+        self.theta_alpha.data = self.alpha  # uniform initialization
         self._softmax_temperature = 1
         self._pit_layers = list()
         for _ in range(self.n_layers):
             self._pit_layers.append(list())
-
         self.layers_sizes = []
         self.layers_macs = []
+        self.hard_softmax = hard_softmax
+        if gumbel_softmax:
+            self.sample_alpha = self.sample_alpha_gs
+        else:
+            self.sample_alpha = self.sample_alpha_sm
 
     def update_input_layers(self, input_layers: nn.Module):
-        """TODO
+        """Updates the list of input layers after torch.fx tracing, which "explodes" nn.Sequential
+        and nn.ModuleList, causing the combiner to wrongly reference to the pre-tracing version.
         """
         il = [cast(nn.Module, input_layers.__getattr__(str(_))) for _ in range(self.n_layers)]
         self.sn_input_layers = il
@@ -47,6 +58,21 @@ class PITSuperNetCombiner(nn.Module):
                     with torch.no_grad():
                         self.layers_macs[i] = self.layers_macs[i] - module.get_macs()
 
+    def sample_alpha_sm(self):
+        """
+        Samples the alpha architectural coefficients using a standard SoftMax (with temperature).
+        The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
+        """
+        self.theta_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
+
+    def sample_alpha_gs(self):
+        """
+        Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
+        The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
+        """
+        self.theta_alpha = nn.functional.gumbel_softmax(
+                self.alpha, self.softmax_temperature, self.hard_softmax, dim=0)
+
     def forward(self, layers_outputs: List[torch.Tensor]) -> torch.Tensor:
         """Forward function for the PITSuperNetCombiner that returns a weighted
         sum of all the outputs of the different alternative layers.
@@ -56,15 +82,15 @@ class PITSuperNetCombiner(nn.Module):
         :return: the output tensor (weighted sum of all layers output)
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
+        self.sample_alpha()
         y = []
         for i, yi in enumerate(layers_outputs):
-            y.append(soft_alpha[i] * yi)
+            y.append(self.theta_alpha[i] * yi)
         y = torch.stack(y, dim=0).sum(dim=0)
         return y
 
     def best_layer_index(self) -> int:
-        """TODO
+        """Returns the index of the layer with the largest architectural coefficient
         """
         return int(torch.argmax(self.alpha).item())
 
@@ -115,14 +141,12 @@ class PITSuperNetCombiner(nn.Module):
         :return: number of weights of the module (weighted sum)
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
-
         size = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):
             var_size = torch.tensor(0, dtype=torch.float32)
             for pl in cast(List[PITModule], self._pit_layers[i]):
                 var_size = var_size + pl.get_size()
-            size = size + (soft_alpha[i] * (self.layers_sizes[i] + var_size))
+            size = size + (self.theta_alpha[i] * (self.layers_sizes[i] + var_size))
         return size
 
     def get_macs(self) -> torch.Tensor:
@@ -131,14 +155,12 @@ class PITSuperNetCombiner(nn.Module):
         :return: the number of MACs
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
-
         macs = torch.tensor(0, dtype=torch.float32)
         for i in range(self.n_layers):
             var_macs = torch.tensor(0, dtype=torch.float32)
             for pl in cast(List[PITModule], self._pit_layers[i]):
                 var_macs = var_macs + pl.get_macs()
-            macs = macs + (soft_alpha[i] * (self.layers_macs[i] + var_macs))
+            macs = macs + (self.theta_alpha[i] * (self.layers_macs[i] + var_macs))
         return macs
 
     def summary(self) -> Dict[str, Any]:
@@ -149,7 +171,7 @@ class PITSuperNetCombiner(nn.Module):
         :rtype: Dict[str, Any]
         """
         with torch.no_grad():
-            soft_alpha = nn.functional.softmax(self.alpha, dim=0)
+            self.sample_alpha()
 
         res = {"supernet_branches": {}}
         for i, branch in enumerate(self.sn_input_layers):
@@ -158,7 +180,7 @@ class PITSuperNetCombiner(nn.Module):
             else:
                 branch_arch = {}
             branch_arch['type'] = branch.__class__.__name__
-            branch_arch['alpha'] = soft_alpha[i].item()
+            branch_arch['alpha'] = self.theta_alpha[i].item()
             branch_layers = branch._modules
             for layer_name in branch_layers:
                 layer = cast(nn.Module, branch_layers[layer_name])

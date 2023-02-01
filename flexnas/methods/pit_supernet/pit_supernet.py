@@ -85,6 +85,21 @@ class PITSuperNet(DNAS):
             macs = macs + t[1].get_macs()
         return macs
 
+    def get_total_icv(self, eps: float = 1e-3) -> torch.Tensor:
+        """Computes the total inverse coefficient of variation of the SuperNet architectural
+        parameters
+
+        :param eps: stability term, limiting the max value of icv
+        :type eps: float
+        :return: the total ICV
+        :rtype: torch.Tensor
+        """
+        tot_icv = torch.tensor(0, dtype=torch.float32)
+        for t in self._target_modules:
+            theta_alpha = t[1].theta_alpha
+            tot_icv = tot_icv + (torch.mean(theta_alpha)**2) / (torch.var(theta_alpha) + eps)
+        return tot_icv
+
     def update_softmax_temperature(self, value):
         """Update softmax temperature of all submodules
 

@@ -2,6 +2,7 @@ import unittest
 import torch
 from flexnas.methods import PITSuperNet
 from unit_test.models.pit_supernet_nn import StandardPITSNModule
+from unit_test.models.pit_supernet_nn_gs import GumbelPITSNModule
 from unit_test.models.kws_pit_sn_model import DSCnnPITSN
 from unit_test.models.icl_pit_sn_model import ResNet8PITSN
 from unit_test.models.vww_pit_sn_model import MobileNetPITSN
@@ -60,12 +61,11 @@ class TestPITSuperNet(unittest.TestCase):
         exclude_names = []
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height), exclude_names=exclude_names)
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = sn_model(dummy_inp)
+        _ = sn_model(dummy_inp)
         sn_model.get_size()
         exp = sn_model.arch_export()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = exp(dummy_inp)
-        print(out)
+        _ = exp(dummy_inp)
 
     # ICL PITSN Model
     def test_icl_pitsn_export(self):
@@ -78,12 +78,11 @@ class TestPITSuperNet(unittest.TestCase):
         exclude_names = []
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height), exclude_names=exclude_names)
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = sn_model(dummy_inp)
+        _ = sn_model(dummy_inp)
         sn_model.get_size()
         exp = sn_model.arch_export()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = exp(dummy_inp)
-        print(out)
+        _ = exp(dummy_inp)
 
     # VWW PITSN Model
     def test_vww_pitsn_export(self):
@@ -96,12 +95,11 @@ class TestPITSuperNet(unittest.TestCase):
         exclude_names = []
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height), exclude_names=exclude_names)
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = sn_model(dummy_inp)
+        _ = sn_model(dummy_inp)
         sn_model.get_size()
         exp = sn_model.arch_export()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
-        out = exp(dummy_inp)
-        print(out)
+        _ = exp(dummy_inp)
 
     def test_pitsn_summary(self):
         ch_in = 32
@@ -119,6 +117,38 @@ class TestPITSuperNet(unittest.TestCase):
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
         macs = sn_model.get_macs()
         self.assertGreater(macs.item(), 0.0)
+
+    def test_pitsn_icv(self):
+        ch_in = 32
+        in_width = 64
+        in_height = 64
+        model = StandardPITSNModule()
+        sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
+        eps = 1e-3
+        icv = sn_model.get_total_icv(eps)
+        # icv = mu^2 / sigma^2, we have 4 choices and initially all architectural parameters
+        # are identical. So mu^2 = (1/4)^2 and sigma^2 = 0 + eps (stability term)
+        self.assertAlmostEqual(icv.item(), (1/(4*4))/eps, places=3)
+
+    def test_pitsn_soft_gumbel_sampling(self):
+        ch_in = 32
+        in_width = 64
+        in_height = 64
+        model = GumbelPITSNModule(hard_softmax=False)
+        sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
+        _ = sn_model.get_size()
+        _ = sn_model.get_macs()
+        _ = sn_model.get_total_icv()
+
+    def test_pitsn_hard_gumbel_sampling(self):
+        ch_in = 32
+        in_width = 64
+        in_height = 64
+        model = GumbelPITSNModule(hard_softmax=True)
+        sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
+        _ = sn_model.get_size()
+        _ = sn_model.get_macs()
+        _ = sn_model.get_total_icv()
 
 
 if __name__ == '__main__':
