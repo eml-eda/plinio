@@ -88,8 +88,8 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     graph = tracer.trace(model.eval())
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
-    # create a "fake" minibatch of 32 inputs for shape prop
-    batch_example = torch.stack([torch.rand(input_shape)] * 32, 0)
+    # create a "fake" minibatch of 1 input for shape prop
+    batch_example = torch.stack([torch.rand(input_shape)] * 1, 0)
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
     add_node_properties(mod)

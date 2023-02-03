@@ -99,8 +99,8 @@ def convert(model: nn.Module,
     mod = fx.GraphModule(tracer.root, graph, name)
 
     # Shape Prop
-    # create a "fake" minibatch of 32 inputs for shape prop
-    batch_example = torch.stack([torch.rand(input_shape)] * 32, 0)
+    # create a "fake" minibatch of 1 input for shape prop
+    batch_example = torch.stack([torch.rand(input_shape)] * 1, 0)
     # TODO: this is not very robust. Find a better way
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
