@@ -22,7 +22,7 @@ import unittest
 import torch
 import torch.nn as nn
 from flexnas.methods import MixPrec
-from flexnas.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule
+from flexnas.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule, MixPrecType
 import flexnas.methods.mixprec.quant.nn as qnn
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
     SimpleMixPrecNN, SimpleExportedNN2D, SimpleNN2D_NoBN, SimpleExportedNN2D_NoBias
@@ -31,22 +31,43 @@ from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_
 class TestMixPrecConvert(unittest.TestCase):
     """Test conversion operations to/from nn.Module from/to MixPrec"""
 
-    def test_autoimport_simple(self):
-        """Test the conversion of a simple sequential model with layer autoconversion"""
+    def test_autoimport_simple_layer(self):
+        """Test the conversion of a simple sequential model with layer autoconversion
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=3)
 
-    def test_autoimport_depthwise(self):
-        """Test the conversion of a model with depthwise convolutions (cin=cout=groups)"""
+    def test_autoimport_simple_channel(self):
+        """Test the conversion of a simple sequential model with layer autoconversion
+        with PER_CHANNEL weight mixed-precision"""
+        nn_ut = SimpleNN2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=3)
+
+    def test_autoimport_depthwise_layer(self):
+        """Test the conversion of a model with depthwise convolutions (cin=cout=groups)
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = DSCNN()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=14)
 
-    def test_autoimport_multipath(self):
-        """Test the conversion of a toy model with multiple concat and add operations"""
+    def test_autoimport_depthwise_channel(self):
+        """Test the conversion of a model with depthwise convolutions (cin=cout=groups)
+        with PER_CHANNEL weight mixed-precision"""
+        nn_ut = DSCNN()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=14)
+
+    def test_autoimport_multipath_layer(self):
+        """Test the conversion of a toy model with multiple concat and add operations
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
@@ -70,7 +91,37 @@ class TestMixPrecConvert(unittest.TestCase):
         )
         self._check_shared_quantizers(new_nn, shared_quantizer_rules)
 
-    def test_exclude_types_simple(self):
+    def test_autoimport_multipath_channel(self):
+        """Test the conversion of a toy model with multiple concat and add operations
+        with PER_CHANNEL weight mixed-precision"""
+        nn_ut = ToyMultiPath1_2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=7)
+        shared_quantizer_rules = (
+            ('conv2', 'conv4', True),  # inputs to add must share the quantizer
+            ('conv2', 'conv5', True),  # inputs to add must share the quantizer
+            ('conv0', 'conv1', True),  # inputs to concat over the channels must share
+            ('conv3', 'conv4', False),  # consecutive convs must not share
+            ('conv0', 'conv5', False),  # two far aways layers must not share
+        )
+        self._check_shared_quantizers(new_nn, shared_quantizer_rules)
+
+        nn_ut = ToyMultiPath2_2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=6)
+        shared_quantizer_rules = (
+            ('conv0', 'conv1', True),   # inputs to add
+            ('conv2', 'conv3', True),  # concat over channels
+        )
+        self._check_shared_quantizers(new_nn, shared_quantizer_rules)
+
+    def test_exclude_types_simple_layer(self):
+        """Test the conversion of a Toy model while excluding conv2d layers
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv2d,))
         # excluding Conv2D, only the final FC should be converted to MixPrec format
@@ -78,7 +129,20 @@ class TestMixPrecConvert(unittest.TestCase):
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
 
-    def test_exclude_names_simple(self):
+    def test_exclude_types_simple_channel(self):
+        """Test the conversion of a Toy model while excluding conv2d layers
+        with PER_CHANNEL weight mixed-precision (default)"""
+        nn_ut = ToyMultiPath1_2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         w_mixprec_type=MixPrecType.PER_CHANNEL, exclude_types=(nn.Conv2d,))
+        # excluding Conv2D, only the final FC should be converted to MixPrec format
+        self._check_target_layers(new_nn, exp_tgt=1)
+        excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
+        self._check_layers_exclusion(new_nn, excluded)
+
+    def test_exclude_names_simple_layer(self):
+        """Test the conversion of a Toy model while excluding layers by name
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
         excluded = ('conv0', 'conv4')
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
@@ -92,8 +156,26 @@ class TestMixPrecConvert(unittest.TestCase):
         self._check_target_layers(new_nn, exp_tgt=4)
         self._check_layers_exclusion(new_nn, excluded)
 
-    def test_import_simple(self):
-        """Test the conversion of a simple sequential model that already contains a PIT layer"""
+    def test_exclude_names_simple_channel(self):
+        """Test the conversion of a Toy model while excluding layers by name
+        with PER_CHANNEL weight mixed-precision"""
+        nn_ut = ToyMultiPath1_2D()
+        excluded = ('conv0', 'conv4')
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         w_mixprec_type=MixPrecType.PER_CHANNEL, exclude_names=excluded)
+        # excluding conv0 and conv4, there are 5 convertible conv2d and linear layers left
+        self._check_target_layers(new_nn, exp_tgt=5)
+        self._check_layers_exclusion(new_nn, excluded)
+
+        nn_ut = ToyMultiPath2_2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
+        # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
+        self._check_target_layers(new_nn, exp_tgt=4)
+        self._check_layers_exclusion(new_nn, excluded)
+
+    def test_import_simple_layer(self):
+        """Test the conversion of a simple sequential model that already contains a MixPrec layer
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleMixPrecNN()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
@@ -103,8 +185,22 @@ class TestMixPrecConvert(unittest.TestCase):
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
 
-    def test_export_initial_simple(self):
-        """Test the export of a simple sequential model, just after import"""
+    def test_import_simple_channel(self):
+        """Test the conversion of a simple sequential model that already contains a MixPrec layer
+        with PER_CHANNEL weight mixed-precision"""
+        nn_ut = SimpleMixPrecNN()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        # convert with autoconvert disabled. This is as if we exclude layers except the one already
+        # in MixPrec form
+        excluded = ('conv1')
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
+        self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
+
+    def test_export_initial_simple_layer(self):
+        """Test the export of a simple sequential model, just after import
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
                          activation_precisions=(8,), weight_precisions=(4, 8))
@@ -112,9 +208,9 @@ class TestMixPrecConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN2D()
         self._compare_exported(exported_nn, expected_exported_nn)
 
-    def test_export_initial_cuda(self):
+    def test_export_initial_cuda_layer(self):
         """Test the export of a simple sequential model, just after import using
-        GPU (if available)"""
+        GPU (if available) with PER_LAYER weight mixed-precision (default)"""
         # Check CUDA availability
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         print("Training on:", device)
@@ -137,8 +233,9 @@ class TestMixPrecConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN2D().to(device)
         self._compare_exported(exported_nn, expected_exported_nn)
 
-    def test_export_initial_nobn(self):
-        """Test the export of a simple sequential model with no bn, just after import"""
+    def test_export_initial_nobn_layer(self):
+        """Test the export of a simple sequential model with no bn, just after import
+        with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D_NoBN()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
                          activation_precisions=(8,), weight_precisions=(4, 8))

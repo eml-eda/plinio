@@ -25,13 +25,13 @@ from torch.fx.passes.shape_prop import ShapeProp
 
 from flexnas.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, \
     MixPrecModule
+from flexnas.graph.annotation import add_node_properties
 from flexnas.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
 from flexnas.methods.mixprec.quant.quantizers import Quantizer
 from flexnas.graph import get_graph_outputs
 from flexnas.graph import inspection
 
 # add new supported layers here:
-# TODO: can we fill this automatically based on classes that inherit from PITLayer?
 mixprec_layer_map: Dict[Type[nn.Module], Type[MixPrecModule]] = {
     nn.Conv2d: MixPrec_Conv2d,
     nn.Linear: MixPrec_Linear,
@@ -101,13 +101,11 @@ def convert(model: nn.Module,
     # Shape Prop
     # create a "fake" minibatch of 1 input for shape prop
     batch_example = torch.stack([torch.rand(input_shape)] * 1, 0)
-    # TODO: this is not very robust. Find a better way
     device = next(model.parameters()).device
     ShapeProp(mod).propagate(batch_example.to(device))
-
+    add_node_properties(mod)
     if conversion_type in ('autoimport', 'import'):
         fuse_conv_bn(mod)
-        # remove relu
     target_layers = convert_layers(mod,
                                    activation_precisions,
                                    weight_precisions,

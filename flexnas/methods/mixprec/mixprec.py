@@ -22,7 +22,7 @@ import torch
 import torch.nn as nn
 
 from flexnas.methods.dnas_base import DNAS
-from .mixprec_converter import convert
+from .graph import convert
 from .nn.mixprec_module import MixPrecModule
 from .nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel
 
