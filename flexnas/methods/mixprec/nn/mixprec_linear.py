@@ -70,12 +70,6 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             else:
                 self.bias = None
 
-        # TODO: Understand if I need this lines of code for regularization later on
-        # this will be overwritten later when we process the model graph
-        # self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
-        # self.register_buffer('out_features_eff', torch.tensor(self.out_features,
-        #                      dtype=torch.float32))
-
         self.a_precisions = a_precisions
         self.w_precisions = w_precisions
         self.mixprec_a_quantizer = a_quantizer
@@ -83,7 +77,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         if self.bias is not None:
             self.mixprec_b_quantizer = b_quantizer
             # Share NAS parameters of weights and biases
-            self.mixprec_b_quantizer.alpha_prec = self.mixprec_w_quantizer.alpha_prec
+            # self.mixprec_b_quantizer.alpha_prec = self.mixprec_w_quantizer.alpha_prec
         else:
             self.mixprec_b_quantizer = lambda *args: None  # Do Nothing
 
@@ -92,7 +86,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
 
-        In a nutshell,:
+        In a nutshell:
         - Quantize and combine the input tensor at the different `precisions`.
         - Quantize and combine the weight tensor at the different `precisions`.
         - Compute Linear operation using the previous obtained quantized tensors.
@@ -201,9 +195,12 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                                                          mixprec_w_quantizer,
                                                          b_quantizer_kwargs)
         elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-            raise NotImplementedError
-            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(submodule.out_features,
-                                                           b_quantizer,
+            mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
+            mixprec_w_quantizer = cast(MixPrec_Qtz_Channel, mixprec_w_quantizer)
+            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(b_quantizer,
+                                                           submodule.out_features,
+                                                           mixprec_a_quantizer,
+                                                           mixprec_w_quantizer,
                                                            b_quantizer_kwargs)
         else:
             msg = f'Supported mixed-precision types: {list(MixPrecType)}'

@@ -87,12 +87,6 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                 self.bias = None
         self.out_height = out_height
         self.out_width = out_width
-        # TODO: Understand if I need this lines of code for regularization later on
-        # this will be overwritten later when we process the model graph
-        # self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
-        # self.register_buffer('out_features_eff', torch.tensor(self.out_features,
-        #                      dtype=torch.float32))
-
         self.a_precisions = a_precisions
         self.w_precisions = w_precisions
         self.mixprec_a_quantizer = a_quantizer
@@ -126,9 +120,6 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
 
         # Linear operation
         q_out = self._conv_forward(q_inp, q_w, q_b)
-
-        # TODO: Understand what I need to do for regularization
-        # Save info for regularization
 
         return q_out
 
@@ -219,13 +210,12 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                                                          mixprec_w_quantizer,
                                                          b_quantizer_kwargs)
         elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-            raise NotImplementedError
             mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
             mixprec_w_quantizer = cast(MixPrec_Qtz_Channel, mixprec_w_quantizer)
-            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(submodule.out_channels,
+            mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(b_quantizer,
+                                                           submodule.out_channels,
                                                            mixprec_a_quantizer,
                                                            mixprec_w_quantizer,
-                                                           b_quantizer,
                                                            b_quantizer_kwargs)
         else:
             msg = f'Supported mixed-precision types: {list(MixPrecType)}'
