@@ -17,13 +17,13 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, Type, cast, Union
+from typing import Dict, Any, Optional, Iterator, Tuple, Type, cast, Union, List
 import torch
 import torch.fx as fx
 import torch.nn as nn
 import torch.nn.functional as F
 from ..quant.quantizers import Quantizer
-from ..quant.nn import Quant_Linear
+from ..quant.nn import Quant_Linear, Quant_List
 from .mixprec_module import MixPrecModule
 from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel, \
     MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias
@@ -242,15 +242,13 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         selected_a_quantizer = cast(Type[Quantizer], selected_a_quantizer)
 
         # Select precision(s) and quantizer(s) for weights and biases
+        selected_w_precision = submodule.selected_w_precision
+        selected_w_quantizer = submodule.selected_w_quantizer
         # w_mixprec_type is `PER_LAYER` => single precision/quantizer
         if submodule.w_mixprec_type == MixPrecType.PER_LAYER:
-            selected_w_precision = submodule.selected_w_precision
             selected_w_precision = cast(int, selected_w_precision)
-            selected_w_quantizer = submodule.selected_w_quantizer
             selected_w_quantizer = cast(Type[Quantizer], selected_w_quantizer)
             if submodule.bias is not None:
-                # selected_b_quantizer = submodule.selected_b_quantizer
-                # selected_b_quantizer = cast(Type[Quantizer], selected_b_quantizer)
                 submodule.mixprec_b_quantizer = cast(MixPrec_Qtz_Layer_Bias,
                                                      submodule.mixprec_b_quantizer)
                 # Build bias quantizer using s_factors corresponding to selected
@@ -258,15 +256,11 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                 b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
                 b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
                 b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
-                # b_quantizer_kwargs['scale_act'] = selected_a_quantizer.s_a  # type: ignore
-                # b_quantizer_kwargs['scale_weight'] = selected_w_quantizer.s_w  # type: ignore
                 b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
                 b_quantizer = cast(Type[Quantizer], b_quantizer)
             else:
                 b_quantizer = None
-            # submodule.linear = cast(nn.Linear, submodule.linear)
             submodule = cast(nn.Linear, submodule)
-            # new_submodule = Quant_Linear(submodule.linear,
             new_submodule = Quant_Linear(submodule,
                                          selected_a_precision,
                                          selected_w_precision,
@@ -275,7 +269,44 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                                          b_quantizer)
         # w_mixprec_type is `PER_CHANNEL` => multiple precision/quantizer
         elif submodule.w_mixprec_type == MixPrecType.PER_CHANNEL:
-            raise NotImplementedError  # TODO
+            selected_w_precision = cast(List[int], selected_w_precision)
+            selected_w_quantizer = cast(List[Type[Quantizer]], selected_w_quantizer)
+            submodule = cast(nn.Linear, submodule)
+            nn_list = []
+            prec_and_quantz = dict(zip(selected_w_precision, selected_w_quantizer))
+            for prec, w_quant in prec_and_quantz.items():
+                mask = [c == prec for c in selected_w_precision]
+                out_features = sum(mask)
+                if out_features == 0:  # No out_features for the current prec
+                    continue
+                new_lin = nn.Linear(submodule.in_features,
+                                    out_features,
+                                    submodule.bias is not None)
+                new_weights = submodule.weight[mask, :]
+                with torch.no_grad():
+                    new_lin.weight.copy_(new_weights)
+                    if submodule.bias is not None:
+                        new_lin.bias.copy_(submodule.bias[mask])
+                        submodule.mixprec_b_quantizer = cast(MixPrec_Qtz_Channel_Bias,
+                                                             submodule.mixprec_b_quantizer)
+                        # Build bias quantizer using s_factors corresponding to selected
+                        # act and weights quantizers
+                        b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
+                        b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
+                        b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
+                        b_quantizer_kwargs['cout'] = out_features
+                        b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
+                        b_quantizer = cast(Type[Quantizer], b_quantizer)
+                    else:
+                        b_quantizer = None
+                quant_lin = Quant_Linear(new_lin,
+                                         selected_a_precision,
+                                         prec,
+                                         selected_a_quantizer,
+                                         w_quant,
+                                         b_quantizer)
+                nn_list.append(quant_lin)
+            new_submodule = Quant_List(nn_list)
         else:
             msg = f'Supported mixed-precision types: {list(MixPrecType)}'
             raise ValueError(msg)
@@ -331,23 +362,30 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             return self.a_precisions[idx]
 
     @property
-    def selected_w_precision(self) -> int:
-        """Return the selected precision based on the magnitude of `alpha_prec`
+    def selected_w_precision(self) -> Union[int, List[int]]:
+        """Return the selected precision(s) based on the magnitude of `alpha_prec`
         components for weights
 
-        :return: the selected precision
-        :rtype: int
+        :return: a function returning the selected precision(s)
+        :rtype: Union[int, List[int]]
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_w_quantizer.alpha_prec))
-            return self.w_precisions[idx]
+            if self.w_mixprec_type == MixPrecType.PER_LAYER:
+                idx = int(torch.argmax(self.mixprec_w_quantizer.alpha_prec))
+                return self.w_precisions[idx]
+            elif self.w_mixprec_type == MixPrecType.PER_CHANNEL:
+                idx = torch.argmax(self.mixprec_w_quantizer.alpha_prec, dim=0)
+                return [self.w_precisions[int(i)] for i in idx]
+            else:
+                msg = f'Supported mixed-precision types: {list(MixPrecType)}'
+                raise ValueError(msg)
 
     @property
     def selected_a_quantizer(self) -> Type[Quantizer]:
         """Return the selected quantizer based on the magnitude of `alpha_prec`
         components for activations
 
-        :return: the selected quantizer
+        :return: the selected quantizer(s)
         :rtype: Type[Quantizer]
         """
         with torch.no_grad():
@@ -357,18 +395,27 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             return qtz
 
     @property
-    def selected_w_quantizer(self) -> Type[Quantizer]:
-        """Return the selected quantizer based on the magnitude of `alpha_prec`
+    def selected_w_quantizer(self) -> Union[Type[Quantizer], List[Type[Quantizer]]]:
+        """Return the selected quantizer(s) based on the magnitude of `alpha_prec`
         components for weights
 
-        :return: the selected quantizer
-        :rtype: Type[Quantizer]
+        :return: the selected quantizer(s)
+        :rtype: Union[Type[Quantizer], List[Type[Quantizer]]]
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_w_quantizer.alpha_prec))
-            qtz = self.mixprec_w_quantizer.mix_qtz[idx]
-            qtz = cast(Type[Quantizer], qtz)
-            return qtz
+            if self.w_mixprec_type == MixPrecType.PER_LAYER:
+                idx = int(torch.argmax(self.mixprec_w_quantizer.alpha_prec))
+                qtz = self.mixprec_w_quantizer.mix_qtz[idx]
+                qtz = cast(Type[Quantizer], qtz)
+                return qtz
+            elif self.w_mixprec_type == MixPrecType.PER_CHANNEL:
+                idx = torch.argmax(self.mixprec_w_quantizer.alpha_prec, dim=0)
+                qtz = [self.mixprec_w_quantizer.mix_qtz[i] for i in idx]
+                qtz = cast(List[Type[Quantizer]], qtz)
+                return qtz
+            else:
+                msg = f'Supported mixed-precision types: {list(MixPrecType)}'
+                raise ValueError(msg)
 
     @property
     def selected_b_quantizer(self) -> Type[Quantizer]:
