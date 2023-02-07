@@ -97,7 +97,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
                                            dim=0)
         device = self.alpha_prec.device
-        p_tensor = torch.Tensor(self.precisions, device=device)
+        p_tensor = torch.tensor(self.precisions, device=device)
         eff_prec = (soft_alpha.sum(dim=1) * p_tensor).sum() / self.cout  # TODO: Check
         return eff_prec
 
