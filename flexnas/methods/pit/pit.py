@@ -190,8 +190,6 @@ class PIT(DNAS):
         for layer in self._target_layers:
             if hasattr(layer, 'train_features'):
                 layer.train_features = value
-            else:
-                print(f"Warning: layer {layer} does not support features optimization")
         self._train_features = value
 
     @property
@@ -213,8 +211,6 @@ class PIT(DNAS):
         for layer in self._target_layers:
             if hasattr(layer, 'train_rf'):
                 layer.train_rf = value
-            else:
-                print(f"Warning: layer {layer} does not support receptive field optimization")
         self._train_rf = value
 
     @property
@@ -236,8 +232,6 @@ class PIT(DNAS):
         for layer in self._target_layers:
             if hasattr(layer, 'train_dilation'):
                 layer.train_dilation = value
-            else:
-                print(f"Warning: layer {layer} does not support dilation optimization")
         self._train_dilation = value
 
     def arch_export(self, add_bn=True):

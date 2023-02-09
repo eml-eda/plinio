@@ -33,7 +33,7 @@ from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from flexnas.graph.annotation import add_features_calculator, add_node_properties, \
         associate_input_features
 from flexnas.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
-        get_graph_inputs, all_output_nodes
+        get_graph_inputs
 from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
 from flexnas.graph.utils import fx_to_nx_graph
 
@@ -179,9 +179,9 @@ def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesM
             # nodes such as flatten/squeeze etc make this necessary
             if n.meta['features_defining'] or n.meta['untouchable'] and sm is None:
                 sm = PITFeaturesMasker(n.meta['tensor_meta'].shape[1])
-            if n in get_graph_outputs(mod.graph):
+            if n in get_graph_outputs(mod.graph) or n in get_graph_inputs(mod.graph):
                 # distinguish the case in which the number of features must "frozen"
-                # i.e. the case of output-connected components
+                # i.e. the case of input-connected or output-connected components,
                 # this may overwrite a previously set "sm"
                 sm = PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1])
                 break

@@ -264,3 +264,24 @@ class ToyRegression_2D(nn.Module):
         x = self.conv0(x)
         x = torch.flatten(x, 1)
         return self.fc(x)
+
+
+class ToyInputConnectedDW(nn.Module):
+    def __init__(self):
+        super(ToyInputConnectedDW, self).__init__()
+        self.input_shape = (3, 28, 28)
+        self.dw_conv = nn.Conv2d(3, 3, (3, 3), groups=3, padding='same')
+        self.dw_bn = nn.BatchNorm2d(3)
+        self.dw_relu = nn.ReLU()
+        self.pw_conv = nn.Conv2d(3, 16, (1, 1), padding='same')
+        self.pw_bn = nn.BatchNorm2d(16)
+        self.pw_relu = nn.ReLU()
+        self.avgpool = nn.AvgPool2d(28)
+        self.fc = nn.Linear(16, 1)
+
+    def forward(self, x):
+        x = self.dw_relu(self.dw_bn(self.dw_conv(x)))
+        x = self.pw_relu(self.pw_bn(self.pw_conv(x)))
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        return self.fc(x)

@@ -23,10 +23,11 @@ import torch.nn as nn
 from flexnas.methods import PIT
 from flexnas.methods.pit.nn import PITConv1d, PITConv2d
 from flexnas.methods.pit.nn import PITModule
+from flexnas.methods.pit.nn.features_masker import PITFrozenFeaturesMasker
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
-from unit_test.models import ToyMultiPath1, ToyMultiPath2
+from unit_test.models import ToyAdd, ToyMultiPath1, ToyMultiPath2, ToyInputConnectedDW
 from unit_test.models import DSCNN
 
 
@@ -114,6 +115,26 @@ class TestPITConvert(unittest.TestCase):
             ('conv2', 'conv3', False),  # concat over channels
         )
         self._check_shared_maskers(new_nn, shared_masker_rules)
+
+    def test_autoimport_frozen_features(self):
+        """Test that input- and output-connected features masks are correctly 'frozen'"""
+        nn_ut = ToyInputConnectedDW()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        frozen_masker_rules = (
+            ('dw_conv', True),   # input-connected and DW
+            ('pw_conv', False),  # normal
+            ('fc', True),        # output-connected
+        )
+        self._check_frozen_maskers(new_nn, frozen_masker_rules)
+        nn_ut = ToyAdd()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        frozen_masker_rules = (
+            ('conv0', False),   # input-connected but not DW
+            ('conv1', False),   # input-connected byt not DW
+            ('conv2', False),   # normal
+            ('fc', True),       # output-connected
+        )
+        self._check_frozen_maskers(new_nn, frozen_masker_rules)
 
     def test_exclude_types_simple(self):
         nn_ut = ToyMultiPath1()
@@ -356,7 +377,7 @@ class TestPITConvert(unittest.TestCase):
     def _check_shared_maskers(self, new_nn: PIT, check_rules: Iterable[Tuple[str, str, bool]]):
         """Check if shared maskers are set correctly during an autoimport.
 
-        The check_dict contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
+        check_rules contains: (1st_layer, 2nd_layer, shared_flag) where shared_flag can be
         true or false to specify that 1st_layer and 2nd_layer must/must-not share their maskers
         respectively.
         """
@@ -370,6 +391,22 @@ class TestPITConvert(unittest.TestCase):
             else:
                 msg = f"Layers {layer_1} and {layer_2} are expected to have independent maskers"
                 self.assertNotEqual(masker_1, masker_2, msg)
+
+    def _check_frozen_maskers(self, new_nn: PIT, check_rules: Iterable[Tuple[str, bool]]):
+        """Check if frozen maskers are set correctly during an autoimport.
+
+        check_rules contains: (layer_name, frozen_flag) where frozen_flag can be true or false to
+        specify that the features masker for layer_name must/must-not be frozen
+        """
+        converted_layer_names = dict(new_nn.seed.named_modules())
+        for layer, frozen_flag in check_rules:
+            masker = converted_layer_names[layer].out_features_masker  # type: ignore
+            if frozen_flag:
+                msg = f"Layers {layer} is expected to have a frozen channel masker, but hasn't"
+                self.assertTrue(isinstance(masker, PITFrozenFeaturesMasker), msg)
+            else:
+                msg = f"Layers {layer} is expected to have an unfrozen features masker, but hasn't"
+                self.assertFalse(isinstance(masker, PITFrozenFeaturesMasker), msg)
 
     def _check_layers_exclusion(self, new_nn: PIT, excluded: Iterable[str]):
         """Check that layers in "excluded" have not be converted to PIT form"""
