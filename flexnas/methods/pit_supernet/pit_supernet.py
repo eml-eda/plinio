@@ -39,7 +39,7 @@ class PITSuperNet(DNAS):
 
         self._input_shape = input_shape
         self._regularizer = regularizer
-        self.seed, self._target_modules = convert(
+        self.seed, self._target_modules, self._pit_only_layers = convert(
             model,
             self._input_shape,
             'autoimport' if autoconvert_layers else 'import',
@@ -72,6 +72,10 @@ class PITSuperNet(DNAS):
         size = torch.tensor(0, dtype=torch.float32)
         for module in self._target_modules:
             size = size + module[1].get_size()
+
+        for module in self._pit_only_layers:
+            size = size + module.get_size()
+
         return size
 
     def get_macs(self) -> torch.Tensor:
@@ -83,6 +87,10 @@ class PITSuperNet(DNAS):
         macs = torch.tensor(0, dtype=torch.float32)
         for t in self._target_modules:
             macs = macs + t[1].get_macs()
+
+        for module in self._pit_only_layers:
+            macs = macs + module.get_macs()
+
         return macs
 
     def get_total_icv(self, eps: float = 1e-3) -> torch.Tensor:
@@ -108,7 +116,6 @@ class PITSuperNet(DNAS):
         """
         for module in self._target_modules:
             module[1].softmax_temperature = value
-
 
     @property
     def regularizer(self) -> str:
@@ -138,7 +145,7 @@ class PITSuperNet(DNAS):
         :rtype: nn.Module
         """
         model = self.seed
-        model, _ = convert(model, self._input_shape, 'export')
+        model, _, _ = convert(model, self._input_shape, 'export')
         return model
 
     def arch_summary(self) -> Dict[str, Dict[str, Any]]:

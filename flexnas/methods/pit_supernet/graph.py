@@ -6,8 +6,8 @@ from torch.fx.passes.shape_prop import ShapeProp
 
 from flexnas.graph.annotation import add_node_properties, add_features_calculator, \
         associate_input_features
-from flexnas.graph.inspection import is_layer, get_graph_outputs, get_graph_inputs, \
-        all_output_nodes
+from flexnas.graph.inspection import is_layer, is_inherited_layer, get_graph_outputs, \
+        get_graph_inputs, all_output_nodes
 from flexnas.graph.features_calculation import SoftMaxFeaturesCalculator
 from flexnas.graph.utils import fx_to_nx_graph
 from .nn import PITSuperNetCombiner, PITSuperNetModule
@@ -31,7 +31,7 @@ class PITSuperNetTracer(fx.Tracer):
 def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()
-            ) -> Tuple[nn.Module, List]:
+            ) -> Tuple[nn.Module, List, List]:
     """Converts a nn.Module, to/from "NAS-able" PIT and SuperNet format
 
     :param model: the input nn.Module
@@ -74,13 +74,26 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
         pit_graph.register_input_features(mod)
         # lastly, import SuperNet selection layers
         sn_target_layers = import_layers(mod)
+        pit_only_layers = find_pit_only_layers(mod)
     else:
         export_graph(mod)
         sn_target_layers = []
+        pit_only_layers = []
 
     mod.graph.lint()
     mod.recompile()
-    return mod, sn_target_layers
+    return mod, sn_target_layers, pit_only_layers
+
+
+def find_pit_only_layers(mod: fx.GraphModule) -> List[nn.Module]:
+    pit_only_layers = []
+
+    for n in mod.graph.nodes:
+        if '.sn_input_layers' not in str(n.target):
+            if is_inherited_layer(n, mod, (PITModule,)):
+                sub_mod = mod.get_submodule(str(n.target))
+                pit_only_layers.append(sub_mod)
+    return pit_only_layers
 
 
 def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
