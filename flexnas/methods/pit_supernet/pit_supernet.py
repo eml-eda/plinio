@@ -1,4 +1,4 @@
-from typing import Tuple, Any, Iterator, Iterable, Type, Dict, cast
+from typing import Tuple, Any, Iterator, Iterable, Type, Dict, Optional, cast
 import torch
 import torch.nn as nn
 from flexnas.methods.dnas_base import DNAS
@@ -109,13 +109,32 @@ class PITSuperNet(DNAS):
         return tot_icv
 
     def update_softmax_temperature(self, value):
-        """Update softmax temperature of all submodules
+        """Update softmax temperature of all SuperNet blocks
 
-        :param value: value
+        Deprecated: use update_softmax_options() instead
+
+        :param value: temperature value
         :type value: float
         """
         for module in self._target_sn_combiners:
             module[1].softmax_temperature = value
+
+    def update_softmax_options(
+            self,
+            temperature: Optional[float] = None,
+            hard: Optional[bool] = None):
+        """Update softmax options of all SuperNet blocks
+
+        :param temperature: SoftMax temperature
+        :type temperature: Optional[float]
+        :param hard: Hard vs Soft sampling
+        :type hard: Optional[bool]
+        """
+        for module in self._target_sn_combiners:
+            if temperature is not None:
+                module[1].softmax_temperature = temperature
+            if hard is not None:
+                module[1].hard_softmax = hard
 
     @property
     def regularizer(self) -> str:
