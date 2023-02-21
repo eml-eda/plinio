@@ -35,7 +35,7 @@ class TestPITSuperNet(unittest.TestCase):
 
         model = DSCnnPITSN()
         sn_model = PITSuperNet(model, (ch_in, in_width, in_height))
-        target_modules = sn_model._target_modules
+        target_modules = sn_model._target_sn_combiners
         self.assertEqual(len(target_modules), 4, "Wrong target modules number")
 
     def test_kws_pitsn_input(self):

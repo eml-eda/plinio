@@ -6,10 +6,9 @@ from torch.fx.passes.shape_prop import ShapeProp
 
 from flexnas.graph.annotation import add_node_properties, add_features_calculator, \
         associate_input_features
-from flexnas.graph.inspection import is_layer, is_inherited_layer, get_graph_outputs, \
-        get_graph_inputs, all_output_nodes
+from flexnas.graph.inspection import is_layer, is_inherited_layer, get_graph_inputs, \
+        all_output_nodes
 from flexnas.graph.features_calculation import SoftMaxFeaturesCalculator
-from flexnas.graph.utils import fx_to_nx_graph
 from .nn import PITSuperNetCombiner, PITSuperNetModule
 from flexnas.methods.pit import graph as pit_graph
 from flexnas.methods.pit.nn import PITModule
@@ -73,36 +72,42 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
         associate_input_features(mod)
         pit_graph.register_input_features(mod)
         # lastly, import SuperNet selection layers
-        sn_target_layers = import_layers(mod)
-        pit_only_layers = find_pit_only_layers(mod)
+        sn_combiners = import_sn_combiners(mod)
+        pit_modules = find_other_pit_modules(mod)
     else:
         export_graph(mod)
-        sn_target_layers = []
-        pit_only_layers = []
+        sn_combiners = []
+        pit_modules = []
 
     mod.graph.lint()
     mod.recompile()
-    return mod, sn_target_layers, pit_only_layers
+    return mod, sn_combiners, pit_modules
 
 
-def find_pit_only_layers(mod: fx.GraphModule) -> List[nn.Module]:
-    pit_only_layers = []
+def find_other_pit_modules(mod: fx.GraphModule) -> List[PITModule]:
+    """Finds layers optimized by PIT but not included in SuperNet branches
 
+    :param mod: a torch.fx.GraphModule.
+    :type mod: fx.GraphModule
+    :return: the list of PIT Modules not included in SuperNet branches that will be optimized by the
+    NAS
+    :rtype: List[PITModule]
+    """
+    pit_modules = []
     for n in mod.graph.nodes:
         if '.sn_input_layers' not in str(n.target):
             if is_inherited_layer(n, mod, (PITModule,)):
                 sub_mod = mod.get_submodule(str(n.target))
-                pit_only_layers.append(sub_mod)
-    return pit_only_layers
+                pit_modules.append(sub_mod)
+    return pit_modules
 
 
-def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
-    """TODO
+def import_sn_combiners(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
+    """Finds and prepares "Combiner" layers used to select SuperNet branches during the search phase
 
-    :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to
-    determine the sizes of PIT masks.
+    :param mod: a torch.fx.GraphModule with tensor shapes annotations.
     :type mod: fx.GraphModule
-    :return: the list of target layers that will be optimized by the NAS
+    :return: the list of "Combiner" layers that will be optimized by the NAS
     :rtype: List[Tuple[str, PITSuperNetCombiner]]
     """
     target_layers = []
@@ -126,7 +131,10 @@ def import_layers(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
 
 
 def export_graph(mod: fx.GraphModule):
-    """TODO
+    """Exports the graph of the final NN, selecting the appropriate SuperNet branches.
+
+    :param mod: a torch.fx.GraphModule of a SuperNet
+    :type mod: fx.GraphModule
     """
     for n in mod.graph.nodes:
         if 'sn_combiner' in str(n.target):

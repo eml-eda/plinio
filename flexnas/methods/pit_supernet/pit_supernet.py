@@ -39,7 +39,7 @@ class PITSuperNet(DNAS):
 
         self._input_shape = input_shape
         self._regularizer = regularizer
-        self.seed, self._target_modules, self._pit_only_layers = convert(
+        self.seed, self._target_sn_combiners, self._target_pit_modules = convert(
             model,
             self._input_shape,
             'autoimport' if autoconvert_layers else 'import',
@@ -70,10 +70,10 @@ class PITSuperNet(DNAS):
         :rtype: torch.Tensor
         """
         size = torch.tensor(0, dtype=torch.float32)
-        for module in self._target_modules:
+        for module in self._target_sn_combiners:
             size = size + module[1].get_size()
 
-        for module in self._pit_only_layers:
+        for module in self._target_pit_modules:
             size = size + module.get_size()
 
         return size
@@ -85,10 +85,10 @@ class PITSuperNet(DNAS):
         :rtype: torch.Tensor
         """
         macs = torch.tensor(0, dtype=torch.float32)
-        for t in self._target_modules:
+        for t in self._target_sn_combiners:
             macs = macs + t[1].get_macs()
 
-        for module in self._pit_only_layers:
+        for module in self._target_pit_modules:
             macs = macs + module.get_macs()
 
         return macs
@@ -103,7 +103,7 @@ class PITSuperNet(DNAS):
         :rtype: torch.Tensor
         """
         tot_icv = torch.tensor(0, dtype=torch.float32)
-        for t in self._target_modules:
+        for t in self._target_sn_combiners:
             theta_alpha = t[1].theta_alpha
             tot_icv = tot_icv + (torch.mean(theta_alpha)**2) / (torch.var(theta_alpha) + eps)
         return tot_icv
@@ -114,7 +114,7 @@ class PITSuperNet(DNAS):
         :param value: value
         :type value: float
         """
-        for module in self._target_modules:
+        for module in self._target_sn_combiners:
             module[1].softmax_temperature = value
 
     @property
@@ -156,7 +156,7 @@ class PITSuperNet(DNAS):
         :rtype: Dict[str, Dict[str, Any]]
         """
         arch = {}
-        for name, layer in self._target_modules:
+        for name, layer in self._target_sn_combiners:
             layer = cast(PITSuperNetCombiner, layer)
             arch[name] = layer.summary()
             arch[name]['type'] = layer.__class__.__name__
@@ -174,7 +174,7 @@ class PITSuperNet(DNAS):
         :return: an iterator over the architectural parameters of the NAS
         :rtype: Iterator[nn.Parameter]
         """
-        for module in self._target_modules:
+        for module in self._target_sn_combiners:
             prfx = prefix
             prfx += "." if len(prefix) > 0 else ""
             prfx += module[0]
