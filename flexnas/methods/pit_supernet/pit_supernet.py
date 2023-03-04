@@ -219,3 +219,12 @@ class PITSuperNet(DNAS):
         for name, param in self.seed.named_parameters():
             if name not in exclude:
                 yield name, param
+
+    def __str__(self):
+        """Prints the architecture found by the NAS to screen
+
+        :return: a str representation of the current architecture
+        :rtype: str
+        """
+        arch = self.arch_summary()
+        return str(arch)
