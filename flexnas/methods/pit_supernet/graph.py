@@ -66,7 +66,7 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     pit_graph.convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
         # then, for import, perform additional graph passes needed mostly for PIT
-        pit_graph.fuse_conv_bn(mod)
+        pit_graph.fuse_pit_modules(mod)
         add_features_calculator(mod, [pit_graph.pit_features_calc, combiner_features_calc])
         set_combiner_properties(mod, add=['features_defining'], remove=['features_propagating'])
         associate_input_features(mod)

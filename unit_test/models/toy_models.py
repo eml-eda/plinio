@@ -285,3 +285,45 @@ class ToyInputConnectedDW(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         return self.fc(x)
+
+
+class ToyBatchNorm(nn.Module):
+    def __init__(self):
+        super(ToyBatchNorm, self).__init__()
+        self.input_shape = (3, 28, 28)
+        self.dw_conv = nn.Conv2d(3, 3, (3, 3), groups=3, padding='same')
+        self.dw_bn = nn.BatchNorm2d(3)
+        self.dw_relu = nn.ReLU()
+        self.pw_conv = nn.Conv2d(3, 16, (1, 1), padding='same')
+        self.pw_bn = nn.BatchNorm2d(16)
+        self.pw_relu = nn.ReLU()
+        self.avgpool = nn.AvgPool2d(28)
+        self.fc1 = nn.Linear(16, 16)
+        self.fc1_bn = nn.BatchNorm1d(16)
+        self.fc1_relu = nn.ReLU()
+        self.fc2 = nn.Linear(16, 1)
+
+    def forward(self, x):
+        x = self.dw_relu(self.dw_bn(self.dw_conv(x)))
+        x = self.pw_relu(self.pw_bn(self.pw_conv(x)))
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc1_relu(self.fc1_bn(self.fc1(x)))
+        return self.fc2(x)
+
+
+class ToyIllegalBN(nn.Module):
+    def __init__(self):
+        super(ToyIllegalBN, self).__init__()
+        self.input_shape = (3, 28, 28)
+        self.conv1 = nn.Conv2d(3, 16, (3, 3), padding='same')
+        self.conv2 = nn.Conv2d(16, 16, (3, 3), padding='same')
+        self.bn = nn.BatchNorm2d(16)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        # Conv output used elsewhere
+        tmp = self.conv1(x)
+        x1 = self.relu(self.bn(tmp))
+        x2 = self.conv2(tmp)
+        return x1 + x2

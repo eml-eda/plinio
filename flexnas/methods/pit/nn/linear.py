@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import cast, Dict, Any, Iterator, Tuple
+from typing import cast, Dict, Any, Iterator, Tuple, Optional
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -57,6 +57,7 @@ class PITLinear(nn.Linear, PITModule):
         self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
         self.out_features_masker = out_features_masker
         self._binarization_threshold = binarization_threshold
+        self.following_bn_args: Optional[Dict[str, Any]] = None
         self.register_buffer('out_features_eff', torch.tensor(self.out_features,
                              dtype=torch.float32))
 
@@ -123,7 +124,7 @@ class PITLinear(nn.Linear, PITModule):
         submodule = cast(PITLinear, submodule)
         cout_mask = submodule.features_mask.bool()
         cin_mask = submodule.input_features_calculator.features_mask.bool()
-        # note: kernel size and dilation are not optimized for conv2d
+        # note: kernel size and dilation are not optimized for Linear
         new_submodule = nn.Linear(
             submodule.in_features_opt,
             submodule.out_features_opt,
@@ -135,6 +136,27 @@ class PITLinear(nn.Linear, PITModule):
             if submodule.bias is not None:
                 new_submodule.bias.copy_(submodule.bias[cout_mask])
         mod.add_submodule(str(n.target), new_submodule)
+
+        # unfuse the BatchNorm
+        if submodule.following_bn_args is not None:
+            new_bn = nn.BatchNorm1d(
+                submodule.out_features_opt,
+                eps=submodule.following_bn_args['eps'],
+                momentum=submodule.following_bn_args['momentum'],
+                affine=submodule.following_bn_args['affine'],
+                track_running_stats=submodule.following_bn_args['track_running_stats']
+            )
+            mod.add_submodule(str(n.target) + "_exported_bn", new_bn)
+            # add the batchnorm just after the conv in the graph
+            with mod.graph.inserting_after(n):
+                new_node = mod.graph.call_module(
+                    str(n.target) + "_exported_bn",
+                    args=(n,)
+                )
+                n.replace_all_uses_with(new_node)
+                # TODO: previous row replaces also the input to the BN with the BN itself.
+                # The following line fixes it. Is there a cleaner way to do this?
+                new_node.replace_input_with(new_node, n)
         return
 
     def summary(self) -> Dict[str, Any]:

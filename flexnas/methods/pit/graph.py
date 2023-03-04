@@ -34,6 +34,7 @@ from flexnas.graph.annotation import add_features_calculator, add_node_propertie
         associate_input_features
 from flexnas.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
         get_graph_inputs
+from flexnas.graph.transformation import fuse_consecutive_layers
 from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
 from flexnas.graph.utils import fx_to_nx_graph
 
@@ -95,7 +96,7 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     add_node_properties(mod)
     target_layers = convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
-        fuse_conv_bn(mod)
+        fuse_pit_modules(mod)
         add_features_calculator(mod, [pit_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
@@ -291,25 +292,26 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
         target_layers.append(mod.get_submodule(str(n.target)))
 
 
-def fuse_conv_bn_inplace(conv: PITModule, bn):
+def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
     """
-    Given a conv Module `A` and an batch_norm module `B`, modifies A
+    Given a conv/linear Module `A` and an batch_norm module `B`, modifies A
     such that A(x) == B(A_old(x))
     """
+    assert (isinstance(lin, PITConv1d) or isinstance(lin, PITConv2d) or isinstance(lin, PITLinear))
+    assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
     if not bn.track_running_stats:
-        raise AttributeError("BatchNorm foldign requires track_running_stats = True")
-    assert (isinstance(conv, PITConv1d) or isinstance(conv, PITConv2d))
+        raise AttributeError("BatchNorm folding requires track_running_stats = True")
     with torch.no_grad():
-        conv.following_bn_args = {
+        lin.following_bn_args = {
             'eps': bn.eps,
             'momentum': bn.momentum,
             'affine': bn.affine,
             'track_running_stats': bn.track_running_stats,
         }
-        conv_w = conv.weight
-        conv_b = conv.bias
-        bn_rm = bn.running_mean
-        bn_rv = bn.running_var
+        conv_w = lin.weight
+        conv_b = lin.bias
+        bn_rm = cast(torch.Tensor, bn.running_mean)
+        bn_rv = cast(torch.Tensor, bn.running_var)
         bn_w = bn.weight
         bn_b = bn.bias
         if conv_b is None:
@@ -321,47 +323,21 @@ def fuse_conv_bn_inplace(conv: PITModule, bn):
         bn_var_rsqrt = torch.rsqrt(bn_rv + bn.eps)
         conv_w = conv_w * (bn_w * bn_var_rsqrt).reshape([-1] + [1] * (len(conv_w.shape) - 1))
         conv_b = (conv_b - bn_rm) * bn_var_rsqrt * bn_w + bn_b
-        conv.weight.copy_(conv_w)
-        if conv.bias is None:
-            conv.bias = torch.nn.Parameter(conv_b)
+        lin.weight.copy_(conv_w)
+        if lin.bias is None:
+            lin.bias = torch.nn.Parameter(conv_b)
         else:
-            conv.bias.copy_(conv_b)
+            lin.bias.copy_(conv_b)
 
 
-def fuse_conv_bn(mod: fx.GraphModule):
-    """Fuses all BatchNorm layers occurring just after a PITLayer with it.
-    This is needed because PIT channel masking does not work with BN just after conv.
-    Also sets the "had_bn" field in PITLayers to then re-split the BN during export
-
-    :param mod: a torch.fx.GraphModule with tensor shapes annotations.
+def fuse_pit_modules(mod: fx.GraphModule):
+    """Fuse sequences of layers as required by PIT. Namely: Conv-BN and Linear-BN
+    :param mod: the parent module
     :type mod: fx.GraphModule
     """
-    # partially taken from: https://pytorch.org/tutorials/intermediate/fx_conv_bn_fuser.html
-    modules = dict(mod.named_modules())
-    for node in mod.graph.nodes:
-        if node.op != 'call_module':
-            continue
-        if not isinstance(node.args[0], fx.Node) or node.args[0].op != 'call_module':
-            continue
-        isbn1d = isinstance(modules[node.target], PITBatchNorm1d)
-        prevconv1d = isinstance(modules[node.args[0].target], PITConv1d)
-        isbn2d = isinstance(modules[node.target], PITBatchNorm2d)
-        prevconv2d = isinstance(modules[node.args[0].target], PITConv2d)
-        if (isbn1d and prevconv1d) or (isbn2d and prevconv2d):
-            if len(node.args[0].users) > 1:
-                raise ValueError("""Convolution followed by BN but used also by other layers.
-                This layer cannot be converted by PIT""")
-            conv = modules[node.args[0].target]
-            bn = modules[node.target]
-            assert (isinstance(conv, PITConv1d) or isinstance(conv, PITConv2d))
-            fuse_conv_bn_inplace(conv, bn)
-            # next line removed because we modify inplace
-            # replace_node_module(node.args[0], modules, fused_conv)
-            node.replace_all_uses_with(node.args[0])
-            # Now that all uses of the batch norm have been replaced, we can
-            # safely remove the batch norm.
-            mod.graph.erase_node(node)
-    mod.delete_all_unused_submodules()
+    fuse_consecutive_layers(mod, PITConv1d, nn.BatchNorm1d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, PITConv2d, nn.BatchNorm2d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, PITLinear, nn.BatchNorm1d, fuse_bn_inplace)
 
 
 def register_input_features(mod: fx.GraphModule):

@@ -21,13 +21,14 @@ import unittest
 import torch
 import torch.nn as nn
 from flexnas.methods import PIT
-from flexnas.methods.pit.nn import PITConv1d, PITConv2d
+from flexnas.methods.pit.nn import PITConv1d, PITConv2d, PITLinear
 from flexnas.methods.pit.nn import PITModule
 from flexnas.methods.pit.nn.features_masker import PITFrozenFeaturesMasker
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
 from unit_test.models import ToyAdd, ToyMultiPath1, ToyMultiPath2, ToyInputConnectedDW
+from unit_test.models import ToyBatchNorm, ToyIllegalBN
 from unit_test.models import DSCNN
 
 
@@ -168,6 +169,21 @@ class TestPITConvert(unittest.TestCase):
         excluded = ('conv1')
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
+
+    def test_batchnorm_fusion(self):
+        """Test that batchnorms are correctly fused during import and re-generated during export"""
+        nn_ut = ToyBatchNorm()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        self._check_batchnorm_folding(nn_ut, new_nn.seed)
+        self._check_batchnorm_memory(new_nn.seed, ('dw_conv', 'pw_conv', 'fc1'))
+        exported_nn = new_nn.arch_export()
+        self._check_batchnorm_unfolding(new_nn.seed, exported_nn)
+
+    def test_batchnorm_fusion_illegal(self):
+        """Test that unsupported batchnorm fusions trigger an error"""
+        nn_ut = ToyIllegalBN()
+        with self.assertRaises(ValueError):
+            PIT(nn_ut, input_shape=nn_ut.input_shape)
 
     def test_exclude_names_advanced(self):
         """Test the exclude_names functionality on a ResNet like model"""
@@ -506,6 +522,37 @@ class TestPITConvert(unittest.TestCase):
                 pass
             else:
                 self.fail("Excluded layer has the output_channel_masker set")
+
+    def _check_batchnorm_folding(self, original_mod: nn.Module, pit_seed: nn.Module):
+        """Compare two nn.Modules, where one has been imported and exported by PIT
+        to verify batchnorm folding"""
+        for name, child in original_mod.named_children():
+            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                self.assertTrue(name not in pit_seed._modules,
+                                f"BatchNorm {name} not folder")
+        for name, child in pit_seed.named_children():
+            self.assertFalse(isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)),
+                             f"Found BatchNorm {name} in converted module")
+
+    def _check_batchnorm_memory(self, pit_seed: nn.Module, layers: Iterable[str]):
+        """Check that, in a PIT converted model, PIT layers that were originally followed
+        by BatchNorm have saved internally the BN information for restoring it later"""
+        for name, child in pit_seed.named_children():
+            if isinstance(child, PITModule) and name in layers:
+                self.assertTrue(child.following_bn_args is not None)
+
+    def _check_batchnorm_unfolding(self, pit_seed: nn.Module, exported_mod: nn.Module):
+        """Check that, in a PIT converted model, PIT layers that were originally followed
+        by BatchNorm have saved internally the BN information for restoring it later"""
+        for name, child in pit_seed.named_children():
+            if isinstance(child, PITModule) and child.following_bn_args is not None:
+                bn_name = name + "_exported_bn"
+                self.assertTrue(bn_name in exported_mod._modules)
+                new_child = cast(nn.Module, exported_mod._modules[bn_name])
+                if isinstance(child, (PITConv1d, PITLinear)):
+                    self.assertTrue(isinstance(new_child, nn.BatchNorm1d))
+                if isinstance(child, (PITConv2d)):
+                    self.assertTrue(isinstance(new_child, nn.BatchNorm2d))
 
 
 if __name__ == '__main__':
