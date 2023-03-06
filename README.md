@@ -1,6 +1,7 @@
 <div align="center">
-<img src=".assets/plinio_text.png" width="700"/>
+<img src=".assets/plinio_logo.png" width="700"/>
 </div>
+<sub><sup><i>N.B., logo partially generated with Stable Diffusion.</i></sup></sub>
 
 ---
 
@@ -15,9 +16,9 @@ PLiNIO allows to automatically optimize your DNN's architecture with ***no more 
 PLiNIO exploits as main optimization engine Differentiable Neural Architecture Search (DNAS) algorithms which notoriusly balance flexibility and lightness.
 
 At the current state, PLiNIO implements the following methods:
-- [PIT](flexnas/methods/pit/README.md)
-- [PIT-SuperNet](flexnas/methods/pit_supernet/README.md)
-- [Mixed Precision](flexnas/methods/mixprec/README.md) **[N.B., this feature is experimental and currently under development]**
+- [PIT](plinio/methods/pit/README.md)
+- [PIT-SuperNet](plinio/methods/pit_supernet/README.md)
+- [Mixed Precision](plinio/methods/mixprec/README.md) **[N.B., this feature is experimental and currently under development]**
 
 You can consult the specific linked pages to gather more information on the usage and the capabilieties of such tools.
 
@@ -31,4 +32,4 @@ $ python setup.py install
 ```
 
 # License
-PLiNIO entire codebase is released under **ADD LICENSE FILE**.
+PLiNIO entire codebase is released under [Apache License 2.0](LICENSE).
