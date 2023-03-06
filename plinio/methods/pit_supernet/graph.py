@@ -4,14 +4,14 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from flexnas.graph.annotation import add_node_properties, add_features_calculator, \
+from plinio.graph.annotation import add_node_properties, add_features_calculator, \
         associate_input_features
-from flexnas.graph.inspection import is_layer, is_inherited_layer, get_graph_inputs, \
+from plinio.graph.inspection import is_layer, is_inherited_layer, get_graph_inputs, \
         all_output_nodes
-from flexnas.graph.features_calculation import SoftMaxFeaturesCalculator
+from plinio.graph.features_calculation import SoftMaxFeaturesCalculator
 from .nn import PITSuperNetCombiner, PITSuperNetModule
-from flexnas.methods.pit import graph as pit_graph
-from flexnas.methods.pit.nn import PITModule
+from plinio.methods.pit import graph as pit_graph
+from plinio.methods.pit.nn import PITModule
 
 
 class PITSuperNetTracer(fx.Tracer):

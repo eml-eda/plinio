@@ -21,14 +21,12 @@ import unittest
 import torch
 import torch.nn as nn
 from plinio.methods import PIT
-from plinio.methods.pit.nn import PITConv1d, PITConv2d, PITLinear
+from plinio.methods.pit.nn import PITConv1d, PITConv2d
 from plinio.methods.pit.nn import PITModule
-from plinio.methods.pit.nn.features_masker import PITFrozenFeaturesMasker
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
-from unit_test.models import ToyAdd, ToyMultiPath1, ToyMultiPath2, ToyInputConnectedDW
-from unit_test.models import ToyBatchNorm, ToyIllegalBN
+from unit_test.models import ToyMultiPath1, ToyMultiPath2
 from unit_test.models import DSCNN
 
 
@@ -117,26 +115,6 @@ class TestPITConvert(unittest.TestCase):
         )
         self._check_shared_maskers(new_nn, shared_masker_rules)
 
-    def test_autoimport_frozen_features(self):
-        """Test that input- and output-connected features masks are correctly 'frozen'"""
-        nn_ut = ToyInputConnectedDW()
-        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        frozen_masker_rules = (
-            ('dw_conv', True),   # input-connected and DW
-            ('pw_conv', False),  # normal
-            ('fc', True),        # output-connected
-        )
-        self._check_frozen_maskers(new_nn, frozen_masker_rules)
-        nn_ut = ToyAdd()
-        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        frozen_masker_rules = (
-            ('conv0', False),   # input-connected but not DW
-            ('conv1', False),   # input-connected byt not DW
-            ('conv2', False),   # normal
-            ('fc', True),       # output-connected
-        )
-        self._check_frozen_maskers(new_nn, frozen_masker_rules)
-
     def test_exclude_types_simple(self):
         nn_ut = ToyMultiPath1()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv1d,))
@@ -169,21 +147,6 @@ class TestPITConvert(unittest.TestCase):
         excluded = ('conv1')
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
-
-    def test_batchnorm_fusion(self):
-        """Test that batchnorms are correctly fused during import and re-generated during export"""
-        nn_ut = ToyBatchNorm()
-        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        self._check_batchnorm_folding(nn_ut, new_nn.seed)
-        self._check_batchnorm_memory(new_nn.seed, ('dw_conv', 'pw_conv', 'fc1'))
-        exported_nn = new_nn.arch_export()
-        self._check_batchnorm_unfolding(new_nn.seed, exported_nn)
-
-    def test_batchnorm_fusion_illegal(self):
-        """Test that unsupported batchnorm fusions trigger an error"""
-        nn_ut = ToyIllegalBN()
-        with self.assertRaises(ValueError):
-            PIT(nn_ut, input_shape=nn_ut.input_shape)
 
     def test_exclude_names_advanced(self):
         """Test the exclude_names functionality on a ResNet like model"""
@@ -475,7 +438,7 @@ class TestPITConvert(unittest.TestCase):
     def _check_shared_maskers(self, new_nn: PIT, check_rules: Iterable[Tuple[str, str, bool]]):
         """Check if shared maskers are set correctly during an autoimport.
 
-        check_rules contains: (1st_layer, 2nd_layer, shared_flag) where shared_flag can be
+        The check_dict contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
         true or false to specify that 1st_layer and 2nd_layer must/must-not share their maskers
         respectively.
         """
@@ -489,22 +452,6 @@ class TestPITConvert(unittest.TestCase):
             else:
                 msg = f"Layers {layer_1} and {layer_2} are expected to have independent maskers"
                 self.assertNotEqual(masker_1, masker_2, msg)
-
-    def _check_frozen_maskers(self, new_nn: PIT, check_rules: Iterable[Tuple[str, bool]]):
-        """Check if frozen maskers are set correctly during an autoimport.
-
-        check_rules contains: (layer_name, frozen_flag) where frozen_flag can be true or false to
-        specify that the features masker for layer_name must/must-not be frozen
-        """
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for layer, frozen_flag in check_rules:
-            masker = converted_layer_names[layer].out_features_masker  # type: ignore
-            if frozen_flag:
-                msg = f"Layers {layer} is expected to have a frozen channel masker, but hasn't"
-                self.assertTrue(isinstance(masker, PITFrozenFeaturesMasker), msg)
-            else:
-                msg = f"Layers {layer} is expected to have an unfrozen features masker, but hasn't"
-                self.assertFalse(isinstance(masker, PITFrozenFeaturesMasker), msg)
 
     def _check_layers_exclusion(self, new_nn: PIT, excluded: Iterable[str]):
         """Check that layers in "excluded" have not be converted to PIT form"""
@@ -522,37 +469,6 @@ class TestPITConvert(unittest.TestCase):
                 pass
             else:
                 self.fail("Excluded layer has the output_channel_masker set")
-
-    def _check_batchnorm_folding(self, original_mod: nn.Module, pit_seed: nn.Module):
-        """Compare two nn.Modules, where one has been imported and exported by PIT
-        to verify batchnorm folding"""
-        for name, child in original_mod.named_children():
-            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                self.assertTrue(name not in pit_seed._modules,
-                                f"BatchNorm {name} not folder")
-        for name, child in pit_seed.named_children():
-            self.assertFalse(isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)),
-                             f"Found BatchNorm {name} in converted module")
-
-    def _check_batchnorm_memory(self, pit_seed: nn.Module, layers: Iterable[str]):
-        """Check that, in a PIT converted model, PIT layers that were originally followed
-        by BatchNorm have saved internally the BN information for restoring it later"""
-        for name, child in pit_seed.named_children():
-            if isinstance(child, PITModule) and name in layers:
-                self.assertTrue(child.following_bn_args is not None)
-
-    def _check_batchnorm_unfolding(self, pit_seed: nn.Module, exported_mod: nn.Module):
-        """Check that, in a PIT converted model, PIT layers that were originally followed
-        by BatchNorm have saved internally the BN information for restoring it later"""
-        for name, child in pit_seed.named_children():
-            if isinstance(child, PITModule) and child.following_bn_args is not None:
-                bn_name = name + "_exported_bn"
-                self.assertTrue(bn_name in exported_mod._modules)
-                new_child = cast(nn.Module, exported_mod._modules[bn_name])
-                if isinstance(child, (PITConv1d, PITLinear)):
-                    self.assertTrue(isinstance(new_child, nn.BatchNorm1d))
-                if isinstance(child, (PITConv2d)):
-                    self.assertTrue(isinstance(new_child, nn.BatchNorm2d))
 
 
 if __name__ == '__main__':

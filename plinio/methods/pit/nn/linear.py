@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 import torch.nn.functional as F
-from flexnas.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
+from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 from .module import PITModule
 from .features_masker import PITFeaturesMasker
 from .binarizer import PITBinarizer

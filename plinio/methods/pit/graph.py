@@ -30,13 +30,13 @@ from .nn.batchnorm_1d import PITBatchNorm1d
 from .nn.batchnorm_2d import PITBatchNorm2d
 from .nn.module import PITModule
 from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
-from flexnas.graph.annotation import add_features_calculator, add_node_properties, \
-        associate_input_features
-from flexnas.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
-        get_graph_inputs
-from flexnas.graph.transformation import fuse_consecutive_layers
-from flexnas.graph.features_calculation import ModAttrFeaturesCalculator
-from flexnas.graph.utils import fx_to_nx_graph
+from plinio.graph.annotation import add_features_calculator, add_node_properties, \
+    associate_input_features
+from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
+    get_graph_inputs
+from plinio.graph.transformation import fuse_consecutive_layers
+from plinio.graph.features_calculation import ModAttrFeaturesCalculator
+from plinio.graph.utils import fx_to_nx_graph
 
 # add new supported layers here:
 pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {

@@ -1,5 +1,5 @@
 from torch import nn
-from flexnas.methods.pit_supernet import PITSuperNetModule
+from plinio.methods.pit_supernet import PITSuperNetModule
 
 
 class GumbelPITSNModule(nn.Module):

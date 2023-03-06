@@ -1,6 +1,6 @@
 import unittest
 import torch
-from flexnas.methods import PITSuperNet
+from plinio.methods import PITSuperNet
 from unit_test.models.pit_supernet_nn import StandardPITSNModule
 from unit_test.models.pit_supernet_nn_gs import GumbelPITSNModule
 from unit_test.models.kws_pit_sn_model import DSCnnPITSN

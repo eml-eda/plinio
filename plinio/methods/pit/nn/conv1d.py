@@ -22,7 +22,7 @@ import torch
 import torch.fx as fx
 import torch.nn as nn
 import itertools
-from flexnas.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
+from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 from .features_masker import PITFeaturesMasker
 from .timestep_masker import PITTimestepMasker, PITFrozenTimestepMasker
 from .dilation_masker import PITDilationMasker, PITFrozenDilationMasker

@@ -22,7 +22,7 @@ import torch
 import torch.fx as fx
 import torch.nn as nn
 from .features_masker import PITFeaturesMasker
-from flexnas.graph.features_calculation import FeaturesCalculator
+from plinio.graph.features_calculation import FeaturesCalculator
 
 
 class PITModule:

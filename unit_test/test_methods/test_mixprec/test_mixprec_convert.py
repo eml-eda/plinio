@@ -21,9 +21,9 @@ from typing import cast, Iterable, Tuple, Type
 import unittest
 import torch
 import torch.nn as nn
-from flexnas.methods import MixPrec
-from flexnas.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule, MixPrecType
-import flexnas.methods.mixprec.quant.nn as qnn
+from plinio.methods import MixPrec
+from plinio.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule, MixPrecType
+import plinio.methods.mixprec.quant.nn as qnn
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
     SimpleMixPrecNN, SimpleExportedNN2D, SimpleNN2D_NoBN, SimpleExportedNN2D_NoBias, \
     SimpleExportedNN2D_ch, SimpleExportedNN2D_NoBias_ch

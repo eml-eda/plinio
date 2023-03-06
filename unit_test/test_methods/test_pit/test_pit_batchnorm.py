@@ -19,7 +19,7 @@
 import unittest
 import torch
 from torch.nn import BatchNorm1d, BatchNorm2d
-from flexnas.methods.pit.nn import PITBatchNorm1d, PITBatchNorm2d
+from plinio.methods.pit.nn import PITBatchNorm1d, PITBatchNorm2d
 
 
 class TestPITBatchNorm(unittest.TestCase):

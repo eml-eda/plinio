@@ -14,73 +14,106 @@
 # * See the License for the specific language governing permissions and        *
 # * limitations under the License.                                             *
 # *                                                                            *
-# * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
+# * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
+
 from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator
 import torch
 import torch.nn as nn
-from flexnas.methods.dnas_base import DNAS
+
+from plinio.methods.dnas_base import DNAS
 from .graph import convert
-from .nn.module import PITModule
+from .nn.mixprec_module import MixPrecModule
+from .nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel
+
+from plinio.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight, Quantizer_Bias
+
+DEFAULT_QINFO = {
+    'a_quantizer': {
+        'quantizer': PACT_Act,
+        'kwargs': {},
+    },
+    'w_quantizer': {
+        'quantizer': MinMax_Weight,
+        'kwargs': {},
+    },
+    'b_quantizer': {
+        'quantizer': Quantizer_Bias,
+        'kwargs': {
+            'num_bits': 32,
+        },
+    },
+}
 
 
-class PIT(DNAS):
-    """A class that wraps a nn.Module with the functionality of the PIT NAS tool
+class MixPrec(DNAS):
+    """A class that wraps a nn.Module with DNAS-enabled Mixed Precision assigment
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
     :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
     :type input_shape: Tuple[int, ...]
-    :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
+    :param activation_precisions: the possible activations' precisions assigment to be explored
+    by the NAS
+    :type activation_precisions: Iterable[int]
+    :param weight_precisions: the possible weights' precisions assigment to be explored
+    by the NAS
+    :type weight_precisions: Iterable[int]
+    :param w_mixprec_type: the mixed precision strategy to be used for weigth
+    i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
+    :type w_mixprec_type: MixPrecType
+    :param qinfo: dict containing desired quantizers for act, weight and bias
+    and their arguments excluding the num_bits precision
+    :type qinfo: Dict
+    :param regularizer: the name of the model cost regularizer used by the NAS, defaults to 'size'
     :type regularizer: Optional[str], optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
-    when auto-converting layers, defaults to ()
+    :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
+    defaults to ()
     :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that should be ignored by the NAS
-    when auto-converting defaults to ()
+    :param exclude_types: the types of `model` submodules that should be ignored by the NAS,
+    defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
-    :param train_features: flag to control whether output features are optimized by PIT or not,
-    defaults to True
-    :type train_features: bool, optional
-    :param train_rf: flag to control whether receptive field is optimized by PIT or not, defaults
-    to True
-    :type train_rf: bool, optional
-    :param train_dilation: flag to control whether dilation is optimized by PIT or not, defaults
-    to True
-    :type train_dilation: bool, optional
+    :raises ValueError: when called with an unsupported regularizer
     """
     def __init__(
             self,
             model: nn.Module,
             input_shape: Tuple[int, ...],
+            activation_precisions: Tuple[int, ...] = (2, 4, 8),
+            weight_precisions: Tuple[int, ...] = (2, 4, 8),
+            w_mixprec_type: MixPrecType = MixPrecType.PER_LAYER,
+            qinfo: Dict = DEFAULT_QINFO,
+            temperature: float = 1.,
             regularizer: str = 'size',
             autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
-            exclude_types: Iterable[Type[nn.Module]] = (),
-            train_features: bool = True,
-            train_rf: bool = True,
-            train_dilation: bool = True):
-        super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
+            exclude_types: Iterable[Type[nn.Module]] = ()):
+        super(MixPrec, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_shape = input_shape
         self.seed, self._target_layers = convert(
             model,
             input_shape,
+            activation_precisions,
+            weight_precisions,
+            w_mixprec_type,
+            qinfo,
             'autoimport' if autoconvert_layers else 'import',
             exclude_names,
-            exclude_types
-        )
-        # after conversion to make sure they are applied to all layers
-        self.train_features = train_features
-        self.train_rf = train_rf
-        self.train_dilation = train_dilation
+            exclude_types)
+        self.activation_precisions = activation_precisions
+        self.weight_precisions = weight_precisions
+        self.w_mixprec_type = w_mixprec_type
+        self.qinfo = qinfo
+        self.initial_temperature = temperature
         self._regularizer = regularizer
 
     def forward(self, *args: Any) -> torch.Tensor:
-        """Forward function for the DNAS model. Simply invokes the inner model's forward
+        """Forward function for the DNAS model.
+        Simply invokes the inner model's forward
 
         :return: the output tensor
         :rtype: torch.Tensor
@@ -88,67 +121,35 @@ class PIT(DNAS):
         return self.seed.forward(*args)
 
     def supported_regularizers(self) -> Tuple[str, ...]:
-        """Returns a list of names of supported regularizers
+        """Returns a tuple of strings with the names of the supported cost regularizers
 
-        :return: a tuple of strings with the name of supported regularizers
+        :return: a tuple of strings with the names of the supported cost regularizers
         :rtype: Tuple[str, ...]
         """
         return ('size', 'macs')
 
     def get_size(self) -> torch.Tensor:
-        """Computes the total number of parameters of all NAS-able layers
-        using float version of masks
+        """Computes the total number of effective parameters of all NAS-able layers
 
-        :return: the total number of parameters
+        :return: the effective memory occupation of weights
         :rtype: torch.Tensor
         """
         size = torch.tensor(0, dtype=torch.float32)
-        # size = torch.tensor(0)
         for layer in self._target_layers:
-            # size += layer.get_size()
             size = size + layer.get_size()
         return size
 
-    def get_size_binarized(self) -> torch.Tensor:
-        """Computes the total number of parameters of all NAS-able layers
-        using binary masks
-
-        :return: the total number of parameters
-        :rtype: torch.Tensor
-        """
-        size = torch.tensor(0, dtype=torch.float32)
-        # size = torch.tensor(0)
-        for layer in self._target_layers:
-            # size += layer.get_size()
-            size = size + layer.get_size_binarized()
-        return size
-
+    # N.B., this follows EdMIPS formulation -> layer_macs*mix_wbit*mix_abit
+    # TODO: include formulation with cycles
     def get_macs(self) -> torch.Tensor:
-        """Computes the total number of MACs in all NAS-able layers
-        using float version of masks
+        """Computes the total number of effective MACs of all NAS-able layers
 
-        :return: the total number of MACs
+        :return: the effective number of MACs
         :rtype: torch.Tensor
         """
         macs = torch.tensor(0, dtype=torch.float32)
-        # macs = torch.tensor(0)
         for layer in self._target_layers:
-            # macs += layer.get_macs()
             macs = macs + layer.get_macs()
-        return macs
-
-    def get_macs_binarized(self) -> torch.Tensor:
-        """Computes the total number of MACs in all NAS-able layers
-        using binary masks
-
-        :return: the total number of MACs
-        :rtype: torch.Tensor
-        """
-        macs = torch.tensor(0, dtype=torch.float32)
-        # macs = torch.tensor(0)
-        for layer in self._target_layers:
-            # macs += layer.get_macs()
-            macs = macs + layer.get_macs_binarized()
         return macs
 
     @property
@@ -171,102 +172,36 @@ class PIT(DNAS):
             raise ValueError(f"Invalid regularizer {value}")
         self._regularizer = value
 
-    @property
-    def train_features(self) -> bool:
-        """Returns True if PIT is training the output features masks
-
-        :return: True if PIT is training the output features masks
-        :rtype: bool
-        """
-        return self._train_features
-
-    @train_features.setter
-    def train_features(self, value: bool):
-        """Set to True to let PIT train the output features masks
-
-        :param value: set to True to let PIT train the output features masks
-        :type value: bool
-        """
-        for layer in self._target_layers:
-            if hasattr(layer, 'train_features'):
-                layer.train_features = value
-        self._train_features = value
-
-    @property
-    def train_rf(self) -> bool:
-        """Returns True if PIT is training the filters receptive fields masks
-
-        :return: True if PIT is training the filters receptive fields masks
-        :rtype: bool
-        """
-        return self._train_rf
-
-    @train_rf.setter
-    def train_rf(self, value: bool):
-        """Set to True to let PIT train the filters receptive fields masks
-
-        :param value: set to True to let PIT train the filters receptive fields masks
-        :type value: bool
-        """
-        for layer in self._target_layers:
-            if hasattr(layer, 'train_rf'):
-                layer.train_rf = value
-        self._train_rf = value
-
-    @property
-    def train_dilation(self):
-        """Returns True if PIT is training the filters dilation masks
-
-        :return: True if PIT is training the filters dilation masks
-        :rtype: bool
-        """
-        return self._train_dilation
-
-    @train_dilation.setter
-    def train_dilation(self, value: bool):
-        """Set to True to let PIT train the filters dilation masks
-
-        :param value: set to True to let PIT train the filters dilation masks
-        :type value: bool
-        """
-        for layer in self._target_layers:
-            if hasattr(layer, 'train_dilation'):
-                layer.train_dilation = value
-        self._train_dilation = value
-
-    def arch_export(self, add_bn=True):
-        """Export the architecture found by the NAS as a `nn.Module`
+    def arch_export(self):
+        """Export the architecture found by the NAS as a `quant.nn` module
 
         The returned model will have the trained weights found during the search filled in, but
         should be fine-tuned for optimal results.
 
-        :param add_bn: determines if BatchNorm layers that have been fused with PITLayers
-        in order to make the channel masking work are re-added to the exported model. If set to
-        True, the model MUST be fine-tuned.
-        :type add_bn: bool
-        :return: the architecture found by the NAS
+        :return: the precision-assignement found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
-        if not add_bn:
-            for layer in self._target_layers:
-                if hasattr(layer, 'following_bn_args'):
-                    layer.following_bn_args = None
-
-        mod, _ = convert(self.seed, self._input_shape, 'export')
+        mod, _ = convert(self.seed,
+                         self._input_shape,
+                         self.activation_precisions,
+                         self.weight_precisions,
+                         self.w_mixprec_type,
+                         self.qinfo,
+                         'export')
 
         return mod
 
     def arch_summary(self) -> Dict[str, Dict[str, Any]]:
-        """Generates a dictionary representation of the architecture found by the NAS.
+        """Generates a dictionary representation of the precision-assignement found by the NAS.
         Only optimized layers are reported
 
-        :return: a dictionary representation of the architecture found by the NAS
+        :return: a dictionary representation of the precision-assignement found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
         arch = {}
         for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
-                layer = cast(PITModule, layer)
+                layer = cast(MixPrecModule, layer)
                 arch[name] = layer.summary()
                 arch[name]['type'] = layer.__class__.__name__
         return arch
@@ -286,12 +221,12 @@ class PIT(DNAS):
         included = set()
         for lname, layer in self.named_modules():
             if layer in self._target_layers:
-                layer = cast(PITModule, layer)
+                layer = cast(MixPrecModule, layer)
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname
                 for name, param in layer.named_nas_parameters(prefix=lname, recurse=recurse):
-                    # avoid duplicates (e.g. shared channels masks)
+                    # avoid duplicates (e.g. shared params)
                     if param not in included:
                         included.add(param)
                         yield name, param
@@ -313,10 +248,16 @@ class PIT(DNAS):
             if name not in exclude:
                 yield name, param
 
-    def __str__(self):
-        """Prints the architecture found by the NAS to screen
+    def _set_temperature(self, t_i):
+        for _, module in self.seed.named_modules():
+            if isinstance(module, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                module.temperature = t_i
 
-        :return: a str representation of the current architecture
+    def __str__(self):
+        """Prints the precision-assignent found by the NAS to screen
+
+        :return: a str representation of the current architecture and
+        its precision-assignement
         :rtype: str
         """
         arch = self.arch_summary()

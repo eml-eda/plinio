@@ -1,8 +1,8 @@
 from typing import Tuple, Any, Iterator, Iterable, Type, Dict, Optional, cast
 import torch
 import torch.nn as nn
-from flexnas.methods.dnas_base import DNAS
-from flexnas.methods.pit_supernet.nn.combiner import PITSuperNetCombiner
+from plinio.methods.dnas_base import DNAS
+from plinio.methods.pit_supernet.nn.combiner import PITSuperNetCombiner
 from .graph import convert
 
 

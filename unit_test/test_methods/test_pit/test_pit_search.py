@@ -21,8 +21,8 @@ import unittest
 import math
 import torch
 import torch.nn as nn
-from flexnas.methods import PIT
-from flexnas.methods.pit.nn import PITConv1d, PITConv2d
+from plinio.methods import PIT
+from plinio.methods.pit.nn import PITConv1d, PITConv2d
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import ToyAdd, ToyFlatten, ToyRegression, ToyAdd_2D

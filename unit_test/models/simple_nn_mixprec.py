@@ -1,12 +1,12 @@
 import copy
 import torch.nn as nn
 import torch.nn.functional as F
-from flexnas.methods.mixprec.nn import MixPrec_Conv2d
-from flexnas.methods.mixprec.nn.mixprec_qtz import MixPrecType, \
+from plinio.methods.mixprec.nn import MixPrec_Conv2d
+from plinio.methods.mixprec.nn.mixprec_qtz import MixPrecType, \
     MixPrec_Qtz_Layer, MixPrec_Qtz_Layer_Bias
-from flexnas.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight, \
+from plinio.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight, \
     Quantizer_Bias
-import flexnas.methods.mixprec.quant.nn as qnn
+import plinio.methods.mixprec.quant.nn as qnn
 
 
 class SimpleMixPrecNN(nn.Module):

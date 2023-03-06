@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from flexnas.methods.pit_supernet import PITSuperNetModule
+from plinio.methods.pit_supernet import PITSuperNetModule
 
 
 class DSCnnPITSN(torch.nn.Module):

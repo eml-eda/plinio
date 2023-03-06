@@ -23,13 +23,13 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from flexnas.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, \
+from plinio.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, \
     MixPrecModule
-from flexnas.graph.annotation import add_node_properties
-from flexnas.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
-from flexnas.methods.mixprec.quant.quantizers import Quantizer
-from flexnas.graph import get_graph_outputs
-from flexnas.graph import inspection
+from plinio.graph.annotation import add_node_properties
+from plinio.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
+from plinio.methods.mixprec.quant.quantizers import Quantizer
+from plinio.graph import get_graph_outputs
+from plinio.graph import inspection
 
 # add new supported layers here:
 mixprec_layer_map: Dict[Type[nn.Module], Type[MixPrecModule]] = {

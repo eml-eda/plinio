@@ -20,8 +20,8 @@ import unittest
 import torch
 from torch.nn import Conv2d
 from torch.nn.parameter import Parameter
-from flexnas.methods.pit.nn import PITConv2d
-from flexnas.methods.pit.nn.features_masker import PITFeaturesMasker
+from plinio.methods.pit.nn import PITConv2d
+from plinio.methods.pit.nn.features_masker import PITFeaturesMasker
 
 
 class TestPITConv2d(unittest.TestCase):

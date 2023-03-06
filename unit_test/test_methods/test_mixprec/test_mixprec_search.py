@@ -20,8 +20,8 @@
 from typing import cast
 import unittest
 import torch
-from flexnas.methods import MixPrec
-from flexnas.methods.mixprec.nn import MixPrec_Conv2d, MixPrecType
+from plinio.methods import MixPrec
+from plinio.methods.mixprec.nn import MixPrec_Conv2d, MixPrecType
 from unit_test.models import ToyAdd_2D, SimpleNN2D, ToyRegression_2D
 
 

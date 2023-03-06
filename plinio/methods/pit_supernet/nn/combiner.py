@@ -1,8 +1,9 @@
 from typing import List, cast, Iterator, Tuple, Any, Dict
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchinfo import summary
-from flexnas.methods.pit.nn import PITModule
+from plinio.methods.pit.nn import PITModule
 
 
 class PITSuperNetCombiner(nn.Module):
@@ -63,15 +64,15 @@ class PITSuperNetCombiner(nn.Module):
         Samples the alpha architectural coefficients using a standard SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.softmax(self.alpha / self.softmax_temperature, dim=0)
+        self.theta_alpha = F.softmax(self.alpha / self.softmax_temperature, dim=0)
 
     def sample_alpha_gs(self):
         """
         Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.gumbel_softmax(
-                self.alpha, self.softmax_temperature, self.hard_softmax, dim=0)
+        self.theta_alpha = F.gumbel_softmax(self.alpha, self.softmax_temperature,
+                                            self.hard_softmax, dim=0)
 
     def forward(self, layers_outputs: List[torch.Tensor]) -> torch.Tensor:
         """Forward function for the PITSuperNetCombiner that returns a weighted

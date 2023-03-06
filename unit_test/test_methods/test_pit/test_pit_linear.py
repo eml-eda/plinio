@@ -20,8 +20,8 @@ import unittest
 import torch
 from torch.nn import Linear
 from torch.nn.parameter import Parameter
-from flexnas.methods.pit.nn import PITLinear
-from flexnas.methods.pit.nn.features_masker import PITFeaturesMasker
+from plinio.methods.pit.nn import PITLinear
+from plinio.methods.pit.nn.features_masker import PITFeaturesMasker
 
 
 class TestPITLinear(unittest.TestCase):
