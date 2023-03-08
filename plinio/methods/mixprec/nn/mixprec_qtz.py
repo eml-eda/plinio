@@ -42,12 +42,22 @@ class MixPrec_Qtz_Channel(nn.Module):
     :type quantizer: Quantizer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
+    :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SoftMax
+    :type gumbel_softmax: bool, optional
+    :param hard_softmax: use hard Gumbel SoftMax sampling (only applies when gumbel_softmax = True)
+    :type hard_softmax: bool, optional
+    :param disable_sampling: whether to disable the sampling of the architectural coefficients
+    during the forward pass
+    :type disable_sampling: bool, optional
     """
     def __init__(self,
                  precisions: Tuple[int, ...],
                  cout: int,
                  quantizer: Type[Quantizer],
-                 quantizer_kwargs: Dict = {}):
+                 quantizer_kwargs: Dict = {},
+                 gumbel_softmax: bool = False,
+                 hard_softmax: bool = False,
+                 disable_sampling: bool = False):
         super(MixPrec_Qtz_Channel, self).__init__()
         self.precisions = precisions
         self.cout = cout
@@ -56,20 +66,71 @@ class MixPrec_Qtz_Channel(nn.Module):
         # NAS parameters
         self.alpha_prec = nn.Parameter(torch.Tensor(len(precisions), cout))
         self.alpha_prec.data.fill_(1.)  # Initially each precision is equiprobable
+        self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
+        self.theta_alpha.data = self.alpha_prec
         # Mixed-Precision Quantizers
         self.mix_qtz = nn.ModuleList()
         for p in precisions:
             qtz = quantizer(p, **quantizer_kwargs)  # type: ignore
             qtz = cast(nn.Module, qtz)
             self.mix_qtz.append(qtz)
+
         # Init temperature to std value
-        self.temperature = 1.
+        self.register_buffer('temperature', torch.tensor(1., dtype = torch.float32))
+        self.temperature = cast(torch.Tensor, self.temperature)
+        self.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+
+
+    def sample_alpha_sm(self):
+        """
+        Samples the alpha coefficients using a standard SoftMax (with temperature).
+        The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
+        """
+        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature, dim=0)
+
+    def sample_alpha_gs(self):
+        """
+        Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
+        The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
+        """
+        self.theta_alpha = nn.functional.gumbel_softmax(
+                logits = self.alpha_prec,
+                tau = self.temperature.item(),
+                hard = self.hard_softmax,
+                dim = 0)
+
+    def sample_alpha_none(self):
+        """Sample the previous alpha architectural coefficients. Used to change the alpha
+        coefficients at each iteration"""
+        return
+
+    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
+        :type gumbel_softmax: bool
+        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
+        (param gumbel_softmax must be equal to True)
+        :type gumbel_softmax: bool
+        :param disable_sampling: whether to disable the sampling of the architectural
+        coefficients in the forward pass
+        :type disable_sampling: bool
+        """
+        self.hard_softmax = hard_softmax
+        if disable_sampling:
+            self.sample_alpha = self.sample_alpha_none
+        elif gumbel_softmax:
+            self.sample_alpha = self.sample_alpha_gs
+        else:
+            self.sample_alpha = self.sample_alpha_sm
+
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the searchable mixed-precision layer.
 
-        In a nutshell, computes the different quantized representations of `mix_qtz`
-        and combine them weighting the different terms channel-wise by means of
+        In a nutshell, it computes the different quantized representations of `mix_qtz`
+        and combines them weighting the different terms channel-wise by means of
         softmax-ed `alpha_prec` trainable parameters.
 
         :param input: the input float tensor
@@ -77,12 +138,12 @@ class MixPrec_Qtz_Channel(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
-                                           dim=0)
+        self.sample_alpha()
+
         y = []
         for i, quantizer in enumerate(self.mix_qtz):
-            soft_alpha_i = soft_alpha[i].view((self.cout,) + (1,) * len(input.shape[1:]))
-            y.append(soft_alpha_i * quantizer(input))
+            theta_alpha_i = self.theta_alpha[i].view((self.cout,) + (1,) * len(input.shape[1:]))
+            y.append(theta_alpha_i * quantizer(input))
         y = torch.stack(y, dim=0).sum(dim=0)
         return y
 
@@ -94,30 +155,10 @@ class MixPrec_Qtz_Channel(nn.Module):
         :return: the effective precision
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
-                                           dim=0)
-        device = self.alpha_prec.device
+        device = self.theta_alpha.device
         p_tensor = torch.tensor(self.precisions, device=device)
-        eff_prec = (soft_alpha.sum(dim=1) * p_tensor).sum() / self.cout  # TODO: Check
+        eff_prec = (self.theta_alpha.sum(dim=1) * p_tensor).sum() / self.cout  # TODO: Check
         return eff_prec
-
-    @property
-    def temperature(self) -> float:
-        """Returns the actual softmax temperature for this layer.
-
-        :return: the actual softmax temperature for this layer.
-        :rtype: float
-        """
-        return self._temperature
-
-    @temperature.setter
-    def temperature(self, tau: float):
-        """Set the softmax temperature for this layer.
-
-        :param tau: the softmax temperature to be setted
-        :type tau: float
-        """
-        self._temperature = tau
 
 
 class MixPrec_Qtz_Layer(nn.Module):
@@ -131,11 +172,21 @@ class MixPrec_Qtz_Layer(nn.Module):
     :type quantizer: Quantizer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
+    :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SoftMax
+    :type gumbel_softmax: bool, optional
+    :param hard_softmax: use hard Gumbel SoftMax sampling (only applies when gumbel_softmax = True)
+    :type hard_softmax: bool, optional
+    :param disable_sampling: whether to disable the sampling of the architectural coefficients
+    during the forward pass
+    :type disable_sampling: bool, optional
     """
     def __init__(self,
                  precisions: Tuple[int, ...],
                  quantizer: Type[Quantizer],
-                 quantizer_kwargs: Dict = {}):
+                 quantizer_kwargs: Dict = {},
+                 gumbel_softmax: bool = False,
+                 hard_softmax: bool = False,
+                 disable_sampling: bool = False):
         super(MixPrec_Qtz_Layer, self).__init__()
         self.precisions = precisions
         self.quantizer = quantizer
@@ -143,20 +194,70 @@ class MixPrec_Qtz_Layer(nn.Module):
         # NAS parameters
         self.alpha_prec = nn.Parameter(torch.Tensor(len(precisions)))
         self.alpha_prec.data.fill_(1.)  # Initially each precision is equiprobable
+        self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
+        self.theta_alpha.data = self.alpha_prec
         # Mixed-Precision Quantizers
         self.mix_qtz = nn.ModuleList()
         for p in precisions:
             qtz = quantizer(p, **quantizer_kwargs)  # type: ignore
             qtz = cast(nn.Module, qtz)
             self.mix_qtz.append(qtz)
+
         # Init temperature to std value
-        self.temperature = 1.
+        self.register_buffer('temperature', torch.tensor(1.))
+        self.temperature = cast(torch.Tensor, self.temperature)
+        self.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+
+
+    def sample_alpha_sm(self):
+        """
+        Samples the alpha coefficients using a standard SoftMax (with temperature).
+        The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
+        """
+        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature, dim=0)
+
+    def sample_alpha_gs(self):
+        """
+        Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
+        The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
+        """
+        self.theta_alpha = nn.functional.gumbel_softmax(
+                logits = self.alpha_prec,
+                tau = self.temperature.item(),
+                hard = self.hard_softmax,
+                dim = 0)
+
+    def sample_alpha_none(self):
+        """Sample the previous alpha architectural coefficients. Used to change the alpha
+        coefficients at each iteration"""
+        return
+
+    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
+        :type gumbel_softmax: bool
+        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
+        (param gumbel_softmax must be equal to True)
+        :type gumbel_softmax: bool
+        :param disable_sampling: whether to disable the sampling of the architectural
+        coefficients in the forward pass
+        :type disable_sampling: bool
+        """
+        self.hard_softmax = hard_softmax
+        if disable_sampling:
+            self.sample_alpha = self.sample_alpha_none
+        elif gumbel_softmax:
+            self.sample_alpha = self.sample_alpha_gs
+        else:
+            self.sample_alpha = self.sample_alpha_sm
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the searchable mixed-precision layer.
 
-        In a nutshell, computes the different quantized representations of `mix_qtz`
-        and combine them weighting the different terms by means of softmax-ed
+        In a nutshell, it computes the different quantized representations of `mix_qtz`
+        and combines them weighting the different terms by means of softmax-ed
         `alpha_prec` trainable parameters.
 
         :param input: the input float tensor
@@ -164,11 +265,11 @@ class MixPrec_Qtz_Layer(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
-                                           dim=0)
+        self.sample_alpha()
+
         y = []
         for i, quantizer in enumerate(self.mix_qtz):
-            y.append(soft_alpha[i] * quantizer(input))
+            y.append(self.theta_alpha[i] * quantizer(input))
         y = torch.stack(y, dim=0).sum(dim=0)
         return y
 
@@ -180,30 +281,10 @@ class MixPrec_Qtz_Layer(nn.Module):
         :return: the effective precision
         :rtype: torch.Tensor
         """
-        soft_alpha = nn.functional.softmax(self.alpha_prec / self.temperature,
-                                           dim=0)
-        device = self.alpha_prec.device
+        device = self.theta_alpha.device
         p_tensor = torch.tensor(self.precisions, device=device)
-        eff_prec = (soft_alpha * p_tensor).sum()
+        eff_prec = (self.theta_alpha * p_tensor).sum()
         return eff_prec
-
-    @property
-    def temperature(self) -> float:
-        """Returns the actual softmax temperature for this layer.
-
-        :return: the actual softmax temperature for this layer.
-        :rtype: float
-        """
-        return self._temperature
-
-    @temperature.setter
-    def temperature(self, tau: float):
-        """Set the softmax temperature for this layer.
-
-        :param tau: the softmax temperature to be setted
-        :type tau: float
-        """
-        self._temperature = tau
 
 
 class MixPrec_Qtz_Layer_Bias(nn.Module):
@@ -259,9 +340,7 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_a = torch.tensor(0, dtype=torch.float32)
-        temp = self.mixprec_a_quantizer.temperature
-        alpha_prec = self.mixprec_a_quantizer.alpha_prec
-        sm_alpha = nn.functional.softmax(alpha_prec / temp, dim=0)
+        sm_alpha = self.mixprec_a_quantizer.theta_alpha
         for i, qtz in enumerate(self.mixprec_a_quantizer.mix_qtz):
             s_a = s_a + (sm_alpha[i] * qtz.s_a)
         return s_a
@@ -273,9 +352,7 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_w = torch.tensor(0, dtype=torch.float32)
-        temp = self.mixprec_w_quantizer.temperature
-        alpha_prec = self.mixprec_w_quantizer.alpha_prec
-        sm_alpha = nn.functional.softmax(alpha_prec / temp, dim=0)
+        sm_alpha = self.mixprec_w_quantizer.theta_alpha
         for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w
@@ -333,9 +410,7 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_a = torch.tensor(0, dtype=torch.float32)
-        temp = self.mixprec_a_quantizer.temperature
-        alpha_prec = self.mixprec_a_quantizer.alpha_prec
-        sm_alpha = nn.functional.softmax(alpha_prec / temp, dim=0)
+        sm_alpha = self.mixprec_a_quantizer.theta_alpha
         for i, qtz in enumerate(self.mixprec_a_quantizer.mix_qtz):
             s_a = s_a + (sm_alpha[i] * qtz.s_a)
         return s_a
@@ -347,9 +422,7 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_w = torch.tensor(0, dtype=torch.float32)
-        temp = self.mixprec_w_quantizer.temperature
-        alpha_prec = self.mixprec_w_quantizer.alpha_prec
-        sm_alpha = nn.functional.softmax(alpha_prec / temp, dim=0)
+        sm_alpha = self.mixprec_w_quantizer.theta_alpha
         for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w

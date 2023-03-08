@@ -123,6 +123,34 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
 
         return q_out
 
+    def set_temperatures(self, value):
+        """Set the quantizers softmax temperature value
+
+        :param value
+        :type float
+        """
+        with torch.no_grad():
+            for quantizer in [self.mixprec_w_quantizer, self.mixprec_a_quantizer]:
+                if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                    quantizer.temperature = torch.tensor(value, dtype = torch.float32)
+
+    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
+        :type gumbel_softmax: bool
+        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
+        (param gumbel_softmax must be equal to True)
+        :type gumbel_softmax: bool
+        :param disable_sampling: whether to disable the sampling of the architectural
+        coefficients in the forward pass
+        :type disable_sampling: bool
+        """
+        for quantizer in [self.mixprec_w_quantizer, self.mixprec_a_quantizer]:
+            if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                quantizer.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
@@ -370,9 +398,9 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         for name, param in self.mixprec_w_quantizer.named_parameters(
                 prfx + "mixprec_w_quantizer", recurse):
             yield name, param
-        for name, param in self.mixprec_b_quantizer.named_parameters(
-                prfx + "mixprec_b_quantizer", recurse):
-            yield name, param
+        # for name, param in self.mixprec_b_quantizer.named_parameters(
+        #         prfx + "mixprec_b_quantizer", recurse):
+        #     yield name, param
 
     @property
     def selected_a_precision(self) -> int:
@@ -467,6 +495,19 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         cost = cost / self.groups
         eff_cost = cost * eff_w_prec
         return eff_cost
+
+    def get_size_binarized(self) -> torch.Tensor:
+        """Method that computes the number of weights for the layer considering
+        binarized masks
+
+        :return: the actual memory occupation of weights
+        :rtype: torch.Tensor
+        """
+        w_prec = torch.tensor(self.selected_w_precision).sum() / self.out_channels
+        cost = self.in_channels * self.out_channels * self.kernel_size[0] * self.kernel_size[1]
+        cost = cost / self.groups
+        tot_cost = cost * w_prec
+        return tot_cost
 
     # N.B., EdMIPS formulation
     def get_macs(self) -> torch.Tensor:
