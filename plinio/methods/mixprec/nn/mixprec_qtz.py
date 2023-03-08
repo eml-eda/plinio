@@ -86,7 +86,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         Samples the alpha coefficients using a standard SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature, dim=0)
+        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
 
     def sample_alpha_gs(self):
         """
@@ -214,7 +214,7 @@ class MixPrec_Qtz_Layer(nn.Module):
         Samples the alpha coefficients using a standard SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature, dim=0)
+        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
 
     def sample_alpha_gs(self):
         """
