@@ -78,6 +78,13 @@ class MixPrec(DNAS):
     defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
     :raises ValueError: when called with an unsupported regularizer
+    :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SoftMax
+    :type gumbel_softmax: bool, optional
+    :param hard_softmax: use hard Gumbel SoftMax sampling (only applies when gumbel_softmax = True)
+    :type hard_softmax: bool, optional
+    :param disable_sampling: do not perform any update of the alpha coefficients,
+    thus using the saved ones. Useful to perform fine-tuning of the saved model.
+    :type disable_sampling: bool, optional
     """
     def __init__(
             self,
@@ -91,7 +98,10 @@ class MixPrec(DNAS):
             regularizer: str = 'size',
             autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
-            exclude_types: Iterable[Type[nn.Module]] = ()):
+            exclude_types: Iterable[Type[nn.Module]] = (),
+            gumbel_softmax: bool = False,
+            hard_softmax: bool = False,
+            disable_sampling: bool = False):
         super(MixPrec, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_shape = input_shape
         self.seed, self._target_layers = convert(
@@ -108,8 +118,11 @@ class MixPrec(DNAS):
         self.weight_precisions = weight_precisions
         self.w_mixprec_type = w_mixprec_type
         self.qinfo = qinfo
-        self.initial_temperature = temperature
+        self.initial_temperature = temperature # initial, not current temperature
         self._regularizer = regularizer
+        # update the temperature and softmax parameters at initialization
+        self.update_softmax_temperature(self.initial_temperature)
+        self.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model.
@@ -128,6 +141,18 @@ class MixPrec(DNAS):
         """
         return ('size', 'macs')
 
+    def get_size_binarized(self) -> torch.Tensor:
+        """Computes the total number of parameters of all NAS-able layers using
+        binary masks
+
+        :return: the total number of parameters
+        :rtype: torch.Tensor
+        """
+        size = torch.tensor(0, dtype=torch.float32)
+        for layer in self._target_layers:
+            size = size + layer.get_size_binarized()
+        return size
+
     def get_size(self) -> torch.Tensor:
         """Computes the total number of effective parameters of all NAS-able layers
 
@@ -138,6 +163,34 @@ class MixPrec(DNAS):
         for layer in self._target_layers:
             size = size + layer.get_size()
         return size
+
+    def binarize_alpha(self):
+        """Binarize the architecture coefficients by means of the argmax operator
+        """
+        for layer in self._target_layers:
+            for quantizer in [layer.mixprec_w_quantizer, layer.mixprec_a_quantizer]:
+                if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                    alpha_prec = quantizer.alpha_prec
+                    max_index = alpha_prec.argmax(dim = 0)
+                    argmaxed_alpha = torch.zeros(alpha_prec.shape, device = alpha_prec.device)
+
+                    if len(argmaxed_alpha.shape) > 1:
+                        for channel_index in range(argmaxed_alpha.shape[-1]):
+                            argmaxed_alpha[max_index[channel_index], channel_index] = 1
+                    else: # single precision
+                        # TODO: check
+                        argmaxed_alpha[max_index.reshape(-1)[0]] = 1
+                    quantizer.theta_alpha = argmaxed_alpha
+        return
+
+    def freeze_alpha(self):
+        """Freeze the alpha coefficients disabling the gradient computation.
+        Useful for fine-tuning the model without changing its architecture
+        """
+        for layer in self._target_layers:
+            for quantizer in [layer.mixprec_w_quantizer, layer.mixprec_a_quantizer]:
+                if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                    quantizer.alpha_prec.requires_grad = False
 
     # N.B., this follows EdMIPS formulation -> layer_macs*mix_wbit*mix_abit
     # TODO: include formulation with cycles
@@ -192,7 +245,7 @@ class MixPrec(DNAS):
         return mod
 
     def arch_summary(self) -> Dict[str, Dict[str, Any]]:
-        """Generates a dictionary representation of the precision-assignement found by the NAS.
+        """Generates a dictionary representation of the precision-assignment found by the NAS.
         Only optimized layers are reported
 
         :return: a dictionary representation of the precision-assignement found by the NAS
@@ -203,6 +256,25 @@ class MixPrec(DNAS):
             if layer in self._target_layers:
                 layer = cast(MixPrecModule, layer)
                 arch[name] = layer.summary()
+                arch[name]['type'] = layer.__class__.__name__
+        return arch
+
+    def alpha_summary(self) -> Dict[str, Dict[str, Any]]:
+        """Generates a dictionary representation of the architectural coefficients found by the NAS.
+        Only optimized layers are reported
+
+        :return: a dictionary representation of the architectural coefficients found by the NAS
+        :rtype: Dict[str, Dict[str, any]]"""
+        arch = {}
+        for name, layer in self.seed.named_modules():
+            if layer in self._target_layers:
+                prec_dict = {}
+                if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.alpha_prec
+                if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.alpha_prec
+
+                arch[name] = prec_dict
                 arch[name]['type'] = layer.__class__.__name__
         return arch
 
@@ -248,10 +320,32 @@ class MixPrec(DNAS):
             if name not in exclude:
                 yield name, param
 
-    def _set_temperature(self, t_i):
-        for _, module in self.seed.named_modules():
-            if isinstance(module, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                module.temperature = t_i
+    def update_softmax_temperature(self, value):
+        """Update softmax temperature of all submodules
+
+        :param value: value
+        :type value: float
+        """
+        for module in self._target_layers:
+            module.set_temperatures(value)
+
+
+    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
+        :type gumbel_softmax: bool
+        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
+        (param gumbel_softmax must be equal to True)
+        :type gumbel_softmax: bool
+        :param disable_sampling: whether to disable the sampling of the architectural
+        coefficients in the forward pass
+        :type disable_sampling: bool
+        """
+        for module in self._target_layers:
+            module.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+
 
     def __str__(self):
         """Prints the precision-assignent found by the NAS to screen
