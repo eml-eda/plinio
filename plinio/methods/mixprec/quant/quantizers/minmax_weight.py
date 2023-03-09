@@ -97,9 +97,12 @@ class MinMax_Weight(nn.Module, Quantizer):
         :rtype: torch.Tensor
         """
         ch_range = self.ch_max - self.ch_min
-        ch_range.masked_fill_(ch_range.eq(0), 1)
-        n_steps = 2 ** self.num_bits - 1
-        scale_factor = ch_range / n_steps
+        if self.num_bits != 0:
+            ch_range.masked_fill_(ch_range.eq(0), 1)
+            n_steps = 2 ** self.num_bits - 1
+            scale_factor = ch_range / n_steps
+        else:
+            scale_factor = torch.zeros(ch_range.shape, device = ch_range.device)
         return scale_factor
 
     def summary(self) -> Dict[str, Any]:
@@ -164,21 +167,26 @@ class MinMax_Sym_STE(torch.autograd.Function):
 
 
 def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
-    # Compute scale factor
-    ch_range = ch_max - ch_min
-    ch_range.masked_fill_(ch_range.eq(0), 1)
-    n_steps = 2 ** num_bits - 1
-    scale_factor = ch_range / n_steps
 
-    # Reshape
-    shape = (x.shape[0],) + (1,) * len(x.shape[1:])
-    scale_factor = scale_factor.view(shape)
+    # if the precision is equal to 0 bit, return a zeros-filled tensor
+    if num_bits != 0:
+        # Compute scale factor
+        ch_range = ch_max - ch_min
+        ch_range.masked_fill_(ch_range.eq(0), 1)
+        n_steps = 2 ** num_bits - 1
+        scale_factor = ch_range / n_steps
 
-    # Quantize
-    y = torch.round(x / scale_factor)
+        # Reshape
+        shape = (x.shape[0],) + (1,) * len(x.shape[1:])
+        scale_factor = scale_factor.view(shape)
 
-    if dequantize:
-        y = y * scale_factor
+        # Quantize
+        y = torch.round(x / scale_factor)
 
+        if dequantize:
+            y = y * scale_factor
+
+    else: # 0-bit precision
+        y = torch.zeros(x.shape, device = x.device)
     # return y, scale_factor
     return y

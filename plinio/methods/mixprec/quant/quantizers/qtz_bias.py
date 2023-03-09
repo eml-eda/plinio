@@ -68,7 +68,9 @@ class Quantizer_Bias(nn.Module, Quantizer):
         # s_w = self.scale_weight
         self.s_b = (s_a * s_w).squeeze()
 
-        scaled_inp = input / self.s_b
+        mask = (self.s_b != 0)
+        scaled_inp = torch.zeros(input.shape, device = input.device)
+        scaled_inp[mask] = input[mask] / self.s_b[mask]
         output = Round_STE.apply(scaled_inp)
 
         if self.dequantize:
