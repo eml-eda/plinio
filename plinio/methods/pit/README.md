@@ -10,7 +10,7 @@ In order to gain more technical details about the algorithm, please refer to our
 To optimize your model with PIT you will need in most situations only **three additional steps** with respect to a normal pytorch training loop:
 1. Import the `PIT` conversion module and use it to automatically convert your `model` in an optimizable format. In its basic usage, `PIT` requires as arguments:
     - the `model` to be optimized
-    - the `input_shape` of an imput tensor (without batch-size)
+    - the `input_shape` of an input tensor (without batch-size)
     - the `regularizer` to be used (consult [supported regularizers](#supported-regularizers) to know the different alternatives) which dictates the metric that will be optimized.
     ```python
     from plinio.methods import PIT
