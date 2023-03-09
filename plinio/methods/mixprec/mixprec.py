@@ -122,7 +122,7 @@ class MixPrec(DNAS):
         self._regularizer = regularizer
         # update the temperature and softmax parameters at initialization
         self.update_softmax_temperature(self.initial_temperature)
-        self.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+        self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model.
@@ -329,8 +329,7 @@ class MixPrec(DNAS):
         for module in self._target_layers:
             module.set_temperatures(value)
 
-
-    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+    def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
         """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
         and the sampling disabling of the architectural coefficients in the quantizers
 
@@ -344,8 +343,7 @@ class MixPrec(DNAS):
         :type disable_sampling: bool
         """
         for module in self._target_layers:
-            module.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
-
+            module.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
 
     def __str__(self):
         """Prints the precision-assignent found by the NAS to screen

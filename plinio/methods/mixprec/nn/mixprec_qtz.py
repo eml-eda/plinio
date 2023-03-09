@@ -78,7 +78,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         # Init temperature to std value
         self.register_buffer('temperature', torch.tensor(1., dtype = torch.float32))
         self.temperature = cast(torch.Tensor, self.temperature)
-        self.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+        self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
 
 
     def sample_alpha_sm(self):
@@ -104,7 +104,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         coefficients at each iteration"""
         return
 
-    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+    def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
         """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
         and the sampling disabling of the architectural coefficients in the quantizers
 
@@ -206,7 +206,7 @@ class MixPrec_Qtz_Layer(nn.Module):
         # Init temperature to std value
         self.register_buffer('temperature', torch.tensor(1.))
         self.temperature = cast(torch.Tensor, self.temperature)
-        self.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+        self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
 
 
     def sample_alpha_sm(self):
@@ -232,7 +232,7 @@ class MixPrec_Qtz_Layer(nn.Module):
         coefficients at each iteration"""
         return
 
-    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+    def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
         """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
         and the sampling disabling of the architectural coefficients in the quantizers
 

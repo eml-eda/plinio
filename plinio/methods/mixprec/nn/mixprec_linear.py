@@ -120,7 +120,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                 if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
                     quantizer.temperature = torch.tensor(value, dtype = torch.float32)
 
-    def set_softmax_parameters(self, gumbel_softmax, hard_softmax, disable_sampling):
+    def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
         """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
         and the sampling disabling of the architectural coefficients in the quantizers
 
@@ -135,7 +135,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         """
         for quantizer in [self.mixprec_w_quantizer, self.mixprec_a_quantizer]:
             if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                quantizer.set_softmax_parameters(gumbel_softmax, hard_softmax, disable_sampling)
+                quantizer.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
 
     @staticmethod
     def autoimport(n: fx.Node,
