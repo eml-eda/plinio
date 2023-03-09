@@ -65,14 +65,21 @@ class PITSuperNetCombiner(nn.Module):
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
         self.theta_alpha = F.softmax(self.alpha / self.softmax_temperature, dim=0)
+        if self.hard_softmax:
+            self.theta_alpha = F.one_hot(
+                    torch.argmax(self.theta_alpha, dim=0), num_classes=len(self.theta_alpha)
+                ).to(torch.float32)
 
     def sample_alpha_gs(self):
         """
         Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = F.gumbel_softmax(self.alpha, self.softmax_temperature,
-                                            self.hard_softmax, dim=0)
+        if self.training:
+            self.theta_alpha = nn.functional.gumbel_softmax(
+                    self.alpha, self.softmax_temperature, self.hard_softmax, dim=0)
+        else:
+            self.sample_alpha_sm()
 
     def forward(self, layers_outputs: List[torch.Tensor]) -> torch.Tensor:
         """Forward function for the PITSuperNetCombiner that returns a weighted
