@@ -120,6 +120,10 @@ class MixPrec(DNAS):
         self.qinfo = qinfo
         self.initial_temperature = temperature # initial, not current temperature
         self._regularizer = regularizer
+        # save the parameters of the softmax
+        self.gumbel_softmax = gumbel_softmax
+        self.hard_softmax = hard_softmax
+        self.disable_sampling = disable_sampling
         # update the temperature and softmax parameters at initialization
         self.update_softmax_temperature(self.initial_temperature)
         self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
@@ -344,6 +348,14 @@ class MixPrec(DNAS):
         """
         for module in self._target_layers:
             module.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
+
+    def get_softmax_options(self):
+        """Retrieve the initial softmax options.
+
+        :return: Gumbel-softmax flag, hard-softmax, sampling disabled
+        :rtype: bool, bool, bool
+        """
+        return self.gumbel_softmax, self.hard_softmax, self.disable_sampling
 
     def __str__(self):
         """Prints the precision-assignent found by the NAS to screen

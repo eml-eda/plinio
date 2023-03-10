@@ -87,17 +87,24 @@ class MixPrec_Qtz_Channel(nn.Module):
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
         self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
+        if self.hard_softmax:
+            self.theta_alpha = torch.nn.functional.one_hot(
+                torch.argmax(self.theta_alpha, dim = 0),
+                num_classes = len(self.theta_alpha)).t().to(dtype = torch.float32)
 
     def sample_alpha_gs(self):
         """
         Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.gumbel_softmax(
-                logits = self.alpha_prec,
-                tau = self.temperature.item(),
-                hard = self.hard_softmax,
-                dim = 0)
+        if self.training:
+            self.theta_alpha = nn.functional.gumbel_softmax(
+                    logits = self.alpha_prec,
+                    tau = self.temperature.item(),
+                    hard = self.hard_softmax,
+                    dim = 0)
+        else:
+            self.sample_alpha_sm()
 
     def sample_alpha_none(self):
         """Sample the previous alpha architectural coefficients. Used to change the alpha
@@ -215,17 +222,24 @@ class MixPrec_Qtz_Layer(nn.Module):
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
         self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
+        if self.hard_softmax:
+            self.theta_alpha = torch.nn.functional.one_hot(
+                torch.argmax(self.theta_alpha, dim = 0),
+                num_classes = len(self.theta_alpha)).t().to(dtype = torch.float32)
 
     def sample_alpha_gs(self):
         """
         Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.gumbel_softmax(
-                logits = self.alpha_prec,
-                tau = self.temperature.item(),
-                hard = self.hard_softmax,
-                dim = 0)
+        if self.training:
+            self.theta_alpha = nn.functional.gumbel_softmax(
+                    logits = self.alpha_prec,
+                    tau = self.temperature.item(),
+                    hard = self.hard_softmax,
+                    dim = 0)
+        else:
+            self.sample_alpha_sm()
 
     def sample_alpha_none(self):
         """Sample the previous alpha architectural coefficients. Used to change the alpha
