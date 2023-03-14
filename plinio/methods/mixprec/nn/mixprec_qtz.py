@@ -22,6 +22,7 @@ from typing import Dict, Tuple, Type, cast
 import torch
 import torch.nn as nn
 from ..quant.quantizers import Quantizer
+from .argmaxer import STEArgmax
 
 
 class MixPrecType(Enum):
@@ -88,9 +89,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         """
         self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
         if self.hard_softmax:
-            self.theta_alpha = torch.nn.functional.one_hot(
-                torch.argmax(self.theta_alpha, dim = 0),
-                num_classes = len(self.theta_alpha)).t().to(dtype = torch.float32)
+            self.theta_alpha = STEArgmax.apply(self.theta_alpha)
 
     def sample_alpha_gs(self):
         """
@@ -223,9 +222,8 @@ class MixPrec_Qtz_Layer(nn.Module):
         """
         self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
         if self.hard_softmax:
-            self.theta_alpha = torch.nn.functional.one_hot(
-                torch.argmax(self.theta_alpha, dim = 0),
-                num_classes = len(self.theta_alpha)).t().to(dtype = torch.float32)
+            self.theta_alpha = STEArgmax.apply(self.theta_alpha)
+
 
     def sample_alpha_gs(self):
         """
