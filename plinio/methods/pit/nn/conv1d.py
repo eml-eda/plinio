@@ -370,7 +370,8 @@ class PITConv1d(nn.Conv1d, PITModule):
         """
         cin = self.input_features_calculator.features
         cost = cin * self.out_features_eff * self.k_eff
-        cost = cost / self.groups
+        if self.groups > 1:
+            cost = cost / self.out_features_eff
         return cost
 
     def get_size_binarized(self) -> torch.Tensor:
@@ -400,7 +401,8 @@ class PITConv1d(nn.Conv1d, PITModule):
         k = torch.sum(bg_prod)
         # Finally compute cost
         cost = cin * cout * k
-        cost = cost / self.groups
+        if self.groups > 1:
+            cost = cost / cout
         return cost
 
     def get_macs(self) -> torch.Tensor:
