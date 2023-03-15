@@ -28,6 +28,7 @@ from plinio.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, \
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
     associate_input_features
 from plinio.graph.inspection import is_inherited_layer
+from plinio.graph.transformation import fuse_consecutive_layers
 from plinio.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
 from plinio.methods.mixprec.quant.quantizers import Quantizer
 from plinio.graph import get_graph_outputs
@@ -108,7 +109,7 @@ def convert(model: nn.Module,
     ShapeProp(mod).propagate(batch_example.to(device))
     add_node_properties(mod)
     if conversion_type in ('autoimport', 'import'):
-        fuse_conv_bn(mod)
+        fuse_mixprec_modules(mod)
     target_layers = convert_layers(mod,
                                    activation_precisions,
                                    weight_precisions,
@@ -400,15 +401,17 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
         target_layers.append(mod.get_submodule(str(n.target)))
 
 
-def fuse_conv_bn_inplace(conv: MixPrecModule, bn):
+def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
     """
     Given a conv Module `A` and an batch_norm module `B`, modifies A
     such that A(x) == B(A_old(x))
     """
+    # TODO: this is almost a duplicate of PIT. Resolve.
+    assert (isinstance(lin, MixPrec_Conv2d) or isinstance(lin, MixPrec_Linear))
+    # or isinstance(lin, MixPrec_Conv1d))
+    assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
     if not bn.track_running_stats:
-        raise AttributeError("BatchNorm foldign requires track_running_stats = True")
-    # assert (isinstance(conv, PITConv1d) or isinstance(conv, PITConv2d))
-    assert isinstance(conv, MixPrec_Conv2d)
+        raise AttributeError("BatchNorm folding requires track_running_stats = True")
     with torch.no_grad():
         # mixprec_a_quantizerconv.following_bn_args = {
         #     'eps': bn.eps,
@@ -416,10 +419,10 @@ def fuse_conv_bn_inplace(conv: MixPrecModule, bn):
         #     'affine': bn.affine,
         #     'track_running_stats': bn.track_running_stats,
         # }
-        conv_w = conv.weight
-        conv_b = conv.bias
-        bn_rm = bn.running_mean
-        bn_rv = bn.running_var
+        conv_w = lin.weight
+        conv_b = lin.bias
+        bn_rm = cast(torch.Tensor, bn.running_mean)
+        bn_rv = cast(torch.Tensor, bn.running_var)
         bn_w = bn.weight
         bn_b = bn.bias
         if conv_b is None:
@@ -431,47 +434,21 @@ def fuse_conv_bn_inplace(conv: MixPrecModule, bn):
         bn_var_rsqrt = torch.rsqrt(bn_rv + bn.eps)
         conv_w = conv_w * (bn_w * bn_var_rsqrt).reshape([-1] + [1] * (len(conv_w.shape) - 1))
         conv_b = (conv_b - bn_rm) * bn_var_rsqrt * bn_w + bn_b
-        conv.weight.copy_(conv_w)
-        if conv.bias is None:
-            conv.bias = torch.nn.Parameter(conv_b)
+        lin.weight.copy_(conv_w)
+        if lin.bias is None:
+            lin.bias = torch.nn.Parameter(conv_b)
         else:
-            conv.bias.copy_(conv_b)
+            lin.bias.copy_(conv_b)
 
 
-def fuse_conv_bn(mod: fx.GraphModule):
-    """Fuses all BatchNorm layers occurring just after a PITLayer with it.
-    This is needed because PIT channel masking does not work with BN just after conv.
-    Also sets the "had_bn" field in PITLayers to then re-split the BN during export
-
-    :param mod: a torch.fx.GraphModule with tensor shapes annotations.
+def fuse_mixprec_modules(mod: fx.GraphModule):
+    """Fuse sequences of layers as required by MixPrec. Namely: Conv-BN and Linear-BN
+    :param mod: the parent module
     :type mod: fx.GraphModule
     """
-    # partially taken from: https://pytorch.org/tutorials/intermediate/fx_conv_bn_fuser.html
-    modules = dict(mod.named_modules())
-    for node in mod.graph.nodes:
-        if node.op != 'call_module' or node.args[0].op != 'call_module':
-            continue
-        # isbn1d = isinstance(modules[node.target], nn.BatchNorm1d)
-        # prevconv1d = isinstance(modules[node.args[0].target], MixPrecConv1d)
-        isbn2d = isinstance(modules[node.target], nn.BatchNorm2d)
-        prevconv2d = isinstance(modules[node.args[0].target], MixPrec_Conv2d)
-        # if (isbn1d and prevconv1d) or (isbn2d and prevconv2d):
-        if (isbn2d and prevconv2d):
-            if len(node.args[0].users) > 1:
-                raise ValueError("""Convolution followed by BN but used also by other layers.
-                This layer cannot be converted by PIT""")
-            conv = modules[node.args[0].target]
-            bn = modules[node.target]
-            # assert (isinstance(conv, PITConv1d) or isinstance(conv, PITConv2d))
-            assert isinstance(conv, MixPrec_Conv2d)
-            fuse_conv_bn_inplace(conv, bn)
-            # next line removed because we modify inplace
-            # inspection.replace_node_module(node.args[0], modules, fused_conv)
-            node.replace_all_uses_with(node.args[0])
-            # Now that all uses of the batch norm have been replaced, we can
-            # safely remove the batch norm.
-            mod.graph.erase_node(node)
-    mod.delete_all_unused_submodules()
+    # fuse_consecutive_layers(mod, MixPrec_Conv1d, nn.BatchNorm1d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, MixPrec_Conv2d, nn.BatchNorm2d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, MixPrec_Linear, nn.BatchNorm1d, fuse_bn_inplace)
 
 
 def register_input_features(mod: fx.GraphModule):
