@@ -23,6 +23,7 @@ import torch.fx as fx
 import torch.nn as nn
 from ..quant.quantizers import Quantizer
 from .mixprec_qtz import MixPrecType
+from plinio.graph.features_calculation import FeaturesCalculator
 
 
 class MixPrecModule:
@@ -31,6 +32,30 @@ class MixPrecModule:
     @abstractmethod
     def __init__(self):
         raise NotImplementedError("Calling init on base abstract MixPrecModule class")
+
+    @property
+    @abstractmethod
+    def input_features_calculator(self) -> FeaturesCalculator:
+        """Returns the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :return: the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+        :rtype: FeaturesCalculator
+        """
+        raise NotImplementedError("Trying to get input features on base abstract PITModule class")
+
+    @input_features_calculator.setter
+    @abstractmethod
+    def input_features_calculator(self, calc: FeaturesCalculator):
+        """Set the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :param calc: the `FeaturesCalculator` instance that computes the number of input features
+        for this layer
+        :type calc: FeaturesCalculator
+        """
+        raise NotImplementedError("Trying to set input features on base abstract PITModule class")
 
     @staticmethod
     @abstractmethod

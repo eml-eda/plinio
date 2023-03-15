@@ -25,11 +25,14 @@ from torch.fx.passes.shape_prop import ShapeProp
 
 from plinio.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, \
     MixPrecModule
-from plinio.graph.annotation import add_node_properties
+from plinio.graph.annotation import add_features_calculator, add_node_properties, \
+    associate_input_features
+from plinio.graph.inspection import is_inherited_layer
 from plinio.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
 from plinio.methods.mixprec.quant.quantizers import Quantizer
 from plinio.graph import get_graph_outputs
 from plinio.graph import inspection
+from plinio.graph.features_calculation import ModAttrFeaturesCalculator
 
 # add new supported layers here:
 mixprec_layer_map: Dict[Type[nn.Module], Type[MixPrecModule]] = {
@@ -115,6 +118,10 @@ def convert(model: nn.Module,
                                    exclude_names,
                                    exclude_types)
 
+    if conversion_type in ('autoimport', 'import'):
+        add_features_calculator(mod, [mixprec_features_calc])
+        associate_input_features(mod)
+        register_input_features(mod)
     mod.graph.lint()
     mod.recompile()
     return mod, target_layers
@@ -465,3 +472,30 @@ def fuse_conv_bn(mod: fx.GraphModule):
             # safely remove the batch norm.
             mod.graph.erase_node(node)
     mod.delete_all_unused_submodules()
+
+
+def register_input_features(mod: fx.GraphModule):
+    for n in mod.graph.nodes:
+        if is_inherited_layer(n, mod, (MixPrecModule,)):
+            sub_mod = cast(MixPrecModule, mod.get_submodule(str(n.target)))
+            fc = n.meta['input_features_set_by'].meta['features_calculator']
+            sub_mod.input_features_calculator = fc
+
+
+def mixprec_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:
+    """Sets the feature calculator for a MixPrec Module
+
+    :param n: node
+    :type n: fx.Node
+    :param mod: the parent module
+    :type mod: fx.GraphModule
+    :return: optional feature calculator object for PIT node
+    :rtype: ModAttrFeaturesCalculator
+    """
+    if is_inherited_layer(n, mod, (MixPrecModule,)):
+        # For PIT NAS-able layers, the "active" output features are stored in the
+        # out_features_eff attribute, and the binary mask is in features_mask
+        sub_mod = mod.get_submodule(str(n.target))
+        return ModAttrFeaturesCalculator(sub_mod, 'out_features_eff', 'features_mask')
+    else:
+        return None

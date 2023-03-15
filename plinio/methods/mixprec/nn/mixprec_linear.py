@@ -27,6 +27,7 @@ from ..quant.nn import Quant_Linear, Quant_List
 from .mixprec_module import MixPrecModule
 from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel, \
     MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias
+from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 
 
 class MixPrec_Linear(nn.Linear, MixPrecModule):
@@ -82,6 +83,8 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             self.mixprec_b_quantizer = lambda *args: None  # Do Nothing
 
         self.w_mixprec_type = w_mixprec_type
+        # this will be overwritten later when we process the model graph
+        self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -103,9 +106,6 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
 
         # Linear operation
         q_out = F.linear(q_inp, q_w, q_b)
-
-        # TODO: Understand what I need to do for regularization
-        # Save info for regularization
 
         return q_out
 
@@ -466,18 +466,9 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         :rtype: torch.Tensor
         """
         eff_w_prec = self.mixprec_w_quantizer.effective_precision
-        cost = self.in_features * self.out_features * eff_w_prec
-        return cost
-
-    def get_size_binarized(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer considering
-        binarized masks
-
-        :return: the actual memory occupation of weights
-        :rtype: torch.Tensor
-        """
-        w_prec = torch.tensor(self.selected_w_precision).sum() / self.out_features
-        cost = w_prec * self.in_features * self.out_features
+        cout = self.out_features_eff
+        cin = self.input_features_calculator.features
+        cost = cin * cout * eff_w_prec
         return cost
 
     # N.B., EdMIPS formulation
@@ -491,3 +482,38 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         eff_a_prec = self.mixprec_a_quantizer.effective_precision
         cost = self.in_features * self.out_features * eff_w_prec * eff_a_prec
         return cost
+
+    @property
+    def out_features_eff(self) -> torch.Tensor:
+        """Returns the number of not pruned channels for this layer.
+
+        :return: the number of not pruned channels for this layer.
+        :rtype: torch.Tensor
+        """
+        if self.w_mixprec_type == MixPrecType.PER_CHANNEL:
+            return cast(torch.Tensor, self.mixprec_w_quantizer.out_features_eff)
+        else:
+            return cast(torch.Tensor, self.out_features)
+
+    @property
+    def input_features_calculator(self) -> FeaturesCalculator:
+        """Returns the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :return: the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+        :rtype: FeaturesCalculator
+        """
+        return self._input_features_calculator
+
+    @input_features_calculator.setter
+    def input_features_calculator(self, calc: FeaturesCalculator):
+        """Set the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :param calc: the `FeaturesCalculator` instance that computes the number of input features
+        for this layer
+        :type calc: FeaturesCalculator
+        """
+        calc.register(self)
+        self._input_features_calculator = calc

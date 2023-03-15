@@ -60,6 +60,8 @@ class MixPrec_Qtz_Channel(nn.Module):
                  hard_softmax: bool = False,
                  disable_sampling: bool = False):
         super(MixPrec_Qtz_Channel, self).__init__()
+        if len(precisions) != len(set(precisions)):
+            raise ValueError("Precisions cannot be repeated")
         self.precisions = precisions
         self.cout = cout
         self.quantizer = quantizer
@@ -67,8 +69,6 @@ class MixPrec_Qtz_Channel(nn.Module):
         # NAS parameters
         self.alpha_prec = nn.Parameter(torch.Tensor(len(precisions), cout))
         self.alpha_prec.data.fill_(1.)  # Initially each precision is equiprobable
-        self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
-        self.theta_alpha.data = self.alpha_prec
         # Mixed-Precision Quantizers
         self.mix_qtz = nn.ModuleList()
         for p in precisions:
@@ -77,10 +77,35 @@ class MixPrec_Qtz_Channel(nn.Module):
             self.mix_qtz.append(qtz)
 
         # Init temperature to std value
-        self.register_buffer('temperature', torch.tensor(1., dtype = torch.float32))
+        self.register_buffer('temperature', torch.tensor(1., dtype=torch.float32))
         self.temperature = cast(torch.Tensor, self.temperature)
         self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
+        self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
+        with torch.no_grad():
+            self.theta_alpha.data = self.alpha_prec
+            self.sample_alpha()
+        self.register_buffer('out_features_eff', torch.tensor(self.cout, dtype=torch.float32))
+        self.zero_index = None
+        for i, p in enumerate(self.precisions):
+            if p == 0:
+                self.zero_index = i
+                break
 
+    @property
+    def features_mask(self) -> torch.Tensor:
+        """Return the binarized mask that specifies which output features (channels) are kept by
+        the NAS
+
+        :return: the binarized mask over the features axis
+        :rtype: torch.Tensor
+        """
+        with torch.no_grad():
+            if self.zero_index is not None:
+                # extract the row corresponding to 0-bit precision from the one-hot argmax matrix
+                # of size (n_prec, cout), and do a 1s complement
+                return 1 - STEArgmax.apply(self.theta_alpha)[self.zero_index, :]
+            else:
+                return torch.ones((self.cout,))
 
     def sample_alpha_sm(self):
         """
@@ -98,10 +123,10 @@ class MixPrec_Qtz_Channel(nn.Module):
         """
         if self.training:
             self.theta_alpha = nn.functional.gumbel_softmax(
-                    logits = self.alpha_prec,
-                    tau = self.temperature.item(),
-                    hard = self.hard_softmax,
-                    dim = 0)
+                logits=self.alpha_prec,
+                tau=self.temperature.item(),
+                hard=self.hard_softmax,
+                dim=0)
         else:
             self.sample_alpha_sm()
 
@@ -131,7 +156,6 @@ class MixPrec_Qtz_Channel(nn.Module):
         else:
             self.sample_alpha = self.sample_alpha_sm
 
-
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the searchable mixed-precision layer.
 
@@ -151,6 +175,13 @@ class MixPrec_Qtz_Channel(nn.Module):
             theta_alpha_i = self.theta_alpha[i].view((self.cout,) + (1,) * len(input.shape[1:]))
             y.append(theta_alpha_i * quantizer(input))
         y = torch.stack(y, dim=0).sum(dim=0)
+
+        # compute number of not pruned channels
+        if self.zero_index is not None:
+            self.out_features_eff = torch.sum(self.theta_alpha[self.zero_index, :])
+        else:
+            self.out_features_eff = torch.tensor(self.cout, dtype=torch.float32)
+
         return y
 
     @property
@@ -200,8 +231,6 @@ class MixPrec_Qtz_Layer(nn.Module):
         # NAS parameters
         self.alpha_prec = nn.Parameter(torch.Tensor(len(precisions)))
         self.alpha_prec.data.fill_(1.)  # Initially each precision is equiprobable
-        self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
-        self.theta_alpha.data = self.alpha_prec
         # Mixed-Precision Quantizers
         self.mix_qtz = nn.ModuleList()
         for p in precisions:
@@ -213,7 +242,10 @@ class MixPrec_Qtz_Layer(nn.Module):
         self.register_buffer('temperature', torch.tensor(1.))
         self.temperature = cast(torch.Tensor, self.temperature)
         self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
-
+        self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
+        with torch.no_grad():
+            self.theta_alpha.data = self.alpha_prec
+            self.sample_alpha()
 
     def sample_alpha_sm(self):
         """
@@ -224,7 +256,6 @@ class MixPrec_Qtz_Layer(nn.Module):
         if self.hard_softmax:
             self.theta_alpha = STEArgmax.apply(self.theta_alpha)
 
-
     def sample_alpha_gs(self):
         """
         Samples the alpha architectural coefficients using a Gumbel SoftMax (with temperature).
@@ -232,10 +263,10 @@ class MixPrec_Qtz_Layer(nn.Module):
         """
         if self.training:
             self.theta_alpha = nn.functional.gumbel_softmax(
-                    logits = self.alpha_prec,
-                    tau = self.temperature.item(),
-                    hard = self.hard_softmax,
-                    dim = 0)
+                logits=self.alpha_prec,
+                tau=self.temperature.item(),
+                hard=self.hard_softmax,
+                dim=0)
         else:
             self.sample_alpha_sm()
 

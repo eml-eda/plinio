@@ -26,6 +26,7 @@ from ..quant.nn import Quant_Conv2d, Quant_List
 from .mixprec_module import MixPrecModule
 from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel, \
     MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias
+from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 
 
 class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
@@ -99,6 +100,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             self.mixprec_b_quantizer = lambda *args: None  # Do Nothing
 
         self.w_mixprec_type = w_mixprec_type
+        # this will be overwritten later when we process the model graph
+        self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -132,7 +135,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         with torch.no_grad():
             for quantizer in [self.mixprec_w_quantizer, self.mixprec_a_quantizer]:
                 if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    quantizer.temperature = torch.tensor(value, dtype = torch.float32)
+                    quantizer.temperature = torch.tensor(value, dtype=torch.float32)
 
     def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
         """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
@@ -491,23 +494,13 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :rtype: torch.Tensor
         """
         eff_w_prec = self.mixprec_w_quantizer.effective_precision
-        cost = self.in_channels * self.out_channels * self.kernel_size[0] * self.kernel_size[1]
-        cost = cost / self.groups
+        cout = self.out_features_eff
+        cin = self.input_features_calculator.features
+        cost = cin * cout * self.kernel_size[0] * self.kernel_size[1]
+        if self.groups > 1:
+            cost = cost / cout
         eff_cost = cost * eff_w_prec
         return eff_cost
-
-    def get_size_binarized(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer considering
-        binarized masks
-
-        :return: the actual memory occupation of weights
-        :rtype: torch.Tensor
-        """
-        w_prec = torch.tensor(self.selected_w_precision).sum() / self.out_channels
-        cost = self.in_channels * self.out_channels * self.kernel_size[0] * self.kernel_size[1]
-        cost = cost / self.groups
-        tot_cost = cost * w_prec
-        return tot_cost
 
     # N.B., EdMIPS formulation
     def get_macs(self) -> torch.Tensor:
@@ -519,3 +512,38 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         eff_a_prec = self.mixprec_a_quantizer.effective_precision
         eff_cost = self.get_size() * self.out_height * self.out_width * eff_a_prec
         return eff_cost
+
+    @property
+    def out_features_eff(self) -> torch.Tensor:
+        """Returns the number of not pruned channels for this layer.
+
+        :return: the number of not pruned channels for this layer.
+        :rtype: torch.Tensor
+        """
+        if self.w_mixprec_type == MixPrecType.PER_CHANNEL:
+            return cast(torch.Tensor, self.mixprec_w_quantizer.out_features_eff)
+        else:
+            return cast(torch.Tensor, self.out_channels)
+
+    @property
+    def input_features_calculator(self) -> FeaturesCalculator:
+        """Returns the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :return: the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+        :rtype: FeaturesCalculator
+        """
+        return self._input_features_calculator
+
+    @input_features_calculator.setter
+    def input_features_calculator(self, calc: FeaturesCalculator):
+        """Set the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :param calc: the `FeaturesCalculator` instance that computes the number of input features
+        for this layer
+        :type calc: FeaturesCalculator
+        """
+        calc.register(self)
+        self._input_features_calculator = calc
