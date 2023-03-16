@@ -17,7 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, Type, cast, Union, List
+from typing import Dict, Any, Iterator, Tuple, Type, cast, Union, List
 import torch
 import torch.fx as fx
 import torch.nn as nn
@@ -102,27 +102,32 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         self.w_mixprec_type = w_mixprec_type
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
+        # this will be overwritten later when we process the model graph
+        self._input_quantizer = cast(MixPrec_Qtz_Layer, None)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
 
         In a nutshell,:
-        - Quantize and combine the input tensor at the different `precisions`.
         - Quantize and combine the weight tensor at the different `precisions`.
+        - Quantize and combine the bias tensor at fixed precision.
         - Compute Conv2d operation using the previous obtained quantized tensors.
+        - Quantize and combine the output tensor at the different `precisions`.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        # Quantization
-        q_inp = self.mixprec_a_quantizer(input)
+        # Quantization of weight and bias
         q_w = self.mixprec_w_quantizer(self.weight)
         q_b = self.mixprec_b_quantizer(self.bias)
 
         # Linear operation
-        q_out = self._conv_forward(q_inp, q_w, q_b)
+        out = self._conv_forward(input, q_w, q_b)
+
+        # Quantization of output
+        q_out = self.mixprec_a_quantizer(out)
 
         return q_out
 
@@ -160,18 +165,12 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                    w_mixprec_type: MixPrecType,
                    a_precisions: Tuple[int, ...],
                    w_precisions: Tuple[int, ...],
-                   a_quantizer: Type[Quantizer],
-                   w_quantizer: Type[Quantizer],
                    b_quantizer: Type[Quantizer],
-                   a_sq: Optional[Quantizer],
-                   a_quantizer_kwargs: Dict = {},
-                   w_quantizer_kwargs: Dict = {},
+                   aw_q: Tuple[Quantizer, Quantizer],
                    b_quantizer_kwargs: Dict = {}
-                   ) -> Optional[Quantizer]:
+                   ):
         """Create a new fx.Node relative to a MixPrec_Conv2d layer, starting from the fx.Node
         of a nn.Conv2d layer, and replace it into the parent fx.GraphModule
-
-        Also returns a quantizer in case it needs to be shared with other layers
 
         :param n: a fx.Node corresponding to a nn.ReLU layer, with shape annotations
         :type n: fx.Node
@@ -184,23 +183,13 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :type a_precisions: Tuple[int, ...]
         :param w_precisions: The precisions to be explored for weights
         :type w_precisions: Tuple[int, ...]
-        :param a_quantizer: The quantizer to be used for activations
-        :type a_quantizer: Type[Quantizer]
-        :param w_quantizer: The quantizer to be used for weights
-        :type w_quantizer: Type[Quantizer]
         :param b_quantizer: The quantizer to be used for biases
         :type b_quantizer: Type[Quantizer]
-        :param a_sq: An optional shared quantizer derived from other layers for activations
-        :type a_sq: Optional[Quantizer]
-        :param a_quantizer_kwargs: act quantizer kwargs, if no kwargs are passed default is used
-        :type a_quantizer_kwargs: Dict
-        :param w_quantizer_kwargs: weight quantizer kwargs, if no kwargs are passed default is used
-        :type w_quantizer_kwargs: Dict
+        :param aw_q: A tuple containing respecitvely activation and weight quantizers
+        :type aw_q: Tuple[Quantizer, Quantizer]
         :param b_quantizer_kwargs: bias quantizer kwargs, if no kwargs are passed default is used
         :type b_quantizer_kwargs: Dict
         :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared quantizer
-        :rtype: Tuple[Optional[Quantizer], ...]
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Conv2d:
@@ -209,43 +198,22 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         # here, this is guaranteed
         submodule = cast(nn.Conv2d, submodule)
 
-        # Build activation mixprec quantizer
-        if a_sq is not None:
-            mixprec_a_quantizer = a_sq
-        else:
-            mixprec_a_quantizer = MixPrec_Qtz_Layer(a_precisions,
-                                                    a_quantizer,
-                                                    a_quantizer_kwargs)
-        # Build weight mixprec quantizer
-        if w_mixprec_type == MixPrecType.PER_LAYER:
-            mixprec_w_quantizer = MixPrec_Qtz_Layer(w_precisions,
-                                                    w_quantizer,
-                                                    w_quantizer_kwargs)
-        elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-            mixprec_w_quantizer = MixPrec_Qtz_Channel(w_precisions,
-                                                      submodule.out_channels,
-                                                      w_quantizer,
-                                                      w_quantizer_kwargs)
-        else:
-            msg = f'Supported mixed-precision types: {list(MixPrecType)}'
-            raise ValueError(msg)
+        # Get activation and weight mixprec quantizer
+        mixprec_a_quantizer = aw_q[0]
+        mixprec_w_quantizer = aw_q[1]
 
         # Build bias mixprec quantizer
         b_mixprec_type = w_mixprec_type  # Bias MixPrec scheme is dictated by weights
         if b_mixprec_type == MixPrecType.PER_LAYER:
-            mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
             mixprec_w_quantizer = cast(MixPrec_Qtz_Layer, mixprec_w_quantizer)
             mixprec_b_quantizer = MixPrec_Qtz_Layer_Bias(b_quantizer,
                                                          submodule.out_channels,
-                                                         mixprec_a_quantizer,
                                                          mixprec_w_quantizer,
                                                          b_quantizer_kwargs)
         elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-            mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
             mixprec_w_quantizer = cast(MixPrec_Qtz_Channel, mixprec_w_quantizer)
             mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(b_quantizer,
                                                            submodule.out_channels,
-                                                           mixprec_a_quantizer,
                                                            mixprec_w_quantizer,
                                                            b_quantizer_kwargs)
         else:
@@ -269,7 +237,6 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
                                        mixprec_b_quantizer,
                                        w_mixprec_type)
         mod.add_submodule(str(n.target), new_submodule)
-        return None  # TODO: Understand if I should return something and when
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):
@@ -547,3 +514,24 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         """
         calc.register(self)
         self._input_features_calculator = calc
+
+    @property
+    def input_quantizer(self) -> MixPrec_Qtz_Layer:
+        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :rtype: MixPrec_Qtz_Layer
+        """
+        return self._input_quantizer
+
+    @input_quantizer.setter
+    def input_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        self._input_quantizer = qtz
+        self.mixprec_b_quantizer.mixprec_a_quantizer = qtz

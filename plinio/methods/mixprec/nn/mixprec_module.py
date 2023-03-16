@@ -22,7 +22,7 @@ from typing import Dict, Any, Optional, Iterator, Tuple, Type
 import torch.fx as fx
 import torch.nn as nn
 from ..quant.quantizers import Quantizer
-from .mixprec_qtz import MixPrecType
+from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
 from plinio.graph.features_calculation import FeaturesCalculator
 
 
@@ -43,7 +43,7 @@ class MixPrecModule:
         this layer.
         :rtype: FeaturesCalculator
         """
-        raise NotImplementedError("Trying to get input features on base abstract PITModule class")
+        raise NotImplementedError("Trying to get input features on abstract MixPrecModule class")
 
     @input_features_calculator.setter
     @abstractmethod
@@ -55,7 +55,29 @@ class MixPrecModule:
         for this layer
         :type calc: FeaturesCalculator
         """
-        raise NotImplementedError("Trying to set input features on base abstract PITModule class")
+        raise NotImplementedError("Trying to set input features on abstract MixPrecModule class")
+
+    @property
+    @abstractmethod
+    def input_quantizer(self) -> MixPrec_Qtz_Layer:
+        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :rtype: MixPrec_Qtz_Layer
+        """
+        raise NotImplementedError("Trying to get input quantizer on abstract MixPrecModule class")
+
+    @input_quantizer.setter
+    @abstractmethod
+    def input_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        raise NotImplementedError("Trying to set input quantizer on abstract MixPrecModule class")
 
     @staticmethod
     @abstractmethod
@@ -64,12 +86,8 @@ class MixPrecModule:
                    w_mixprec_type: MixPrecType,
                    a_precisions: Tuple[int, ...],
                    w_precisions: Tuple[int, ...],
-                   a_quantizer: Type[Quantizer],
-                   w_quantizer: Type[Quantizer],
                    b_quantizer: Type[Quantizer],
-                   a_sq: Optional[Quantizer],
-                   a_quantizer_kwargs: Dict = {},
-                   w_quantizer_kwargs: Dict = {},
+                   aw_q: Tuple[Quantizer, Quantizer],
                    b_quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
         """Create a new fx.Node relative to a MixPrecModule layer, starting from the fx.Node
@@ -88,18 +106,10 @@ class MixPrecModule:
         :type a_precisions: Tuple[int, ...]
         :param w_precisions: The precisions to be explored for weights
         :type w_precisions: Tuple[int, ...]
-        :param a_quantizer: The quantizer to be used for activations
-        :type a_quantizer: Type[Quantizer]
-        :param w_quantizer: The quantizer to be used for weights
-        :type w_quantizer: Type[Quantizer]
         :param b_quantizer: The quantizer to be used for biases
         :type b_quantizer: Type[Quantizer]
-        :param a_sq: An optional shared quantizer derived from other layers for activations
-        :type a_sq: Optional[Quantizer]
-        :param a_quantizer_kwargs: act quantizer kwargs, if no kwargs are passed default is used
-        :type a_quantizer_kwargs: Dict
-        :param w_quantizer_kwargs: weight quantizer kwargs, if no kwargs are passed default is used
-        :type w_quantizer_kwargs: Dict
+        :param aw_q: A tuple containing respecitvely activation and weight quantizers
+        :type aw_q: Tuple[Quantizer, Quantizer]
         :param b_quantizer_kwargs: bias quantizer kwargs, if no kwargs are passed default is used
         :type b_quantizer_kwargs: Dict
         :raises TypeError: if the input fx.Node is not of the correct type

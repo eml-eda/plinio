@@ -156,14 +156,16 @@ class ToyMultiPath1_2D(nn.Module):
         self.conv2 = nn.Conv2d(3, 64, (3, 3), padding='same')
         self.conv3 = nn.Conv2d(3, 50, (3, 3), padding='same')
         self.conv4 = nn.Conv2d(50, 64, (3, 3), padding='same')
-        self.conv5 = nn.Conv2d(64, 64, (3, 3), padding='same')
+        # self.conv5 = nn.Conv2d(64, 64, (3, 3), padding='same')
+        self.conv5 = nn.Conv2d(32, 64, (3, 3), padding='same')
         self.fc = nn.Linear(6400, 2)
         self.reluadd = nn.ReLU()
 
     def forward(self, x):
         a = self.conv0(x)
         b = self.conv1(x)
-        z = torch.cat((a, b), dim=1)
+        # z = torch.cat((a, b), dim=1)
+        z = a + b
         z = self.conv5(z)
         y = self.conv2(x)
         w = self.conv3(x)

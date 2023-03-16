@@ -21,6 +21,7 @@ from enum import Enum, auto
 from typing import Dict, Tuple, Type, cast
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from ..quant.quantizers import Quantizer
 from .argmaxer import STEArgmax
 
@@ -112,7 +113,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         Samples the alpha coefficients using a standard SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
+        self.theta_alpha = F.softmax(self.alpha_prec / self.temperature.item(), dim=0)
         if self.hard_softmax:
             self.theta_alpha = STEArgmax.apply(self.theta_alpha)
 
@@ -122,7 +123,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
         if self.training:
-            self.theta_alpha = nn.functional.gumbel_softmax(
+            self.theta_alpha = F.gumbel_softmax(
                 logits=self.alpha_prec,
                 tau=self.temperature.item(),
                 hard=self.hard_softmax,
@@ -252,7 +253,7 @@ class MixPrec_Qtz_Layer(nn.Module):
         Samples the alpha coefficients using a standard SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = nn.functional.softmax(self.alpha_prec / self.temperature.item(), dim=0)
+        self.theta_alpha = F.softmax(self.alpha_prec / self.temperature.item(), dim=0)
         if self.hard_softmax:
             self.theta_alpha = STEArgmax.apply(self.theta_alpha)
 
@@ -262,7 +263,7 @@ class MixPrec_Qtz_Layer(nn.Module):
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
         if self.training:
-            self.theta_alpha = nn.functional.gumbel_softmax(
+            self.theta_alpha = F.gumbel_softmax(
                 logits=self.alpha_prec,
                 tau=self.temperature.item(),
                 hard=self.hard_softmax,
@@ -336,23 +337,26 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
     This module includes trainable NAS parameters which are shared with the
     `mixprec_w_quantizer` in order to select the proper corresponding quantizer.
 
-    :param quantizer: input quantizer
+    :param quantizer: bias quantizer
     :type quantizer: Quantizer
     :param cout: number of output channels
     :type cout: int
+    :param mixprec_w_quantizer: mixprec weight quantizer, it is used to gather info
+    about weight scale factor
+    :type mixprec_w_quantizer: MixPrec_Qtz_Layer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
                  cout: int,
-                 mixprec_a_quantizer: MixPrec_Qtz_Layer,
                  mixprec_w_quantizer: MixPrec_Qtz_Layer,
                  quantizer_kwargs: Dict = {}):
         super(MixPrec_Qtz_Layer_Bias, self).__init__()
         self.quantizer = quantizer
         self.cout = cout
-        self.mixprec_a_quantizer = mixprec_a_quantizer
+        # This will be overwritten later when we process the model graph
+        self._mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, None)
         self.mixprec_w_quantizer = mixprec_w_quantizer
         self.quantizer_kwargs = quantizer_kwargs
 
@@ -399,6 +403,26 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w
+
+    @property
+    def mixprec_a_quantizer(self) -> MixPrec_Qtz_Layer:
+        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :rtype: MixPrec_Qtz_Layer
+        """
+        return self._mixprec_a_quantizer
+
+    @mixprec_a_quantizer.setter
+    def mixprec_a_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        self._mixprec_a_quantizer = qtz
 
 
 class MixPrec_Qtz_Channel_Bias(nn.Module):
@@ -406,23 +430,26 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
     operation of each channel of bias vector provided as input.
     This module includes trainable NAS parameters.
 
+    :param quantizer: bias quantizer
+    :type quantizer: Quantizer
     :param cout: number of output channels
     :type cout: int
-    :param quantizer: input quantizer
-    :type quantizer: Quantizer
+    :param mixprec_w_quantizer: mixprec weight quantizer, it is used to gather info
+    about weight scale factor
+    :type mixprec_w_quantizer: MixPrec_Qtz_Channel
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
                  cout: int,
-                 mixprec_a_quantizer: MixPrec_Qtz_Layer,
                  mixprec_w_quantizer: MixPrec_Qtz_Channel,
                  quantizer_kwargs: Dict = {}):
         super(MixPrec_Qtz_Channel_Bias, self).__init__()
         self.quantizer = quantizer
         self.cout = cout
-        self.mixprec_a_quantizer = mixprec_a_quantizer
+        # This will be overwritten later when we process the model graph
+        self._mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, None)
         self.mixprec_w_quantizer = mixprec_w_quantizer
         self.quantizer_kwargs = quantizer_kwargs
 
@@ -469,3 +496,23 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
         for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w
+
+    @property
+    def mixprec_a_quantizer(self) -> MixPrec_Qtz_Layer:
+        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :rtype: MixPrec_Qtz_Layer
+        """
+        return self._mixprec_a_quantizer
+
+    @mixprec_a_quantizer.setter
+    def mixprec_a_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        self._mixprec_a_quantizer = qtz

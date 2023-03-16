@@ -25,6 +25,7 @@ from ..quant.quantizers import Quantizer
 from ..quant.nn import Quant_Identity
 from .mixprec_module import MixPrecModule
 from .mixprec_qtz import MixPrec_Qtz_Layer
+from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 
 
 class MixPrec_Identity(nn.Identity, MixPrecModule):
@@ -39,8 +40,11 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
                  precisions: Tuple[int, ...],
                  quantizer: MixPrec_Qtz_Layer):
         super(MixPrec_Identity, self).__init__()
+        self.in_features = quantizer.quantizer_kwargs['cout']
         self.precisions = precisions
-        self.mixprec_quantizer = quantizer
+        self.mixprec_a_quantizer = quantizer
+        # this will be overwritten later when we process the model graph
+        self._input_features_calculator = ConstFeaturesCalculator(self.in_features)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -53,21 +57,44 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        out = self.mixprec_quantizer(input)
+        out = self.mixprec_a_quantizer(input)
         return out
+
+    def set_temperatures(self, value):
+        """Set the quantizers softmax temperature value
+
+        :param value
+        :type float
+        """
+        with torch.no_grad():
+            self.mixprec_a_quantizer.temperature = torch.tensor(value, dtype=torch.float32)
+
+    def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
+        :type gumbel_softmax: bool
+        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
+        (param gumbel_softmax must be equal to True)
+        :type gumbel_softmax: bool
+        :param disable_sampling: whether to disable the sampling of the architectural
+        coefficients in the forward pass
+        :type disable_sampling: bool
+        """
+        self.mixprec_a_quantizer.update_softmax_options(gumbel_softmax,
+                                                        hard_softmax,
+                                                        disable_sampling)
 
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
                    precisions: Tuple[int, ...],
                    quantizer: Type[Quantizer],
-                   sq: Optional[Quantizer],
                    quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
         """Create a new fx.Node relative to a MixPrec_Identity layer, starting from the fx.Node
         of a nn.Identity layer, and replace it into the parent fx.GraphModule
-
-        Also returns a quantizer in case it needs to be shared with other layers
 
         :param n: a fx.Node corresponding to a nn.Identity layer, with shape annotations
         :type n: fx.Node
@@ -79,27 +106,19 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
         :type quantizer: Type[Quantizer]
         :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
         :type quantizer_kwargs: Dict
-        :param sq: An optional shared quantizer derived from other layers
-        :type sq: Optional[Quantizer]
         :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared quantizer
-        :rtype: Optional[Quantizer]
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Identity:
             msg = f"Trying to generate MixPrec_Identity from layer of type {type(submodule)}"
             raise TypeError(msg)
-        if sq is not None:
-            mixprec_quantizer = sq
-        else:
-            mixprec_quantizer = MixPrec_Qtz_Layer(precisions,
-                                                  quantizer,
-                                                  quantizer_kwargs)
+        mixprec_quantizer = MixPrec_Qtz_Layer(precisions,
+                                              quantizer,
+                                              quantizer_kwargs)
 
         mixprec_quantizer = cast(MixPrec_Qtz_Layer, mixprec_quantizer)
         new_submodule = MixPrec_Identity(precisions, mixprec_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
-        return None  # TODO: Understand if I should return something and when
 
     @staticmethod
     def export(n: fx.Node, mod: fx.GraphModule):
@@ -149,7 +168,7 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.mixprec_quantizer.named_parameters(
+        for name, param in self.mixprec_a_quantizer.named_parameters(
                 prfx + "mixprec_quantizer", recurse):
             yield name, param
 
@@ -162,7 +181,7 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_quantizer.alpha_prec))
+            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
             return self.precisions[idx]
 
     @property
@@ -174,7 +193,39 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_quantizer.alpha_prec))
-            qtz = self.mixprec_quantizer.mix_qtz[idx]
+            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
+            qtz = self.mixprec_a_quantizer.mix_qtz[idx]
             qtz = cast(Type[Quantizer], qtz)
             return qtz
+
+    @property
+    def out_features_eff(self) -> torch.Tensor:
+        """Returns the number of channels for this layer (constant).
+
+        :return: the number of channels for this layer.
+        :rtype: torch.Tensor
+        """
+        return torch.tensor(self.in_features, dtype=torch.float32)
+
+    @property
+    def input_features_calculator(self) -> FeaturesCalculator:
+        """Returns the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :return: the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+        :rtype: FeaturesCalculator
+        """
+        return self._input_features_calculator
+
+    @input_features_calculator.setter
+    def input_features_calculator(self, calc: FeaturesCalculator):
+        """Set the `FeaturesCalculator` instance that computes the number of input features for
+        this layer.
+
+        :param calc: the `FeaturesCalculator` instance that computes the number of input features
+        for this layer
+        :type calc: FeaturesCalculator
+        """
+        calc.register(self)
+        self._input_features_calculator = calc

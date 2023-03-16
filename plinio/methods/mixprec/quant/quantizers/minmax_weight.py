@@ -61,7 +61,6 @@ class MinMax_Weight(nn.Module, Quantizer):
         :return: the output fake-quantized weights tensor
         :rtype: torch.Tensor
         """
-        # input_q, s_w = self.qtz_func.apply(input,
         input_q = self.qtz_func.apply(input,
                                       self.num_bits,
                                       self.dequantize)
@@ -71,7 +70,6 @@ class MinMax_Weight(nn.Module, Quantizer):
         if self.qtz_func is MinMax_Asym_STE:
             self.ch_max, _ = input.view(input.size(0), -1).max(1)
             self.ch_min, _ = input.view(input.size(0), -1).min(1)
-        # self.s_w = s_w
         return input_q
 
     @staticmethod
@@ -102,7 +100,7 @@ class MinMax_Weight(nn.Module, Quantizer):
             n_steps = 2 ** self.num_bits - 1
             scale_factor = ch_range / n_steps
         else:
-            scale_factor = torch.zeros(ch_range.shape, device = ch_range.device)
+            scale_factor = torch.zeros(ch_range.shape, device=ch_range.device)
         return scale_factor
 
     def summary(self) -> Dict[str, Any]:
@@ -186,7 +184,7 @@ def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
         if dequantize:
             y = y * scale_factor
 
-    else: # 0-bit precision
-        y = torch.zeros(x.shape, device = x.device)
+    else:  # 0-bit precision
+        y = torch.zeros(x.shape, device=x.device)
     # return y, scale_factor
     return y

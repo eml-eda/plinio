@@ -71,6 +71,9 @@ class MixPrec(DNAS):
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
+    :param input_quantization: whether the input of the network needs
+    to be quantized or not (default: True)
+    :type input_quantization: bool
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
     defaults to ()
     :type exclude_names: Iterable[str], optional
@@ -97,6 +100,7 @@ class MixPrec(DNAS):
             temperature: float = 1.,
             regularizer: str = 'size',
             autoconvert_layers: bool = True,
+            input_quantization: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             gumbel_softmax: bool = False,
@@ -112,13 +116,14 @@ class MixPrec(DNAS):
             w_mixprec_type,
             qinfo,
             'autoimport' if autoconvert_layers else 'import',
+            input_quantization,
             exclude_names,
             exclude_types)
         self.activation_precisions = activation_precisions
         self.weight_precisions = weight_precisions
         self.w_mixprec_type = w_mixprec_type
         self.qinfo = qinfo
-        self.initial_temperature = temperature # initial, not current temperature
+        self.initial_temperature = temperature  # initial, not current temperature
         self._regularizer = regularizer
         # save the parameters of the softmax
         self.gumbel_softmax = gumbel_softmax
@@ -175,13 +180,13 @@ class MixPrec(DNAS):
             for quantizer in [layer.mixprec_w_quantizer, layer.mixprec_a_quantizer]:
                 if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
                     alpha_prec = quantizer.alpha_prec
-                    max_index = alpha_prec.argmax(dim = 0)
-                    argmaxed_alpha = torch.zeros(alpha_prec.shape, device = alpha_prec.device)
+                    max_index = alpha_prec.argmax(dim=0)
+                    argmaxed_alpha = torch.zeros(alpha_prec.shape, device=alpha_prec.device)
 
                     if len(argmaxed_alpha.shape) > 1:
                         for channel_index in range(argmaxed_alpha.shape[-1]):
                             argmaxed_alpha[max_index[channel_index], channel_index] = 1
-                    else: # single precision
+                    else:  # single precision
                         # TODO: check
                         argmaxed_alpha[max_index.reshape(-1)[0]] = 1
                     quantizer.theta_alpha = argmaxed_alpha

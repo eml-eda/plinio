@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List, Type, Tuple, Any
+from typing import List, Type, Tuple, Any, Callable
 import operator
 import torch
 import torch.nn as nn
@@ -100,6 +100,22 @@ def is_layer(n: fx.Node, parent: fx.GraphModule,
     if n.op != 'call_module':
         return False
     return layer_type(n, parent) in layers
+
+
+def is_function(n: fx.Node,
+                functions: Tuple[Callable, ...]) -> bool:
+    """Checks if a `torch.fx.Node` corresponds to a specific function type.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param functions: the function types to be checked
+    :type functions: Tuple[Type[Any], ...]]
+    :return: `True` if `n` is of type `function`
+    :rtype: bool
+    """
+    if n.op != 'call_function':
+        return False
+    return n.target in functions
 
 
 def is_inherited_layer(n: fx.Node, parent: fx.GraphModule,

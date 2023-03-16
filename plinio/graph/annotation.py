@@ -20,11 +20,11 @@ from typing import List, Callable
 import math
 import torch.fx as fx
 from .features_calculation import FlattenFeaturesCalculator, ConcatFeaturesCalculator, \
-        ConstFeaturesCalculator
+    ConstFeaturesCalculator
 from .utils import try_get_args
 from .inspection import is_features_propagating_op, is_features_defining_op, \
-        is_shared_input_features_op, is_flatten, is_squeeze, is_features_concatenate, \
-        is_untouchable_op, is_zero_or_one_input_op, get_graph_inputs, all_output_nodes
+    is_shared_input_features_op, is_flatten, is_squeeze, is_features_concatenate, \
+    is_untouchable_op, is_zero_or_one_input_op, get_graph_inputs, all_output_nodes
 
 
 def add_node_properties(mod: fx.GraphModule):
@@ -41,18 +41,22 @@ def add_node_properties(mod: fx.GraphModule):
         if n in visited:
             continue
 
-        n.meta['features_propagating'] = is_features_propagating_op(n, mod)
-        n.meta['features_defining'] = is_features_defining_op(n, mod)
-        n.meta['shared_input_features'] = is_shared_input_features_op(n, mod)
-        n.meta['flatten'] = is_flatten(n, mod)
-        n.meta['squeeze'] = is_squeeze(n, mod)
-        n.meta['features_concatenate'] = is_features_concatenate(n, mod)
-        n.meta['untouchable'] = is_untouchable_op(n)
-        n.meta['zero_or_one_input'] = is_zero_or_one_input_op(n)
+        add_single_node_properties(n, mod)
 
         for succ in all_output_nodes(n):
             queue.append(succ)
         visited.append(n)
+
+
+def add_single_node_properties(n: fx.Node, mod: fx.GraphModule):
+    n.meta['features_propagating'] = is_features_propagating_op(n, mod)
+    n.meta['features_defining'] = is_features_defining_op(n, mod)
+    n.meta['shared_input_features'] = is_shared_input_features_op(n, mod)
+    n.meta['flatten'] = is_flatten(n, mod)
+    n.meta['squeeze'] = is_squeeze(n, mod)
+    n.meta['features_concatenate'] = is_features_concatenate(n, mod)
+    n.meta['untouchable'] = is_untouchable_op(n)
+    n.meta['zero_or_one_input'] = is_zero_or_one_input_op(n)
 
 
 def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = []):
