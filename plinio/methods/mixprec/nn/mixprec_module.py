@@ -57,20 +57,8 @@ class MixPrecModule:
         """
         raise NotImplementedError("Trying to set input features on abstract MixPrecModule class")
 
-    @property
     @abstractmethod
-    def input_quantizer(self) -> MixPrec_Qtz_Layer:
-        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :rtype: MixPrec_Qtz_Layer
-        """
-        raise NotImplementedError("Trying to get input quantizer on abstract MixPrecModule class")
-
-    @input_quantizer.setter
-    @abstractmethod
-    def input_quantizer(self, qtz: MixPrec_Qtz_Layer):
+    def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
         """Set the `MixPrec_Qtz_Layer` for input activations calculation
 
         :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized

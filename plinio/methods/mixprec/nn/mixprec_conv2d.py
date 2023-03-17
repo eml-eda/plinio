@@ -103,7 +103,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
         # this will be overwritten later when we process the model graph
-        self._input_quantizer = cast(MixPrec_Qtz_Layer, None)
+        self.input_quantizer = cast(MixPrec_Qtz_Layer, nn.Identity())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -381,7 +381,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
+            idx = int(torch.argmax(self.input_quantizer.alpha_prec))
             return self.a_precisions[idx]
 
     @property
@@ -412,8 +412,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :rtype: Type[Quantizer]
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
-            qtz = self.mixprec_a_quantizer.mix_qtz[idx]
+            idx = int(torch.argmax(self.input_quantizer.alpha_prec))
+            qtz = self.input_quantizer.mix_qtz[idx]
             qtz = cast(Type[Quantizer], qtz)
             return qtz
 
@@ -476,9 +476,19 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :return: the effective number of MACs
         :rtype: torch.Tensor
         """
-        eff_a_prec = self.mixprec_a_quantizer.effective_precision
+        eff_a_prec = self.input_quantizer.effective_precision
         eff_cost = self.get_size() * self.out_height * self.out_width * eff_a_prec
         return eff_cost
+
+    def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        self.mixprec_b_quantizer.mixprec_a_quantizer = qtz
+        self.input_quantizer = qtz
 
     @property
     def out_features_eff(self) -> torch.Tensor:
@@ -534,4 +544,4 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :type qtz: MixPrec_Qtz_Layer
         """
         self._input_quantizer = qtz
-        self.mixprec_b_quantizer.mixprec_a_quantizer = qtz
+        self.mixprec_b_quantizer.mixprec_a_quantizer = self._input_quantizer

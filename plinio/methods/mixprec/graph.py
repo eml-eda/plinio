@@ -131,7 +131,6 @@ def convert(model: nn.Module,
                                    conversion_type,
                                    exclude_names,
                                    exclude_types)
-
     if conversion_type in ('autoimport', 'import'):
         if input_quantization:
             add_input_quantizer(mod, activation_precisions, qinfo)
@@ -296,7 +295,8 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                                cout,
                                                w_quantizer,
                                                w_quantizer_kwargs)
-                break
+                sq_a = nn.Identity()
+                continue
         for n in c:
             sq_dict[n] = (sq_a, sq_w)
     return sq_dict
@@ -440,6 +440,8 @@ def add_input_quantizer(mod: fx.GraphModule,
         a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
         cout = n.meta['tensor_meta'].shape[1]
         a_quantizer_kwargs['cout'] = cout
+        a_quantizer_kwargs['init_clip_val'] = 1.
+        # TODO: give more flexibility upon the choice of the input quantizer
         q_a = MixPrec_Qtz_Layer(activation_precisions,
                                 a_quantizer,
                                 a_quantizer_kwargs)
@@ -495,7 +497,7 @@ def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
     such that A(x) == B(A_old(x))
     """
     # TODO: this is almost a duplicate of PIT. Resolve.
-    assert (isinstance(lin, MixPrec_Conv2d) or isinstance(lin, MixPrec_Linear))
+    assert (isinstance(lin, nn.Conv2d) or isinstance(lin, nn.Linear))
     # or isinstance(lin, MixPrec_Conv1d))
     assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
     if not bn.track_running_stats:
@@ -535,8 +537,8 @@ def fuse_mixprec_modules(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     # fuse_consecutive_layers(mod, MixPrec_Conv1d, nn.BatchNorm1d, fuse_bn_inplace)
-    fuse_consecutive_layers(mod, MixPrec_Conv2d, nn.BatchNorm2d, fuse_bn_inplace)
-    fuse_consecutive_layers(mod, MixPrec_Linear, nn.BatchNorm1d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, nn.Conv2d, nn.BatchNorm2d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, nn.Linear, nn.BatchNorm1d, fuse_bn_inplace)
 
 
 def register_input_features(mod: fx.GraphModule):
@@ -564,7 +566,9 @@ def register_input_quantizers(mod: fx.GraphModule):
             # cast(nn.Module,
             #      sub_mod.mixprec_b_quantizer
             #      ).mixprec_a_quantizer = prev_submod.mixprec_a_quantizer
-            sub_mod.input_quantizer = cast(MixPrec_Qtz_Layer, prev_submod.mixprec_a_quantizer)
+            # sub_mod.input_quantizer = cast(MixPrec_Qtz_Layer, prev_submod.mixprec_a_quantizer)
+            sub_mod.update_input_quantizer(
+                cast(MixPrec_Qtz_Layer, prev_submod.mixprec_a_quantizer))
 
 
 def mixprec_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:

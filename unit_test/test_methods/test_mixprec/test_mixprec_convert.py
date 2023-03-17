@@ -63,6 +63,7 @@ class TestMixPrecConvert(unittest.TestCase):
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = DSCNN()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         weight_precisions=(0, 2, 4, 8),
                          w_mixprec_type=MixPrecType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=14)
@@ -138,6 +139,7 @@ class TestMixPrecConvert(unittest.TestCase):
         with PER_CHANNEL weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         weight_precisions=(0, 2, 4, 8),
                          w_mixprec_type=MixPrecType.PER_CHANNEL, exclude_types=(nn.Conv2d,))
         # excluding Conv2D, only the final FC should be converted to MixPrec format
         self._check_target_layers(new_nn, exp_tgt=1)

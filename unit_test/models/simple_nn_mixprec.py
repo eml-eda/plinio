@@ -22,10 +22,10 @@ class SimpleMixPrecNN(nn.Module):
                                                 {'cout': 32})
         mixprec_b_quantizer = MixPrec_Qtz_Layer_Bias(Quantizer_Bias,
                                                      32,
-                                                     mixprec_a_quantizer,
                                                      mixprec_w_quantizer,
-                                                     {'num_bits': 32,
-                                                      'cout': 32})
+                                                     mixprec_a_quantizer=mixprec_a_quantizer,
+                                                     quantizer_kwargs={'num_bits': 32,
+                                                                       'cout': 32})
         self.conv0 = MixPrec_Conv2d(nn.Conv2d(3, 32, (3, 3), padding='same'),
                                     40,
                                     40,

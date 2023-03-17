@@ -66,12 +66,14 @@ class MinMax_Weight(nn.Module, Quantizer):
         :return: the output fake-quantized weights tensor
         :rtype: torch.Tensor
         """
-        self.ch_min, self.ch_max = self.compute_min_max(input)
+        self.ch_min, self.ch_max = self.compute_min_max(input.detach())
         input_q = self.qtz_func.apply(input,
                                       self.ch_min,
                                       self.ch_max,
                                       self.num_bits,
                                       self.dequantize)
+        # self.ch_min = ch_min
+        # self.ch_max = ch_max
         return input_q
 
     @staticmethod
@@ -112,7 +114,7 @@ class MinMax_Weight(nn.Module, Quantizer):
         :rtype: Dict[str, Any]
         """
         return {
-            'scale_factor': self.s_w,
+            'scale_factor': self.s_w.detach().item(),
         }
 
     def named_quant_parameters(

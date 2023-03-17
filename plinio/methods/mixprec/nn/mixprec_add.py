@@ -46,6 +46,8 @@ class MixPrec_Add(nn.Module, MixPrecModule):
         self.mixprec_a_quantizer = quantizer
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(self.in_features)
+        # this will be overwritten later when we process the model graph
+        self.input_quantizer = cast(MixPrec_Qtz_Layer, nn.Identity())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -58,9 +60,6 @@ class MixPrec_Add(nn.Module, MixPrecModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        # out = 0
-        # for t in input:
-        #     out = out + t
         q_out = self.mixprec_a_quantizer(input)
         return q_out
 
@@ -89,6 +88,15 @@ class MixPrec_Add(nn.Module, MixPrecModule):
         self.mixprec_a_quantizer.update_softmax_options(gumbel_softmax,
                                                         hard_softmax,
                                                         disable_sampling)
+
+    def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        self.input_quantizer = qtz
 
     @staticmethod
     def autoimport(n: fx.Node,

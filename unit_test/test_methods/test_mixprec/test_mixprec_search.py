@@ -391,7 +391,7 @@ class TestMixPrecSearch(unittest.TestCase):
         """Check the output of the combined loss with a trivial regression problem
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyRegression_2D()
-        lambda_param = 0.5  # lambda very large on purpose
+        lambda_param = .5  # lambda very large on purpose
         batch_size = 32
         n_steps = 500
         mixprec_net = MixPrec(nn_ut, input_shape=nn_ut.input_shape)

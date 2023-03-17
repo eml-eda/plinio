@@ -86,7 +86,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
         # this will be overwritten later when we process the model graph
-        self._input_quantizer = cast(MixPrec_Qtz_Layer, None)
+        self.input_quantizer = cast(MixPrec_Qtz_Layer, nn.Identity())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -190,14 +190,12 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         # Build bias mixprec quantizer
         b_mixprec_type = w_mixprec_type  # Bias MixPrec scheme is dictated by weights
         if b_mixprec_type == MixPrecType.PER_LAYER:
-            mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
             mixprec_w_quantizer = cast(MixPrec_Qtz_Layer, mixprec_w_quantizer)
             mixprec_b_quantizer = MixPrec_Qtz_Layer_Bias(b_quantizer,
                                                          submodule.out_features,
                                                          mixprec_w_quantizer,
                                                          b_quantizer_kwargs)
         elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-            mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
             mixprec_w_quantizer = cast(MixPrec_Qtz_Channel, mixprec_w_quantizer)
             mixprec_b_quantizer = MixPrec_Qtz_Channel_Bias(b_quantizer,
                                                            submodule.out_features,
@@ -358,7 +356,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
+            idx = int(torch.argmax(self.input_quantizer.alpha_prec))
             return self.a_precisions[idx]
 
     @property
@@ -389,8 +387,8 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         :rtype: Type[Quantizer]
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
-            qtz = self.mixprec_a_quantizer.mix_qtz[idx]
+            idx = int(torch.argmax(self.input_quantizer.alpha_prec))
+            qtz = self.input_quantizer.mix_qtz[idx]
             qtz = cast(Type[Quantizer], qtz)
             return qtz
 
@@ -451,9 +449,19 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         :rtype: torch.Tensor
         """
         eff_w_prec = self.mixprec_w_quantizer.effective_precision
-        eff_a_prec = self.mixprec_a_quantizer.effective_precision
+        eff_a_prec = self.input_quantizer.effective_precision
         cost = self.in_features * self.out_features * eff_w_prec * eff_a_prec
         return cost
+
+    def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        self.mixprec_b_quantizer.mixprec_a_quantizer = qtz
+        self.input_quantizer = qtz
 
     @property
     def out_features_eff(self) -> torch.Tensor:
@@ -489,24 +497,3 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         """
         calc.register(self)
         self._input_features_calculator = calc
-
-    @property
-    def input_quantizer(self) -> MixPrec_Qtz_Layer:
-        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :rtype: MixPrec_Qtz_Layer
-        """
-        return self._input_quantizer
-
-    @input_quantizer.setter
-    def input_quantizer(self, qtz: MixPrec_Qtz_Layer):
-        """Set the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :type qtz: MixPrec_Qtz_Layer
-        """
-        self._input_quantizer = qtz
-        self.mixprec_b_quantizer.mixprec_a_quantizer = qtz

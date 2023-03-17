@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from enum import Enum, auto
-from typing import Dict, Tuple, Type, cast
+from typing import Dict, Tuple, Type, cast, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -179,7 +179,7 @@ class MixPrec_Qtz_Channel(nn.Module):
 
         # compute number of not pruned channels
         if self.zero_index is not None:
-            self.out_features_eff = torch.sum(self.theta_alpha[self.zero_index, :])
+            self.out_features_eff = self.cout - torch.sum(self.theta_alpha[self.zero_index, :])
         else:
             self.out_features_eff = torch.tensor(self.cout, dtype=torch.float32)
 
@@ -346,17 +346,23 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
     :type mixprec_w_quantizer: MixPrec_Qtz_Layer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
+    :param mixprec_a_quantizer: mixprec activation quantizer, it is used to gather info
+    about act scale factor. Optional argument, is used only if the user defines
+    the network placing MixPrec modules manually.
+    :type mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer]
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
                  cout: int,
                  mixprec_w_quantizer: MixPrec_Qtz_Layer,
-                 quantizer_kwargs: Dict = {}):
+                 quantizer_kwargs: Dict = {},
+                 mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer] =
+                 cast(MixPrec_Qtz_Layer, nn.Identity())):
         super(MixPrec_Qtz_Layer_Bias, self).__init__()
         self.quantizer = quantizer
         self.cout = cout
-        # This will be overwritten later when we process the model graph
-        self._mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, None)
+        # This will be eventually overwritten later when we process the model graph
+        self.mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
         self.mixprec_w_quantizer = mixprec_w_quantizer
         self.quantizer_kwargs = quantizer_kwargs
 
@@ -403,26 +409,6 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w
-
-    @property
-    def mixprec_a_quantizer(self) -> MixPrec_Qtz_Layer:
-        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :rtype: MixPrec_Qtz_Layer
-        """
-        return self._mixprec_a_quantizer
-
-    @mixprec_a_quantizer.setter
-    def mixprec_a_quantizer(self, qtz: MixPrec_Qtz_Layer):
-        """Set the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :type qtz: MixPrec_Qtz_Layer
-        """
-        self._mixprec_a_quantizer = qtz
 
 
 class MixPrec_Qtz_Channel_Bias(nn.Module):
@@ -439,17 +425,23 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
     :type mixprec_w_quantizer: MixPrec_Qtz_Channel
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
+    :param mixprec_a_quantizer: mixprec activation quantizer, it is used to gather info
+    about act scale factor. Optional argument, is used only if the user defines
+    the network placing MixPrec modules manually.
+    :type mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer]
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
                  cout: int,
                  mixprec_w_quantizer: MixPrec_Qtz_Channel,
-                 quantizer_kwargs: Dict = {}):
+                 quantizer_kwargs: Dict = {},
+                 mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer] =
+                 cast(MixPrec_Qtz_Layer, nn.Identity())):
         super(MixPrec_Qtz_Channel_Bias, self).__init__()
         self.quantizer = quantizer
         self.cout = cout
         # This will be overwritten later when we process the model graph
-        self._mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, None)
+        self.mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
         self.mixprec_w_quantizer = mixprec_w_quantizer
         self.quantizer_kwargs = quantizer_kwargs
 
@@ -496,23 +488,3 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
         for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w
-
-    @property
-    def mixprec_a_quantizer(self) -> MixPrec_Qtz_Layer:
-        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :rtype: MixPrec_Qtz_Layer
-        """
-        return self._mixprec_a_quantizer
-
-    @mixprec_a_quantizer.setter
-    def mixprec_a_quantizer(self, qtz: MixPrec_Qtz_Layer):
-        """Set the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :type qtz: MixPrec_Qtz_Layer
-        """
-        self._mixprec_a_quantizer = qtz
