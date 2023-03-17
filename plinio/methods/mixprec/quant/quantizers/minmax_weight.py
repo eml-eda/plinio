@@ -43,7 +43,12 @@ class MinMax_Weight(nn.Module, Quantizer):
                  dequantize: bool = True):
         super(MinMax_Weight, self).__init__()
         self.num_bits = num_bits
-        self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
+        if symmetric:
+            self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
+            self.compute_min_max = self._compute_min_max_sym
+        else:
+            self.qtz_func = MinMax_Asym_STE
+            self.compute_min_max = self._compute_min_max_asym
         self.dequantize = dequantize
         self.register_buffer('ch_max', torch.Tensor(cout))
         self.register_buffer('ch_min', torch.Tensor(cout))
@@ -61,15 +66,12 @@ class MinMax_Weight(nn.Module, Quantizer):
         :return: the output fake-quantized weights tensor
         :rtype: torch.Tensor
         """
+        self.ch_min, self.ch_max = self.compute_min_max(input)
         input_q = self.qtz_func.apply(input,
+                                      self.ch_min,
+                                      self.ch_max,
                                       self.num_bits,
                                       self.dequantize)
-        if self.qtz_func is MinMax_Sym_STE:
-            self.ch_max, _ = input.view(input.size(0), -1).abs().max(1)
-            self.ch_min = -1 * self.ch_max
-        if self.qtz_func is MinMax_Asym_STE:
-            self.ch_max, _ = input.view(input.size(0), -1).max(1)
-            self.ch_min, _ = input.view(input.size(0), -1).min(1)
         return input_q
 
     @staticmethod
@@ -132,6 +134,32 @@ class MinMax_Weight(nn.Module, Quantizer):
                 prfx + "weight_quantizer", recurse):
             yield name, param
 
+    def _compute_min_max_sym(self, input: torch.Tensor
+                             ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Computes symmetric ch_min and ch_max of the given input tensor.
+
+        :param input: the input tensor to be analyzed
+        :type input: torch.Tensor
+        :return: a tuple containing respectively the min and the max.
+        :rtype: Tuple[torch.Tensor, torch.Tensor]
+        """
+        ch_max, _ = input.view(input.size(0), -1).abs().max(1)
+        ch_min = -1 * self.ch_max
+        return ch_min, ch_max
+
+    def _compute_min_max_asym(self, input: torch.Tensor
+                              ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Computes asymmetric ch_min and ch_max of the given input tensor.
+
+        :param input: the input tensor to be analyzed
+        :type input: torch.Tensor
+        :return: a tuple containing respectively the min and the max.
+        :rtype: Tuple[torch.Tensor, torch.Tensor]
+        """
+        ch_max, _ = input.view(input.size(0), -1).max(1)
+        ch_min, _ = input.view(input.size(0), -1).min(1)
+        return ch_min, ch_max
+
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
@@ -143,25 +171,22 @@ class MinMax_Weight(nn.Module, Quantizer):
 
 class MinMax_Asym_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, num_bits, dequantize):
-        ch_max, _ = x.view(x.size(0), -1).max(1)
-        ch_min, _ = x.view(x.size(0), -1).min(1)
+    def forward(ctx, x, ch_min, ch_max, num_bits, dequantize):
         return _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize)
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output, None, None
+        return grad_output, None, None, None, None
 
 
 class MinMax_Sym_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, num_bits, dequantize):
-        ch_max, _ = x.view(x.size(0), -1).abs().max(1)
-        return _min_max_quantize(x, -ch_max, ch_max, num_bits, dequantize)
+    def forward(ctx, x, ch_min, ch_max, num_bits, dequantize):
+        return _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize)
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output, None, None
+        return grad_output, None, None, None, None
 
 
 def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
