@@ -489,6 +489,11 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
         if is_layer(n, mod, (nn.BatchNorm1d, nn.BatchNorm2d)):
             return
         target_layers.append(mod.get_submodule(str(n.target)))
+    # TODO: is the following part of code needed?
+    # TODO: Find better way to add modules that in original graph was functions (e.g., add)
+    # if is_function(n, tuple(mixprec_func_map.keys())):
+    #     name = str(n) + '_' + str(n.all_input_nodes) + '_quant'
+    #     target_layers.append(mod.get_submodule(name))
 
 
 def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):

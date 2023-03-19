@@ -141,10 +141,11 @@ class MixPrec_Add(nn.Module, MixPrecModule):
 
         mixprec_quantizer = cast(MixPrec_Qtz_Layer, mixprec_quantizer)
         new_submodule = MixPrec_Add(a_precisions, mixprec_quantizer)
-        mod.add_submodule(str(n) + '_quant', new_submodule)
+        name = str(n) + '_' + str(n.all_input_nodes) + '_quant'
+        mod.add_submodule(name, new_submodule)
         with mod.graph.inserting_after(n):
             new_node = mod.graph.call_module(
-                str(n) + '_quant',
+                name,
                 args=(n,)
             )
             # Copy metadata
