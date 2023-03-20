@@ -22,7 +22,8 @@ import unittest
 import torch
 import torch.nn as nn
 from plinio.methods import MixPrec
-from plinio.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule, MixPrecType
+from plinio.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule, MixPrecType, \
+    MixPrec_Linear, MixPrec_Identity
 import plinio.methods.mixprec.quant.nn as qnn
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
     SimpleMixPrecNN, SimpleExportedNN2D, SimpleNN2D_NoBN, SimpleExportedNN2D_NoBias, \
@@ -50,6 +51,30 @@ class TestMixPrecConvert(unittest.TestCase):
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=3)
 
+    def test_autoimport_lastfc_zero_removal(self):
+        """Test the removal of the 0 precision search for the last fc layer"""
+        nn_ut = SimpleNN2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         weight_precisions=(0, 2, 4, 8),
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=3)
+        fc_prec = cast(MixPrec_Linear, new_nn.seed.fc).mixprec_w_quantizer.precisions
+        self.assertTrue(0 not in fc_prec, '0 prec not removed by last fc layer')
+
+    def test_autoimport_inp_quant_insertion(self):
+        """Test the insertion of the input quantizer"""
+        nn_ut = SimpleNN2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         weight_precisions=(0, 2, 4, 8),
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=3)
+        self.assertTrue(hasattr(new_nn.seed, 'input_quantizer'), 'inp quantizer not inserted')
+        inp_quantizer = getattr(new_nn.seed, 'input_quantizer')
+        msg = f'inp quantizer is of type {type(inp_quantizer)} instead of MixPrec_Identity'
+        self.assertTrue(isinstance(inp_quantizer, MixPrec_Identity), msg)
+
     def test_autoimport_depthwise_layer(self):
         """Test the conversion of a model with depthwise convolutions (cin=cout=groups)
         with PER_LAYER weight mixed-precision (default)"""
@@ -67,6 +92,15 @@ class TestMixPrecConvert(unittest.TestCase):
                          w_mixprec_type=MixPrecType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=14)
+        # Check that depthwise layer shares quantizers with the previous conv layer
+        shared_quantizer_rules = (
+            ('depthwise1', 'inputlayer', True),
+            ('depthwise2', 'conv1', True),
+            ('depthwise3', 'conv2', True),
+            ('depthwise4', 'conv3', True),
+            ('depthwise2', 'depthwise4', False),  # two far aways layers must not share
+        )
+        self._check_shared_quantizers(new_nn, shared_quantizer_rules)
 
     def test_autoimport_multipath_layer(self):
         """Test the conversion of a toy model with multiple concat and add operations
@@ -133,6 +167,34 @@ class TestMixPrecConvert(unittest.TestCase):
         #     ('conv2', 'conv3', True),  # concat over channels
         # )
         # self._check_shared_quantizers(new_nn, shared_quantizer_rules)
+
+    def test_autoimport_bias_quantizer_pointer(self):
+        """Test that each bias quantizer points to the proper weight and act quantizers.
+        The bias quantizer need info about act and weight quantization to proper set its
+        scale-factor.
+        PER_CHANNEL weight mixed-precision"""
+        nn_ut = ToyMultiPath1_2D()
+        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
+                         weight_precisions=(0, 2, 4, 8),
+                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=7)
+        shared_quantizer_rules_a = (
+            ('conv0.mixprec_b_quantizer', 'input_quantizer', True),
+            ('conv5.mixprec_b_quantizer', 'add_[conv0, conv1]_quant', True),
+            ('fc.mixprec_b_quantizer', 'add_2_[add_1, conv4]_quant', True),
+            ('conv0.mixprec_b_quantizer', 'conv5.mixprec_b_quantizer',
+             False),  # two far aways layers must not share
+        )
+        self._check_shared_quantizers(new_nn, shared_quantizer_rules_a, act_or_w='act')
+        shared_quantizer_rules_w = (
+            ('conv0.mixprec_b_quantizer', 'conv0', True),
+            ('conv5.mixprec_b_quantizer', 'conv5', True),
+            ('fc.mixprec_b_quantizer', 'fc', True),
+            ('conv0.mixprec_b_quantizer', 'conv5.mixprec_b_quantizer',
+             False),  # two far aways layers must not share
+        )
+        self._check_shared_quantizers(new_nn, shared_quantizer_rules_w, act_or_w='w')
 
     def test_exclude_types_simple_layer(self):
         """Test the conversion of a Toy model while excluding conv2d layers
@@ -456,7 +518,8 @@ class TestMixPrecConvert(unittest.TestCase):
 
     def _check_shared_quantizers(self,
                                  new_nn: MixPrec,
-                                 check_rules: Iterable[Tuple[str, str, bool]]):
+                                 check_rules: Iterable[Tuple[str, str, bool]],
+                                 act_or_w: str = 'both'):
         """Check if shared quantizers are set correctly during an autoimport.
 
         The check_dict contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
@@ -465,23 +528,30 @@ class TestMixPrecConvert(unittest.TestCase):
         """
         converted_layer_names = dict(new_nn.seed.named_modules())
         for layer_1, layer_2, shared_flag in check_rules:
-            quantizer_1_a = converted_layer_names[layer_1].mixprec_a_quantizer  # type: ignore
-            quantizer_1_w = converted_layer_names[layer_1].mixprec_w_quantizer  # type: ignore
-            quantizer_2_a = converted_layer_names[layer_2].mixprec_a_quantizer  # type: ignore
-            quantizer_2_w = converted_layer_names[layer_2].mixprec_w_quantizer  # type: ignore
+            quantizer_1_a, quantizer_2_a = None, None
+            quantizer_1_w, quantizer_2_w = None, None
+            if act_or_w == 'act' or act_or_w == 'both':
+                quantizer_1_a = converted_layer_names[layer_1].mixprec_a_quantizer  # type: ignore
+                quantizer_2_a = converted_layer_names[layer_2].mixprec_a_quantizer  # type: ignore
+            if act_or_w == 'w' or act_or_w == 'both':
+                quantizer_1_w = converted_layer_names[layer_1].mixprec_w_quantizer  # type: ignore
+                quantizer_2_w = converted_layer_names[layer_2].mixprec_w_quantizer  # type: ignore
             if shared_flag:
                 msg = f"Layers {layer_1} and {layer_2} are expected to share "
-                msg_a = msg + "act quantizer, but don't"
-                self.assertEqual(quantizer_1_a, quantizer_2_a, msg_a)
-                msg_w = msg + "weight quantizer, but don't"
-                self.assertEqual(quantizer_1_w, quantizer_2_w, msg_w)
+                if act_or_w == 'act' or act_or_w == 'both':
+                    msg_a = msg + "act quantizer, but don't"
+                    self.assertEqual(quantizer_1_a, quantizer_2_a, msg_a)
+                if act_or_w == 'w' or act_or_w == 'both':
+                    msg_w = msg + "weight quantizer, but don't"
+                    self.assertEqual(quantizer_1_w, quantizer_2_w, msg_w)
             else:
                 msg = f"Layers {layer_1} and {layer_2} are expected to have independent "
-                msg_a = msg + "act quantizers"
-                self.assertNotEqual(quantizer_1_a, quantizer_2_a, msg_a)
-                msg = f"Layers {layer_1} and {layer_2} are expected to have independent "
-                msg_w = msg + "weight quantizers"
-                self.assertNotEqual(quantizer_1_w, quantizer_2_w, msg_w)
+                if act_or_w == 'act' or act_or_w == 'both':
+                    msg_a = msg + "act quantizers"
+                    self.assertNotEqual(quantizer_1_a, quantizer_2_a, msg_a)
+                if act_or_w == 'w' or act_or_w == 'both':
+                    msg_w = msg + "weight quantizers"
+                    self.assertNotEqual(quantizer_1_w, quantizer_2_w, msg_w)
 
     def _check_layers_exclusion(self, new_nn: MixPrec, excluded: Iterable[str]):
         """Check that layers in "excluded" have not be converted to PIT form"""

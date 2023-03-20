@@ -257,7 +257,6 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                 # Build activation shared quantizer
                 a_quantizer = qinfo['a_quantizer']['quantizer']
                 a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
-                # cout = n.all_input_nodes[-1].meta['tensor_meta'].shape[1]
                 cout = n.meta['tensor_meta'].shape[1]
                 a_quantizer_kwargs['cout'] = cout
                 sq_a = MixPrec_Qtz_Layer(activation_precisions,
@@ -266,7 +265,6 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                 # Build weight shared quantizer
                 w_quantizer = qinfo['w_quantizer']['quantizer']
                 w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
-                # cout = n.all_input_nodes[-1].meta['tensor_meta'].shape[1]
                 cout = n.meta['tensor_meta'].shape[1]
                 w_quantizer_kwargs['cout'] = cout
                 if w_mixprec_type == MixPrecType.PER_LAYER:
@@ -286,9 +284,9 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                 # if present and if mixprec search is PER_CHANNEL
                 if w_mixprec_type == MixPrecType.PER_CHANNEL:
                     new_weight_precisions = tuple(p for p in weight_precisions if p != 0)
+                    # new_weight_precisions = weight_precisions  # uncomment to have 0 in last fc
                     w_quantizer = qinfo['w_quantizer']['quantizer']
                     w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
-                    # cout = n.all_input_nodes[-1].meta['tensor_meta'].shape[1]
                     cout = n.meta['tensor_meta'].shape[1]
                     w_quantizer_kwargs['cout'] = cout
                     sq_w = MixPrec_Qtz_Channel(new_weight_precisions,
