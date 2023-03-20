@@ -442,6 +442,49 @@ class TestMixPrecSearch(unittest.TestCase):
             running_err = ((running_err * i) + err) / (i + 1)
         self.assertLess(running_err, 1, "Error not decreasing")
 
+    def test_repeated_precisions(self):
+        """Check that if the weights or the activation precisions used for the model's
+        initialization contain duplicates then an exception is raised."""
+        net = ToyAdd_2D()
+        input_shape = net.input_shape
+
+        prec = (2, 4, 8)
+        repeated_prec = (0, 2, 0, 8, 4, 4)
+
+        # case (1): the mixed-precision scheme for the weigths is PER_CHANNEL
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=prec,
+                    weight_precisions=repeated_prec,
+                    w_mixprec_type=MixPrecType.PER_CHANNEL)
+
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=repeated_prec,
+                    weight_precisions=prec,
+                    w_mixprec_type=MixPrecType.PER_CHANNEL)
+
+        # case (2): the mixed-precision scheme for the weigths is PER_LAYER
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=prec,
+                    weight_precisions=repeated_prec,
+                    w_mixprec_type=MixPrecType.PER_LAYER)
+
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=repeated_prec,
+                    weight_precisions=prec,
+                    w_mixprec_type=MixPrecType.PER_LAYER)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

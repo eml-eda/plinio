@@ -228,6 +228,8 @@ class MixPrec_Qtz_Layer(nn.Module):
                  hard_softmax: bool = False,
                  disable_sampling: bool = False):
         super(MixPrec_Qtz_Layer, self).__init__()
+        if len(precisions) != len(set(precisions)):
+            raise ValueError("Precisions cannot be repeated")
         self.precisions = precisions
         self.quantizer = quantizer
         self.quantizer_kwargs = quantizer_kwargs
