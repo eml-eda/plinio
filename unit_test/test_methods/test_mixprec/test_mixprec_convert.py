@@ -27,7 +27,7 @@ from plinio.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule, MixPrecType
 import plinio.methods.mixprec.quant.nn as qnn
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
     SimpleMixPrecNN, SimpleExportedNN2D, SimpleNN2D_NoBN, SimpleExportedNN2D_NoBias, \
-    SimpleExportedNN2D_ch, SimpleExportedNN2D_NoBias_ch
+    SimpleExportedNN2D_ch, SimpleExportedNN2D_NoBias_ch, ToyAdd_2D
 
 
 class TestMixPrecConvert(unittest.TestCase):
@@ -613,6 +613,101 @@ class TestMixPrecConvert(unittest.TestCase):
         # Check qtz param
         self.assertTrue(child.a_precision == new_child.a_precision)
         self.assertTrue(child.w_precision == new_child.w_precision)
+
+    def test_repeated_precisions(self):
+        """Check that if the weights or the activation precisions used for the model's
+        initialization contain duplicates then an exception is raised"""
+        net = ToyAdd_2D()
+        input_shape = net.input_shape
+
+        prec = (2, 4, 8)
+        repeated_prec = (0, 2, 0, 8, 4, 4)
+
+        # case (1): the mixed-precision scheme for the weigths is PER_CHANNEL
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=prec,
+                    weight_precisions=repeated_prec,
+                    w_mixprec_type=MixPrecType.PER_CHANNEL)
+
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=repeated_prec,
+                    weight_precisions=prec,
+                    w_mixprec_type=MixPrecType.PER_CHANNEL)
+
+        # case (2): the mixed-precision scheme for the weigths is PER_LAYER
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=prec,
+                    weight_precisions=repeated_prec,
+                    w_mixprec_type=MixPrecType.PER_LAYER)
+
+        with self.assertRaises(ValueError):
+            MixPrec(net,
+                    input_shape=input_shape,
+                    regularizer='macs',
+                    activation_precisions=repeated_prec,
+                    weight_precisions=prec,
+                    w_mixprec_type=MixPrecType.PER_LAYER)
+
+    def test_out_features_eff(self):
+        """Check whether out_features_eff returns the correct number of not pruned channels"""
+        net = ToyAdd_2D()
+        input_shape = net.input_shape
+        a_prec = (2, 4, 8)
+        alpha_prec = torch.zeros(4, 10)
+        alpha_prec[torch.tensor([0, 0, 0, 1, 1, 1, 1, 1, 2, 3]),
+                   torch.tensor([3, 5, 9, 0, 1, 2, 7, 8, 6, 4])] = 1
+        x = torch.rand(input_shape).unsqueeze(0)
+        # Use the following alpha_prec matrix to check the sanity of out_features_eff
+        # for one specific layer
+        # [[0., 0., 0., 1., 0., 1., 0., 0., 0., 1.],
+        #  [1., 1., 1., 0., 0., 0., 0., 1., 1., 0.],
+        #  [0., 0., 0., 0., 0., 0., 1., 0., 0., 0.],
+        #  [0., 0., 0., 0., 1., 0., 0., 0., 0., 0.]])
+
+        # case (1): zero_index = 0
+        w_prec = (0, 2, 4, 8)
+        mixprec_net = MixPrec(net,
+                              input_shape=input_shape,
+                              activation_precisions=a_prec,
+                              weight_precisions=w_prec,
+                              w_mixprec_type=MixPrecType.PER_CHANNEL,
+                              hard_softmax=True)
+        for layer in mixprec_net._target_layers:  # force sampling of 8-bit precision
+            if isinstance(layer, MixPrec_Conv2d) or isinstance(layer, MixPrec_Linear):
+                alpha_no_0bit = torch.zeros(layer.mixprec_w_quantizer.alpha_prec.shape)
+                alpha_no_0bit[-1, :] = 1
+                layer.mixprec_w_quantizer.alpha_prec.data = alpha_no_0bit
+        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
+        conv1.mixprec_w_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
+        mixprec_net(x)  # perform a forward pass to update the out_features_eff values
+        self.assertEqual(conv1.out_features_eff.item(), 7)
+
+        # case (2): zero_index = 2
+        w_prec = (2, 4, 0, 8)
+        mixprec_net = MixPrec(net,
+                              input_shape=input_shape,
+                              activation_precisions=a_prec,
+                              weight_precisions=w_prec,
+                              w_mixprec_type=MixPrecType.PER_CHANNEL,
+                              hard_softmax=True)
+        for layer in mixprec_net._target_layers:  # force sampling of 8-bit precision
+            if isinstance(layer, MixPrec_Conv2d) or isinstance(layer, MixPrec_Linear):
+                alpha_no_0bit = torch.zeros(layer.mixprec_w_quantizer.alpha_prec.shape)
+                alpha_no_0bit[-1, :] = 1
+                layer.mixprec_w_quantizer.alpha_prec.data = alpha_no_0bit
+        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
+        conv1.mixprec_w_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
+        mixprec_net(x)  # perform a forward pass to update the out_features_eff values
+        self.assertEqual(conv1.out_features_eff.item(), 9)
 
 
 if __name__ == '__main__':
