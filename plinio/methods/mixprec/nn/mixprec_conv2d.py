@@ -503,6 +503,26 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             return cast(torch.Tensor, self.out_channels)
 
     @property
+    def number_pruned_channels(self) -> torch.Tensor:
+        """Returns the number of pruned channels for this layer.
+
+        :return: the number of pruned channels for this layer.
+        :rtype: torch.Tensor
+        """
+        return self.out_channels - self.out_features_eff
+
+    def get_pruning_loss(self) -> torch.Tensor:
+        """Returns the pruning loss for this layer.
+
+        :return: the pruning loss for this layer.
+        :rtype: torch.Tensor
+        """
+        # the threshold on the number of pruned channels is computed as a percentage of the output
+        # channels of the layer.
+        threshold = int(0.25 * self.out_channels)
+        return torch.maximum(self.number_pruned_channels - threshold, torch.tensor(0.))
+
+    @property
     def input_features_calculator(self) -> FeaturesCalculator:
         """Returns the `FeaturesCalculator` instance that computes the number of input features for
         this layer.

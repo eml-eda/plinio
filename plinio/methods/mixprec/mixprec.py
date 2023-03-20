@@ -150,18 +150,6 @@ class MixPrec(DNAS):
         """
         return ('size', 'macs')
 
-    def get_size_binarized(self) -> torch.Tensor:
-        """Computes the total number of parameters of all NAS-able layers using
-        binary masks
-
-        :return: the total number of parameters
-        :rtype: torch.Tensor
-        """
-        size = torch.tensor(0, dtype=torch.float32)
-        for layer in self._target_layers:
-            size = size + layer.get_size_binarized()
-        return size
-
     def get_size(self) -> torch.Tensor:
         """Computes the total number of effective parameters of all NAS-able layers
 
@@ -234,6 +222,17 @@ class MixPrec(DNAS):
             raise ValueError(f"Invalid regularizer {value}")
         self._regularizer = value
 
+    def get_pruning_loss(self) -> torch.Tensor:
+        """Returns the pruning loss, computed on top of the number of pruned channels of each layer
+
+        :return: the pruning loss
+        :rtype: torch.Tensor
+        """
+        ploss = torch.tensor(0, dtype=torch.float32)
+        for layer in self._target_layers:
+            ploss = ploss + layer.get_pruning_loss()
+        return ploss
+
     def arch_export(self):
         """Export the architecture found by the NAS as a `quant.nn` module
 
@@ -282,6 +281,25 @@ class MixPrec(DNAS):
                     prec_dict['a_precision'] = layer.mixprec_a_quantizer.alpha_prec
                 if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
                     prec_dict['w_precision'] = layer.mixprec_w_quantizer.alpha_prec
+
+                arch[name] = prec_dict
+                arch[name]['type'] = layer.__class__.__name__
+        return arch
+
+    def theta_alpha_summary(self) -> Dict[str, Dict[str, Any]]:
+        """Generates a dictionary representation of the architectural coefficients found by the NAS.
+        Only optimized layers are reported
+
+        :return: a dictionary representation of the architectural coefficients found by the NAS
+        :rtype: Dict[str, Dict[str, any]]"""
+        arch = {}
+        for name, layer in self.seed.named_modules():
+            if layer in self._target_layers:
+                prec_dict = {}
+                if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.theta_alpha
+                if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.theta_alpha
 
                 arch[name] = prec_dict
                 arch[name]['type'] = layer.__class__.__name__

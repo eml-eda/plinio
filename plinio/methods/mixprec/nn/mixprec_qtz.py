@@ -195,7 +195,9 @@ class MixPrec_Qtz_Channel(nn.Module):
         """
         device = self.theta_alpha.device
         p_tensor = torch.tensor(self.precisions, device=device)
-        eff_prec = (self.theta_alpha.sum(dim=1) * p_tensor).sum() / self.cout  # TODO: Check
+        # eff_prec = (self.theta_alpha.sum(dim=1) * p_tensor).sum() / self.cout  # TODO: Check
+        eff_prec = (self.theta_alpha.sum(dim=1) * p_tensor).sum() / self.out_features_eff
+        # TODO: Check
         return eff_prec
 
 
