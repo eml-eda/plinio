@@ -709,6 +709,59 @@ class TestMixPrecConvert(unittest.TestCase):
         mixprec_net(x)  # perform a forward pass to update the out_features_eff values
         self.assertEqual(conv1.out_features_eff.item(), 9)
 
+    def test_input_features_calculator(self):
+        """Check whether input_features_calculator returns the correct number of input channels,
+        both in the case where 0-bit precision is allowed and in the case where it is not"""
+        net = SimpleNN2D()
+        input_shape = net.input_shape
+        x = torch.rand(input_shape).unsqueeze(0)
+        a_prec = (2, 4, 8)
+
+        # case (1): no 0-bit precision, i.e. no pruning allowed
+        w_prec = (2, 4, 8)
+        mixprec_net = MixPrec(net,
+                              input_shape=input_shape,
+                              activation_precisions=a_prec,
+                              weight_precisions=w_prec,
+                              w_mixprec_type=MixPrecType.PER_CHANNEL,
+                              hard_softmax=True)
+        mixprec_net(x)
+
+        conv0 = cast(MixPrec_Conv2d, mixprec_net.seed.conv0)
+        self.assertEqual(conv0.input_features_calculator.features.item(), input_shape[0])
+
+        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
+        self.assertEqual(conv1.input_features_calculator.features.item(),
+                         conv0.out_features_eff.item())
+
+        fc = cast(MixPrec_Linear, mixprec_net.seed.fc)
+        self.assertEqual(fc.input_features_calculator.features.item(),
+                         conv1.out_features_eff.item() * 10 * 10)
+
+        # case(2): 0-bit precision with some channels pruned
+        w_prec = (0, 2, 4, 8)
+        mixprec_net = MixPrec(net,
+                              input_shape=input_shape,
+                              activation_precisions=a_prec,
+                              weight_precisions=w_prec,
+                              w_mixprec_type=MixPrecType.PER_CHANNEL,
+                              hard_softmax=True)
+
+        for layer in mixprec_net._target_layers:  # force sampling of 8-bit precision
+            if isinstance(layer, MixPrec_Conv2d) or isinstance(layer, MixPrec_Linear):
+                alpha_no_0bit = torch.zeros(layer.mixprec_w_quantizer.alpha_prec.shape)
+                alpha_no_0bit[-1, :] = 1
+                layer.mixprec_w_quantizer.alpha_prec.data = alpha_no_0bit
+        # prune one channel of conv1 layer
+        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
+        conv1.mixprec_w_quantizer.alpha_prec.data[0, 2] = 1
+        conv1.mixprec_w_quantizer.alpha_prec.data[-1, 2] = 0
+        mixprec_net(x)
+
+        fc = cast(MixPrec_Linear, mixprec_net.seed.fc)
+        self.assertEqual(fc.input_features_calculator.features.item(),
+                         conv1.out_features_eff.item() * 10 * 10)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
