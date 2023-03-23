@@ -146,7 +146,7 @@ class MinMax_Weight(nn.Module, Quantizer):
         :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
         ch_max, _ = input.view(input.size(0), -1).abs().max(1)
-        ch_min = -1 * self.ch_max
+        ch_min = -1 * ch_max
         return ch_min, ch_max
 
     def _compute_min_max_asym(self, input: torch.Tensor
