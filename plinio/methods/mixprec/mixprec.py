@@ -278,9 +278,9 @@ class MixPrec(DNAS):
             if layer in self._target_layers:
                 prec_dict = {}
                 if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.alpha_prec
+                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.alpha_prec.detach()
                 if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.alpha_prec
+                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.alpha_prec.detach()
 
                 arch[name] = prec_dict
                 arch[name]['type'] = layer.__class__.__name__
@@ -297,9 +297,9 @@ class MixPrec(DNAS):
             if layer in self._target_layers:
                 prec_dict = {}
                 if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.theta_alpha
+                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.theta_alpha.detach()
                 if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.theta_alpha
+                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.theta_alpha.detach()
 
                 arch[name] = prec_dict
                 arch[name]['type'] = layer.__class__.__name__
