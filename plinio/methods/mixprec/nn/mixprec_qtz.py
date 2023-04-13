@@ -90,6 +90,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         for i, p in enumerate(self.precisions):
             if p == 0:
                 self.zero_index = i
+                self.alpha_prec.data[self.zero_index, :].fill_(0.5)
                 break
 
     @property
