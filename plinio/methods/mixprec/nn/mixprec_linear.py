@@ -57,7 +57,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                  w_precisions: Tuple[int, ...],
                  a_quantizer: MixPrec_Qtz_Layer,
                  w_quantizer: Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
-                 b_quantizer: Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
+                 b_quantizer: Union[MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias],
                  w_mixprec_type: MixPrecType):
         super(MixPrec_Linear, self).__init__(
             linear.in_features,
@@ -208,7 +208,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
         mixprec_w_quantizer = cast(Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
                                    mixprec_w_quantizer)
-        mixprec_b_quantizer = cast(Union[MixPrec_Qtz_Layer, MixPrec_Qtz_Channel],
+        mixprec_b_quantizer = cast(Union[MixPrec_Qtz_Layer_Bias, MixPrec_Qtz_Channel_Bias],
                                    mixprec_b_quantizer)
         new_submodule = MixPrec_Linear(submodule,
                                        a_precisions,
@@ -415,19 +415,19 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                 msg = f'Supported mixed-precision types: {list(MixPrecType)}'
                 raise ValueError(msg)
 
-    @property
-    def selected_b_quantizer(self) -> Type[Quantizer]:
-        """Return the selected quantizer based on the magnitude of `alpha_prec`
-        components for biases
+    # @property
+    # def selected_b_quantizer(self) -> Type[Quantizer]:
+    #     """Return the selected quantizer based on the magnitude of `alpha_prec`
+    #     components for biases
 
-        :return: the selected quantizer
-        :rtype: Type[Quantizer]
-        """
-        with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_b_quantizer.alpha_prec))
-            qtz = self.mixprec_b_quantizer.mix_qtz[idx]
-            qtz = cast(Type[Quantizer], qtz)
-            return qtz
+    #     :return: the selected quantizer
+    #     :rtype: Type[Quantizer]
+    #     """
+    #     with torch.no_grad():
+    #         idx = int(torch.argmax(self.mixprec_b_quantizer.alpha_prec))
+    #         qtz = self.mixprec_b_quantizer.mix_qtz[idx]
+    #         qtz = cast(Type[Quantizer], qtz)
+    #         return qtz
 
     def get_size(self) -> torch.Tensor:
         """Computes the effective number of weights for the layer
