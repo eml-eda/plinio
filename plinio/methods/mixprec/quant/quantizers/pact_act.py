@@ -45,7 +45,7 @@ class PACT_Act(nn.Module, Quantizer):
                  dequantize: bool = True):
         super(PACT_Act, self).__init__()
         self.num_bits = num_bits
-        self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]))
+        self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]), requires_grad=False)
         self.dequantize = dequantize
         # Buffer is probably wrong choice cause we might need gradients (?)
         # self.register_buffer('s_a', torch.Tensor(1))
