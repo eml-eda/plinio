@@ -72,7 +72,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                 self.bias = None
 
         self.a_precisions = a_precisions
-        self.w_precisions = w_precisions
+        self.w_precisions = w_quantizer.precisions
         self.mixprec_a_quantizer = a_quantizer
         self.mixprec_w_quantizer = w_quantizer
         if self.bias is not None:
