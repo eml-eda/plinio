@@ -90,8 +90,12 @@ class MixPrec_Qtz_Channel(nn.Module):
         for i, p in enumerate(self.precisions):
             if p == 0:
                 self.zero_index = i
-                self.alpha_prec.data[self.zero_index, :].fill_(0.5)
+                self.alpha_prec.data[self.zero_index, :].fill_(0.1)
                 break
+        # Linear initialization with respect to the precisions values order
+        for i, p in enumerate(sorted(self.precisions)):
+            index = precisions.index(p)
+            self.alpha_prec.data[index, :].fill_(0.1 + 0.2 * i)
 
     @property
     def features_mask(self) -> torch.Tensor:
@@ -197,7 +201,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         device = self.theta_alpha.device
         p_tensor = torch.tensor(self.precisions, device=device)
         # eff_prec = (self.theta_alpha.sum(dim=1) * p_tensor).sum() / self.cout  # TODO: Check
-        eff_prec = (self.theta_alpha.sum(dim=1) * p_tensor).sum() / (self.out_features_eff + 1e-6)
+        eff_prec = (self.theta_alpha.sum(dim=1) * p_tensor).sum() / (self.out_features_eff + 1e-10)
         # TODO: Check
         return eff_prec
 
