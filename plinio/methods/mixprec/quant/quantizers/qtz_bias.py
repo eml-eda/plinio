@@ -68,9 +68,10 @@ class Quantizer_Bias(nn.Module, Quantizer):
         # s_w = self.scale_weight
         self.s_b = (s_a * s_w).squeeze()
 
-        mask = (self.s_b != 0)
-        scaled_inp = torch.zeros(input.shape, device=input.device)
-        scaled_inp[mask] = input[mask] / self.s_b[mask]
+        # mask = (self.s_b != 0)
+        # scaled_inp = torch.zeros(input.shape, device=input.device)
+        # scaled_inp[mask] = input[mask] / self.s_b[mask]
+        scaled_inp = Quantize_Bias_STE.apply(input, self.s_b)
         output = Round_STE.apply(scaled_inp)
 
         if self.dequantize:
@@ -128,6 +129,22 @@ class Quantizer_Bias(nn.Module, Quantizer):
             f'scale_factor={self.s_b})'
         )
         return msg
+
+
+class Quantize_Bias_STE(torch.autograd.Function):
+    """A torch autograd function defining the bias quantization, which is supported also in the
+    case of 0-bit precision in the weights"""
+    @staticmethod
+    def forward(ctx, input, s_b):
+        # mask = (s_b != 0)
+        mask = ~s_b.isclose(torch.zeros(1, device=input.device))
+        scaled_inp = torch.zeros(input.shape, device=input.device)
+        scaled_inp[mask] = input[mask] / s_b[mask]
+        return scaled_inp
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output, None
 
 
 class Round_STE(torch.autograd.Function):
