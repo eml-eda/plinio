@@ -21,12 +21,11 @@ from typing import Dict, Any, Optional, Iterator, Tuple, cast, Type
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..quantizers import Quantizer
-from ..backends import Backend, backend_solver
-from .quant_module import QuantModule
+from .dory_module import DORYModule
 
 
-class Quant_Conv2d(nn.Conv2d, QuantModule):
+class DORYConv2d(nn.Conv2d, DORYModule):
+    # TODO
     """A nn.Module implementing a quantized Conv2d layer
 
     :param conv: the inner `nn.Conv2d` layer to be optimized

@@ -17,30 +17,16 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from enum import Enum, auto
+from typing import Type, Dict
+
 import torch.nn as nn
 
-import dory
+import quant.nn as qnn
+import dory.nn as dory_nn
 
-
-class Backend(Enum):
-    ONNX = auto()
-    DORY = auto()
-    DIANA = auto()
-    # Add new backends here
-
-
-def backend_solver(layer: nn.Module, backend: Backend) -> nn.Module:
-    """Depending on the specific `layer` and specified `backend` returns
-    the appropriate backend-specific layer implementation.
-
-    :param layer: the layer to be converted
-    :type layer: nn.Module
-    :param backend: the backend to be used
-    :type backend: Backend
-    :param backend: the specific backend to be used
-    :type backend: Backend
-    :return: the backend specific layer implementation
-    :rtype: nn.Module
-    """
-    raise NotImplementedError
+# add new supported layers here:
+dory_layer_map: Dict[Type[nn.Module], Type[dory_nn.DORYModule]] = {
+    qnn.Quant_Conv2d: dory_nn.DORYConv2d,
+    qnn.Quant_Linear: dory_nn.DORYLinear,
+    qnn.Quant_Identity: dory_nn.DORYIdentity,
+}

@@ -17,30 +17,22 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from enum import Enum, auto
-import torch.nn as nn
-
-import dory
+from abc import abstractmethod
+from typing import Dict, Any
 
 
-class Backend(Enum):
-    ONNX = auto()
-    DORY = auto()
-    DIANA = auto()
-    # Add new backends here
-
-
-def backend_solver(layer: nn.Module, backend: Backend) -> nn.Module:
-    """Depending on the specific `layer` and specified `backend` returns
-    the appropriate backend-specific layer implementation.
-
-    :param layer: the layer to be converted
-    :type layer: nn.Module
-    :param backend: the backend to be used
-    :type backend: Backend
-    :param backend: the specific backend to be used
-    :type backend: Backend
-    :return: the backend specific layer implementation
-    :rtype: nn.Module
+class DORYModule:
+    """An abstract class representing the interface that all DORY layers should implement
     """
-    raise NotImplementedError
+    @abstractmethod
+    def __init__(self):
+        raise NotImplementedError("Calling init on base abstract DORYModule class")
+
+    @abstractmethod
+    def summary(self) -> Dict[str, Any]:
+        """Export a dictionary with the optimized layer hyperparameters
+
+        :return: a dictionary containing the optimized layer hyperparameter values
+        :rtype: Dict[str, Any]
+        """
+        raise NotImplementedError("Calling summary on base abstract QuantModule class")

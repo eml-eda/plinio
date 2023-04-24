@@ -21,16 +21,16 @@ from typing import Dict, Any, Optional, Iterator, Tuple, cast, Type
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..quantizers import Quantizer
-from ..backends import Backend, backend_solver
-from .quant_module import QuantModule
+import torch.nn.functional as F
+from .dory_module import DORYModule
 
 
-class Quant_Conv2d(nn.Conv2d, QuantModule):
-    """A nn.Module implementing a quantized Conv2d layer
+class DORYLinear(nn.Linear, DORYModule):
+    # TODO
+    """A nn.Module implementing a quantized Linear layer
 
-    :param conv: the inner `nn.Conv2d` layer to be optimized
-    :type conv: nn.Conv2d
+    :param linear: the inner `nn.Linear` layer to be optimized
+    :type linear: nn.Linear
     :param a_precision: the input activation quantization precision
     :type a_precision: int
     :param w_precision: the weights' quantization precision
@@ -43,27 +43,21 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
     :type b_quantizer: Type[Quantizer]
     """
     def __init__(self,
-                 conv: nn.Conv2d,
+                 linear: nn.Linear,
                  a_precision: int,
                  w_precision: int,
                  a_quantizer: Type[Quantizer],
                  w_quantizer: Type[Quantizer],
                  b_quantizer: Optional[Type[Quantizer]]):
-        super(Quant_Conv2d, self).__init__(
-            conv.in_channels,
-            conv.out_channels,
-            conv.kernel_size,
-            conv.stride,
-            conv.padding,
-            conv.dilation,
-            conv.groups,
-            conv.bias is not None,
-            conv.padding_mode)
+        super(Quant_Linear, self).__init__(
+            linear.in_features,
+            linear.out_features,
+            linear.bias is not None)
         with torch.no_grad():
-            self.weight.copy_(conv.weight)
-            if conv.bias is not None:
+            self.weight.copy_(linear.weight)
+            if linear.bias is not None:
                 self.bias = cast(torch.nn.parameter.Parameter, self.bias)
-                self.bias.copy_(conv.bias)
+                self.bias.copy_(linear.bias)
             else:
                 self.bias = None
 
@@ -78,20 +72,22 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
             self.b_quantizer = lambda *args: None  # Do Nothing
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of linear conv2d layer.
+        """The forward function of linear quantized layer.
 
-        It performs:
-        - Quantization of the `self.weight` tensor using `self.w_quantizer`.
-        - Quantization of the `self.bias` vector using `self.b_quantizer` (if needed).
-        - Computation of conv2d operation.
-        - Quantization of the input tensor using `self.a_quantizer`.
+        It quantizes:
+        - The input tensor using `self.a_quantizer`.
+        - The `self.weight` tensor using `self.w_quantizer`.
+        - The `self.bias` vector using `self.b_quantizer` (if needed).
+        Then computes linear operation.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        # Quantization of weight and bias
+        # Quantization
+        q_inp = self.a_quantizer(input)  # type: ignore
+        q_inp = cast(torch.Tensor, q_inp)
         q_w = self.w_quantizer(self.weight)  # type: ignore
         q_w = cast(torch.Tensor, q_w)
         q_b = self.b_quantizer(self.bias,  # type: ignore
@@ -99,16 +95,9 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         q_b = cast(torch.Tensor, q_b)
 
         # Linear operation
-        out = self._conv_forward(input, q_w, q_b)
-
-        # Quantization of output
-        q_out = self.a_quantizer(out)  # type: ignore
-        q_out = cast(torch.Tensor, q_out)
-
+        q_out = F.linear(q_inp, q_w, q_b)
         return q_out
 
-    # TODO: this function needs to be checked, currently the usage of this class
-    # is properly implemented only when converting from mixprec model
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
@@ -124,8 +113,8 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
                    w_quantizer_kwargs: Dict = {},
                    b_quantizer_kwargs: Dict = {}
                    ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a Quant_Conv2d layer, starting from the fx.Node
-        of a nn.Conv2d layer, and replace it into the parent fx.GraphModule
+        """Create a new fx.Node relative to a Quant_Linear layer, starting from the fx.Node
+        of a nn.Linear layer, and replace it into the parent fx.GraphModule
 
         Also returns a quantizer in case it needs to be shared with other layers
 
@@ -166,11 +155,11 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         :rtype: Optional[Quantizer]
         """
         submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != nn.Conv2d:
-            msg = f"Trying to generate Quant_Conv2d from layer of type {type(submodule)}"
+        if type(submodule) != nn.Linear:
+            msg = f"Trying to generate Quant_Identity from layer of type {type(submodule)}"
             raise TypeError(msg)
         # here, this is guaranteed
-        submodule = cast(nn.Conv2d, submodule)
+        submodule = cast(nn.Linear, submodule)
 
         # Build activation quantizer
         if a_sq is not None:
@@ -196,7 +185,7 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
                                     **b_quantizer_kwargs)  # type: ignore
         b_qtz_obj = cast(Type[Quantizer], b_qtz_obj)
 
-        new_submodule = Quant_Conv2d(submodule,
+        new_submodule = Quant_Linear(submodule,
                                      a_precision,
                                      w_precision,
                                      a_qtz_obj,
@@ -209,8 +198,8 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
     def export(n: fx.Node,
                mod: fx.GraphModule,
                backend: Backend):
-        """Replaces a fx.Node corresponding to a Quant_Conv2d layer,
-        with a backend-specific quantized Conv2d layer within a fx.GraphModule
+        """Replaces a fx.Node corresponding to a Quant_Linear layer,
+        with a backend-specific quantized Linear layer within a fx.GraphModule
 
         :param n: the node to be rewritten
         :type n: fx.Node
@@ -220,10 +209,10 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         :type backend: Backend
         """
         submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != Quant_Conv2d:
+        if type(submodule) != Quant_Linear:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        integer_conv = backend_solver(submodule, backend)
-        new_submodule = integer_conv(
+        integer_linear = backend_solver(type(submodule), backend)
+        new_submodule = integer_linear(
             submodule.a_precision,
             submodule.w_precision,
             submodule.a_quantizer,
