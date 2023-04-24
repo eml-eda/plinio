@@ -21,8 +21,8 @@ from typing import Type, Dict
 
 import torch.nn as nn
 
-import quant.nn as qnn
-import dory.nn as dory_nn
+import plinio.methods.mixprec.quant.nn as qnn
+import plinio.methods.mixprec.quant.backends.dory.nn as dory_nn
 
 # add new supported layers here:
 dory_layer_map: Dict[Type[nn.Module], Type[dory_nn.DORYModule]] = {

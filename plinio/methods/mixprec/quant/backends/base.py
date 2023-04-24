@@ -17,10 +17,16 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
+from typing import cast, Dict
 from enum import Enum, auto
 import torch.nn as nn
 
-from . import dory
+from .dory.base import dory_layer_map
+
+# Add new supported backends here:
+maps = {
+    'dory': dory_layer_map,
+}
 
 
 class Backend(Enum):
@@ -28,6 +34,10 @@ class Backend(Enum):
     DORY = auto()
     DIANA = auto()
     # Add new backends here
+
+    @classmethod
+    def has_entry(cls, value) -> bool:
+        return value.name in cls.__members__
 
 
 def backend_solver(layer: nn.Module, backend: Backend) -> nn.Module:
@@ -43,4 +53,15 @@ def backend_solver(layer: nn.Module, backend: Backend) -> nn.Module:
     :return: the backend specific layer implementation
     :rtype: nn.Module
     """
-    raise NotImplementedError
+    if Backend.has_entry(backend):
+        backend_name = backend.name.lower()
+        layer_map = maps[backend_name]
+        layer_map = cast(Dict, layer_map)
+        if type(layer) in layer_map.keys():
+            return layer_map[type(layer)]
+        else:
+            msg = f'Layer of type {type(layer)} is not supported by {backend_name} backend.'
+            raise ValueError(msg)
+    else:
+        msg = f'The {backend} is not supported.'
+        raise ValueError(msg)
