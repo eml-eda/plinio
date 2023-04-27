@@ -22,12 +22,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from plinio.methods.mixprec.quant.quantizers import Quantizer
+from plinio.methods.mixprec.quant.backends.utils import binary_search
 from .dory_module import DORYModule
 
 
 class DORYConv2d(nn.Conv2d, DORYModule):
     """A nn.Module implementing an integer quantized Conv2d layer compatible
-    with the DORY backend
+    with the DORY backend.
 
     :param conv: the inner `nn.Conv2d` layer
     :type conv: nn.Conv2d
@@ -145,4 +146,63 @@ class DORYConv2d(nn.Conv2d, DORYModule):
                                s_x: torch.Tensor,
                                s_y: torch.Tensor
                                ) -> Tuple[torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
+        """Compute an approximation of `s_w * s_x / s_y` as `scale` / 2**`shift`
+        where scale is a vector of len(s_w) integer on 32bits and shift is
+        a scalar between [0, 31].
+
+        :param s_w: the floating-point weights' quantizer scale-factor
+        :type s_w: torch.Tensor
+        :param s_x: the floating-point input activations' quantizer scale-factor
+        :type s_x: torch.Tensor
+        :param s_y: the floating-point output activations' quantizer scale-factor
+        :type s_y: torch.Tensor
+        :return: a tuple containing the computed `scale` and `shift` factors
+        :rtype: Tuple[torch.Tensor, torch.Tensor]
+        """
+        # Constants, depend on the specific backend
+        SCALE_BIT = 32
+        SHIFT_POS = 32
+
+        # Value to be approximated as `scale` / 2**`shift`
+        target = s_w * s_x / s_y
+        device = target.device
+        target = target.clone().detach().cpu()
+
+        # Integer approximation #
+        params = {}
+        upper_bound = 2 ** (SCALE_BIT - 1)
+        # Create a dict indexed by possible shift amounts, each entry of the dict
+        # contains a list where for each channel a `scale` factor is selected as
+        # the one minimizing abs(scale / 2**shift - target).
+        for idx in range(len(target)):
+            for sh in range(SHIFT_POS):
+                params[sh] = []
+                params[sh].append(
+                    [idx, binary_search(2**-sh, 1, upper_bound, target[idx])]
+                )
+        # For each `shift` amount compute the average difference between the
+        # integer approximation and targets
+        avg_diff = {}
+        for sh in range(SHIFT_POS):
+            diff = []
+            for idx in range(len(target)):
+                diff.append(
+                    abs(params[sh][idx][1] / 2**sh - target[idx])
+                )
+            avg_diff[sh] = sum(diff) / len(diff)
+        # Find the `shift` amount minimizing the avg difference between integer
+        # approximation and targets
+        min_diff = float('inf')
+        min_scale, min_shift = None, None
+        for key, val in avg_diff.items():
+            scale = params[key][:][1]
+            shift = key
+            if val < min_diff:
+                min_diff = val
+                min_scale = scale
+                min_shift = shift
+
+        # Build tensors with selected quantities, move to `device` and return
+        scale_t = torch.tensor(min_scale, device=device)
+        shift_t = torch.tensor(min_shift, device=device)
+        return scale_t, shift_t
