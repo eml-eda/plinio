@@ -17,25 +17,28 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, cast, Type
+from typing import Dict, Any, Optional, cast, Type, Tuple
 import torch
-import torch.fx as fx
 import torch.nn as nn
+import torch.nn.functional as F
+from plinio.methods.mixprec.quant.quantizers import Quantizer
 from .dory_module import DORYModule
 
 
 class DORYConv2d(nn.Conv2d, DORYModule):
-    # TODO
-    """A nn.Module implementing a quantized Conv2d layer
+    """A nn.Module implementing an integer quantized Conv2d layer compatible
+    with the DORY backend
 
-    :param conv: the inner `nn.Conv2d` layer to be optimized
+    :param conv: the inner `nn.Conv2d` layer
     :type conv: nn.Conv2d
     :param a_precision: the input activation quantization precision
     :type a_precision: int
     :param w_precision: the weights' quantization precision
     :type w_precision: int
-    :param a_quantizer: activation quantizer
-    :type a_quantizer: Type[Quantizer]
+    :param in_a_quantizer: input activation quantizer
+    :type in_a_quantizer: Type[Quantizer]
+    :param out_a_quantizer: output activation quantizer
+    :type out_a_quantizer: Type[Quantizer]
     :param w_quantizer: weight quantizer
     :type w_quantizer: Type[Quantizer]
     :param b_quantizer: bias quantizer
@@ -45,10 +48,11 @@ class DORYConv2d(nn.Conv2d, DORYModule):
                  conv: nn.Conv2d,
                  a_precision: int,
                  w_precision: int,
-                 a_quantizer: Type[Quantizer],
+                 in_a_quantizer: Type[Quantizer],
+                 out_a_quantizer: Type[Quantizer],
                  w_quantizer: Type[Quantizer],
                  b_quantizer: Optional[Type[Quantizer]]):
-        super(Quant_Conv2d, self).__init__(
+        super(DORYConv2d, self).__init__(
             conv.in_channels,
             conv.out_channels,
             conv.kernel_size,
@@ -58,17 +62,12 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode)
-        with torch.no_grad():
-            self.weight.copy_(conv.weight)
-            if conv.bias is not None:
-                self.bias = cast(torch.nn.parameter.Parameter, self.bias)
-                self.bias.copy_(conv.bias)
-            else:
-                self.bias = None
 
+        # Store precisions and quantizers
         self.a_precision = a_precision
         self.w_precision = w_precision
-        self.a_quantizer = a_quantizer
+        self.in_a_quantizer = in_a_quantizer
+        self.out_a_quantizer = out_a_quantizer
         self.w_quantizer = w_quantizer
         if self.bias is not None:
             b_quantizer = cast(Type[Quantizer], b_quantizer)
@@ -76,159 +75,57 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         else:
             self.b_quantizer = lambda *args: None  # Do Nothing
 
+        # Compute self.scale_fact and self.shift
+        # TODO: to avoid to ignore linter warning refactor s_w and s_a
+        # to be simply s (or similar name) and put it as a property
+        # in the abstract Quantizer class
+        self.s_w = self.w_quantizer.s_w  # type: ignore
+        self.s_x = self.in_a_quantizer.s_a  # type: ignore
+        self.s_y = self.out_a_quantizer.s_a  # type: ignore
+        self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
+
+        # Copy and integerize pretrained weights and biases
+        with torch.no_grad():
+            self.w_quantizer.dequantize = False
+            int_weight = self.w_quantizer(conv.weight)
+            int_weight = cast(torch.Tensor, int_weight)
+            self.weight.copy_(int_weight)
+            if conv.bias is not None:
+                self.b_quantizer.dequantize = False
+                self.bias = cast(nn.parameter.Parameter, self.bias)
+                int_bias = self.b_quantizer(conv.bias) * self.scale  # TODO: check this mul
+                self.bias.copy_(int_bias)
+            else:
+                self.bias = None
+
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of linear conv2d layer.
+        """The forward function of integer conv2d layer.
 
         It performs:
-        - Quantization of the `self.weight` tensor using `self.w_quantizer`.
-        - Quantization of the `self.bias` vector using `self.b_quantizer` (if needed).
-        - Computation of conv2d operation.
-        - Quantization of the input tensor using `self.a_quantizer`.
+        - Convolution of the input with the integerized `self.weight` tensor.
+        - Multiplication of the `self.scale`
+        - Sum the integerized `self.bias` vector.
+        - Divide by 2 ** `self.shift` amount.
+        - Computes floor operation.
+        - Apply clipped relu between 0 and (2 ** `self.a_precision` - 1)
 
         :param input: the input activations tensor
         :type input: torch.Tensor
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        # Quantization of weight and bias
-        q_w = self.w_quantizer(self.weight)  # type: ignore
-        q_w = cast(torch.Tensor, q_w)
-        q_b = self.b_quantizer(self.bias,  # type: ignore
-                               self.a_quantizer.s_a, self.w_quantizer.s_w)  # type: ignore
-        q_b = cast(torch.Tensor, q_b)
+        # Convolution
+        conv_out = F.conv2d(input, self.weight, None, self.stride,
+                            self.padding, self.dilation, self.groups)
+        # Multiply scale factor, sum bias, shift
+        scale_out = (conv_out * self.scale + self.bias) / (2 ** self.shift)
+        # Compute floor
+        floor_out = torch.floor(scale_out)
+        # Compute relu
+        relu_out = torch.min(torch.max(torch.tensor(0.), floor_out),
+                             torch.tensor(2 ** self.a_precision - 1))
 
-        # Linear operation
-        out = self._conv_forward(input, q_w, q_b)
-
-        # Quantization of output
-        q_out = self.a_quantizer(out)  # type: ignore
-        q_out = cast(torch.Tensor, q_out)
-
-        return q_out
-
-    # TODO: this function needs to be checked, currently the usage of this class
-    # is properly implemented only when converting from mixprec model
-    @staticmethod
-    def autoimport(n: fx.Node,
-                   mod: fx.GraphModule,
-                   a_precision: int,
-                   w_precision: int,
-                   a_quantizer: Quantizer,
-                   w_quantizer: Quantizer,
-                   b_quantizer: Quantizer,
-                   a_sq: Optional[Quantizer],
-                   w_sq: Optional[Quantizer],
-                   b_sq: Optional[Quantizer],
-                   a_quantizer_kwargs: Dict = {},
-                   w_quantizer_kwargs: Dict = {},
-                   b_quantizer_kwargs: Dict = {}
-                   ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a Quant_Conv2d layer, starting from the fx.Node
-        of a nn.Conv2d layer, and replace it into the parent fx.GraphModule
-
-        Also returns a quantizer in case it needs to be shared with other layers
-
-        :param n: a fx.Node corresponding to a nn.ReLU layer, with shape annotations
-        :type n: fx.Node
-        :param mod: the parent fx.GraphModule
-        :type mod: fx.GraphModule
-        :param a_precision: the input activation quantization precision
-        :type a_precision: int
-        :param w_precision: the weight quantization precision
-        :type w_precision: int
-        :param a_quantizer: the quantizer to be used for input activations
-        :type a_quantizer: Type[Quantizer]
-        :param w_quantizer: the quantizer to be used for weights
-        :type w_quantizer: Type[Quantizer]
-        :param b_quantizer: the quantizer to be used for biases
-        :type b_quantizer: Type[Quantizer]
-        :param a_sq: An optional shared quantizer derived from other layers
-        for input activations
-        :type a_sq: Optional[Quantizer]
-        :param w_sq: An optional shared quantizer derived from other layers
-        for weights
-        :type w_sq: Optional[Quantizer]
-        :param b_sq: An optional shared quantizer derived from other layers
-        for biases
-        :type b_sq: Optional[Quantizer]
-        :param a_quantizer_kwargs: Activations' quantizer kwargs,
-        if no kwargs are passed default is used
-        :type a_quantizer_kwargs: Dict
-        :param w_quantizer_kwargs: Weights' quantizer kwargs,
-        if no kwargs are passed default is used
-        :type w_quantizer_kwargs: Dict
-        :param b_quantizer_kwargs: Biases' quantizer kwargs,
-        if no kwargs are passed default is used
-        :type b_quantizer_kwargs: Dict
-        :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared quantizer
-        :rtype: Optional[Quantizer]
-        """
-        submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != nn.Conv2d:
-            msg = f"Trying to generate Quant_Conv2d from layer of type {type(submodule)}"
-            raise TypeError(msg)
-        # here, this is guaranteed
-        submodule = cast(nn.Conv2d, submodule)
-
-        # Build activation quantizer
-        if a_sq is not None:
-            a_qtz_obj = a_sq
-        else:
-            a_qtz_obj = a_quantizer(a_precision,
-                                    **a_quantizer_kwargs)  # type: ignore
-        a_qtz_obj = cast(Type[Quantizer], a_qtz_obj)
-
-        # Build weight quantizer
-        if w_sq is not None:
-            w_qtz_obj = w_sq
-        else:
-            w_qtz_obj = w_quantizer(w_precision,
-                                    **w_quantizer_kwargs)  # type: ignore
-        w_qtz_obj = cast(Type[Quantizer], w_qtz_obj)
-
-        # Build bias quantizer
-        if b_sq is not None:
-            b_qtz_obj = b_sq
-        else:
-            b_qtz_obj = b_quantizer(w_precision,
-                                    **b_quantizer_kwargs)  # type: ignore
-        b_qtz_obj = cast(Type[Quantizer], b_qtz_obj)
-
-        new_submodule = Quant_Conv2d(submodule,
-                                     a_precision,
-                                     w_precision,
-                                     a_qtz_obj,
-                                     w_qtz_obj,
-                                     b_qtz_obj)
-        mod.add_submodule(str(n.target), new_submodule)
-        return None  # TODO: Understand if I should return something and when
-
-    @staticmethod
-    def export(n: fx.Node,
-               mod: fx.GraphModule,
-               backend: Backend):
-        """Replaces a fx.Node corresponding to a Quant_Conv2d layer,
-        with a backend-specific quantized Conv2d layer within a fx.GraphModule
-
-        :param n: the node to be rewritten
-        :type n: fx.Node
-        :param mod: the parent module, where the new node has to be inserted
-        :type mod: fx.GraphModule
-        :param backend: the specific backend to be used
-        :type backend: Backend
-        """
-        submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != Quant_Conv2d:
-            raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        integer_conv = backend_solver(submodule, backend)
-        new_submodule = integer_conv(
-            submodule.a_precision,
-            submodule.w_precision,
-            submodule.a_quantizer,
-            submodule.w_quantizer,
-            submodule.b_quantizer)
-        mod.add_submodule(str(n.target), new_submodule)
+        return relu_out
 
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer hyperparameters
@@ -239,33 +136,13 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         return {
             'a_precision': self.a_precision,
             'w_precision': self.w_precision,
-            'a_quantizer': self.a_quantizer.summary(),  # type: ignore
-            'w_quantizer': self.w_quantizer.summary(),  # type: ignore
-            'b_quantizer': self.b_quantizer.summary(),  # type: ignore
+            'scale_factor': self.scale_fact,
+            'shift': self.shift,
         }
 
-    def named_quant_parameters(
-            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
-        """Returns an iterator over the quantization parameters of this layer, yielding
-        both the name of the parameter as well as the parameter itself
-
-        :param prefix: prefix to prepend to all parameter names.
-        :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but QuantModule never have sub-layers TODO: check if true
-        :type recurse: bool
-        :return: an iterator over the architectural parameters of this layer
-        :rtype: Iterator[nn.Parameter]
-        """
-        prfx = prefix
-        prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.a_quantizer.named_quant_parameters(
-                prfx + "a_quantizer", recurse):  # type: ignore
-            yield name, param
-        for name, param in self.w_quantizer.named_quant_parameters(
-                prfx + "w_quantizer", recurse):  # type: ignore
-            yield name, param
-        if self.bias is not None:
-            for name, param in self.b_quantizer.named_quant_parameters(
-                    prfx + "b_quantizer", recurse):  # type: ignore
-                yield name, param
+    def _integer_approximation(self,
+                               s_w: torch.Tensor,
+                               s_x: torch.Tensor,
+                               s_y: torch.Tensor
+                               ) -> Tuple[torch.Tensor, torch.Tensor]:
+        raise NotImplementedError

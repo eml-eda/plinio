@@ -28,7 +28,7 @@ class Quantizer:
     """An abstract class representing the interface that all Quantizer layers should implement
     """
     @abstractmethod
-    def __init__(self):
+    def __init__(self, *args):
         raise NotImplementedError("Calling init on base abstract Quantizer class")
 
     @abstractmethod
@@ -85,3 +85,11 @@ class Quantizer:
         """
         for name, param in self.named_quant_parameters(recurse=recurse):
             yield param
+
+    @property
+    def dequantize(self):
+        raise NotImplementedError("Calling dequantize on base abstract Quantizer class")
+
+    @dequantize.setter
+    def dequantize(self, val):
+        raise NotImplementedError("Calling dequantize on base abstract Quantizer class")

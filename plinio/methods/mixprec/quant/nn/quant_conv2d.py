@@ -46,7 +46,8 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
                  conv: nn.Conv2d,
                  a_precision: int,
                  w_precision: int,
-                 a_quantizer: Type[Quantizer],
+                 in_a_quantizer: Type[Quantizer],
+                 out_a_quantizer: Type[Quantizer],
                  w_quantizer: Type[Quantizer],
                  b_quantizer: Optional[Type[Quantizer]]):
         super(Quant_Conv2d, self).__init__(
@@ -69,7 +70,8 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
 
         self.a_precision = a_precision
         self.w_precision = w_precision
-        self.a_quantizer = a_quantizer
+        self.in_a_quantizer = in_a_quantizer
+        self.out_a_quantizer = out_a_quantizer
         self.w_quantizer = w_quantizer
         if self.bias is not None:
             b_quantizer = cast(Type[Quantizer], b_quantizer)
@@ -102,7 +104,7 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         out = self._conv_forward(input, q_w, q_b)
 
         # Quantization of output
-        q_out = self.a_quantizer(out)  # type: ignore
+        q_out = self.out_a_quantizer(out)  # type: ignore
         q_out = cast(torch.Tensor, q_out)
 
         return q_out
@@ -165,6 +167,7 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         :return: the updated shared quantizer
         :rtype: Optional[Quantizer]
         """
+        raise NotImplementedError
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Conv2d:
             msg = f"Trying to generate Quant_Conv2d from layer of type {type(submodule)}"
@@ -226,7 +229,8 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         new_submodule = integer_conv(
             submodule.a_precision,
             submodule.w_precision,
-            submodule.a_quantizer,
+            submodule.in_a_quantizer,
+            submodule.out_a_quantizer,
             submodule.w_quantizer,
             submodule.b_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
@@ -240,7 +244,8 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         return {
             'a_precision': self.a_precision,
             'w_precision': self.w_precision,
-            'a_quantizer': self.a_quantizer.summary(),  # type: ignore
+            'in_a_quantizer': self.in_a_quantizer.summary(),  # type: ignore
+            'out_a_quantizer': self.out_a_quantizer.summary(),  # type: ignore
             'w_quantizer': self.w_quantizer.summary(),  # type: ignore
             'b_quantizer': self.b_quantizer.summary(),  # type: ignore
         }
@@ -260,8 +265,8 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.a_quantizer.named_quant_parameters(
-                prfx + "a_quantizer", recurse):  # type: ignore
+        for name, param in self.out_a_quantizer.named_quant_parameters(
+                prfx + "out_a_quantizer", recurse):  # type: ignore
             yield name, param
         for name, param in self.w_quantizer.named_quant_parameters(
                 prfx + "w_quantizer", recurse):  # type: ignore
