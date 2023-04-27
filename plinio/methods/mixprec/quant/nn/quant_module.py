@@ -21,8 +21,8 @@ from abc import abstractmethod
 from typing import Dict, Any, Optional, Iterator, Tuple
 import torch.fx as fx
 import torch.nn as nn
-from ..quantizers import Quantizer
-from ..backends import Backend
+from plinio.methods.mixprec.quant.quantizers import Quantizer
+import plinio.methods.mixprec.quant.backends as bk
 
 
 class QuantModule:
@@ -68,7 +68,7 @@ class QuantModule:
     @abstractmethod
     def export(n: fx.Node,
                mod: fx.GraphModule,
-               backend: Backend):
+               backend: bk.Backend):
         """Replaces a fx.Node corresponding to a QuantModule, with a backend-specific
         layer implementation within a fx.GraphModule
 

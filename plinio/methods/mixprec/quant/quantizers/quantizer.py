@@ -87,9 +87,11 @@ class Quantizer:
             yield param
 
     @property
-    def dequantize(self):
+    @abstractmethod
+    def dequantize(self) -> bool:
         raise NotImplementedError("Calling dequantize on base abstract Quantizer class")
 
     @dequantize.setter
-    def dequantize(self, val):
+    @abstractmethod
+    def dequantize(self, val: bool):
         raise NotImplementedError("Calling dequantize on base abstract Quantizer class")

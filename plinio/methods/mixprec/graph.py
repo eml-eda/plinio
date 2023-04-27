@@ -278,7 +278,7 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                                w_quantizer_kwargs)
             if n in get_graph_outputs(mod.graph) or n in get_graph_inputs(mod.graph):
                 # distinguish the case in which the number of features must "frozen"
-                # i.e. the case of input-connected or output-connected components,
+                # i.e., the case of input-connected or output-connected components,
                 # this may overwrite a previously set "sq_w"
                 # In this case we simply remove the precision '0' from `weight_precisions`
                 # if present and if mixprec search is PER_CHANNEL
@@ -293,7 +293,7 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                                cout,
                                                w_quantizer,
                                                w_quantizer_kwargs)
-                sq_a = nn.Identity()
+                sq_a = nn.Identity()  # Output is not quantized
                 continue
         for n in c:
             sq_dict[n] = (sq_a, sq_w)

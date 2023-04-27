@@ -14,6 +14,17 @@ class ToySequentialConv1d(nn.Module):
         return self.conv1(self.conv0(x))
 
 
+class ToySequentialConv2d(nn.Module):
+    def __init__(self):
+        super(ToySequentialConv2d, self).__init__()
+        self.input_shape = (3, 12, 12)
+        self.conv0 = nn.Conv2d(3, 10, (3, 3), padding='same')
+        self.conv1 = nn.Conv2d(10, 2, (12, 12))
+
+    def forward(self, x):
+        return self.conv1(self.conv0(x))
+
+
 class ToySequentialSeparated(nn.Module):
     def __init__(self):
         super(ToySequentialSeparated, self).__init__()

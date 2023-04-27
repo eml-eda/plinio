@@ -97,7 +97,7 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         q_w = self.w_quantizer(self.weight)  # type: ignore
         q_w = cast(torch.Tensor, q_w)
         q_b = self.b_quantizer(self.bias,  # type: ignore
-                               self.a_quantizer.s_a, self.w_quantizer.s_w)  # type: ignore
+                               self.in_a_quantizer.s_a, self.w_quantizer.s_w)  # type: ignore
         q_b = cast(torch.Tensor, q_b)
 
         # Linear operation
@@ -227,6 +227,7 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
         integer_conv = backend_solver(submodule, backend)
         new_submodule = integer_conv(
+            submodule,
             submodule.a_precision,
             submodule.w_precision,
             submodule.in_a_quantizer,

@@ -49,7 +49,7 @@ class MinMax_Weight(nn.Module, Quantizer):
         else:
             self.qtz_func = MinMax_Asym_STE
             self.compute_min_max = self._compute_min_max_asym
-        self.dequantize = dequantize
+        self._dequantize = dequantize
         self.register_buffer('ch_max', torch.Tensor(cout))
         self.register_buffer('ch_min', torch.Tensor(cout))
         # self.s_w = torch.Tensor(cout)
@@ -135,6 +135,14 @@ class MinMax_Weight(nn.Module, Quantizer):
         for name, param in self.named_parameters(
                 prfx + "weight_quantizer", recurse):
             yield name, param
+
+    @property
+    def dequantize(self) -> bool:
+        return self._dequantize
+
+    @dequantize.setter
+    def dequantize(self, val: bool):
+        self._dequantize = val
 
     def _compute_min_max_sym(self, input: torch.Tensor
                              ) -> Tuple[torch.Tensor, torch.Tensor]:

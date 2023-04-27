@@ -22,14 +22,14 @@ from .simple_nn_pit import SimplePitNN
 from .simple_nn_mixprec import SimpleMixPrecNN, SimpleExportedNN2D, \
     SimpleExportedNN2D_NoBias, SimpleExportedNN2D_ch, SimpleExportedNN2D_NoBias_ch
 from .dscnn import DSCNN
-from .toy_models import ToySequentialConv1d, ToySequentialSeparated, ToyAdd
+from .toy_models import ToySequentialConv1d, ToySequentialConv2d, ToySequentialSeparated, ToyAdd
 from .toy_models import ToyTimeCat, ToyChannelsCat
 from .toy_models import ToyFlatten, ToyMultiPath1, ToyMultiPath2, ToyRegression, \
     ToyMultiPath1_2D, ToyMultiPath2_2D, ToyAdd_2D, ToyRegression_2D, ToyInputConnectedDW, \
     ToyBatchNorm, ToyIllegalBN
 
 __all__ = ['TCResNet14', 'SimpleNN', 'SimpleNN2D', 'SimplePitNN', 'DSCNN',
-           'ToySequentialConv1d', 'ToyMultiPath1_2D', 'ToyMultiPath2_2D',
+           'ToySequentialConv1d', 'ToySequentialConv2d', 'ToyMultiPath1_2D', 'ToyMultiPath2_2D',
            'ToySequentialSeparated', 'ToyAdd', 'ToyTimeCat', 'ToyChannelsCat',
            'ToyFlatten', 'ToyMultiPath1', 'ToyMultiPath2', 'ToyRegression', 'ToyInputConnectedDW',
            'SimpleMixPrecNN', 'SimpleExportedNN2D', 'ToyAdd_2D', 'ToyRegression_2D',

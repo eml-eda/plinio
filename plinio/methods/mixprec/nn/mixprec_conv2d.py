@@ -390,16 +390,19 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
             return self.a_precisions[idx]
 
     @property
-    def selected_out_a_precision(self) -> int:
+    def selected_out_a_precision(self) -> Union[int, str]:
         """Return the selected precision based on the magnitude of `alpha_prec`
         components for output activations
 
         :return: the selected precision
-        :rtype: int
+        :rtype: Union[int, str]
         """
-        with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
-            return self.a_precisions[idx]
+        if type(self.mixprec_a_quantizer) != nn.Identity:
+            with torch.no_grad():
+                idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
+                return self.a_precisions[idx]
+        else:
+            return 'float'
 
     @property
     def selected_w_precision(self) -> Union[int, List[int]]:
@@ -442,10 +445,14 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :return: the selected quantizer
         :rtype: Type[Quantizer]
         """
-        with torch.no_grad():
-            idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
-            qtz = self.mixprec_a_quantizer.mix_qtz[idx]
-            qtz = cast(Type[Quantizer], qtz)
+        if type(self.mixprec_a_quantizer) != nn.Identity:
+            with torch.no_grad():
+                idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
+                qtz = self.mixprec_a_quantizer.mix_qtz[idx]
+                qtz = cast(Type[Quantizer], qtz)
+                return qtz
+        else:
+            qtz = cast(Type[Quantizer], self.mixprec_a_quantizer)
             return qtz
 
     @property
