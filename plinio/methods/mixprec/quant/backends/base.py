@@ -126,9 +126,12 @@ def integerize_arch(model: nn.Module,
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
     modules = dict(mod.named_modules())
-    # TODO: how to manage inp quantization????
     for n in mod.graph.nodes:
         m = modules.get(n.target)
+        # The input quantizer is kept and forced to return integer outputs
+        if n.name == 'input_quantizer_quantizer':  # TODO: ugly, find better way
+            m.dequantize = False
+        # Target layers are automagically converted with their backend-specific ver
         if isinstance(m, target_layers):
             m.export(n, mod, backend)
     mod.delete_all_unused_submodules()

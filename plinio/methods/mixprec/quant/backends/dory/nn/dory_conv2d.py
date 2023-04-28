@@ -82,7 +82,12 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         # in the abstract Quantizer class
         self.s_w = self.w_quantizer.s_w  # type: ignore
         self.s_x = self.in_a_quantizer.s_a  # type: ignore
-        self.s_y = self.out_a_quantizer.s_a  # type: ignore
+        if type(self.out_a_quantizer) != nn.Identity:
+            self.s_y = self.out_a_quantizer.s_a  # type: ignore
+            self.skip_floor_relu = False
+        else:
+            self.s_y = torch.tensor(1., device=self.device)
+            self.skip_floor_relu = True
         self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
         # Copy and integerize pretrained weights and biases
@@ -93,11 +98,17 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             self.weight.copy_(int_weight)
             if conv.bias is not None:
                 self.b_quantizer.dequantize = False
-                self.bias = cast(nn.parameter.Parameter, self.bias)
-                int_bias = self.b_quantizer(conv.bias) * self.scale  # TODO: check this mul
-                self.bias.copy_(int_bias)
+                # self.bias = cast(nn.parameter.Parameter, self.bias)
+                int_bias = self.b_quantizer(conv.bias, self.s_x, self.s_w)
+                int_bias = int_bias * self.scale  # TODO: check this mul
+                # self.bias.copy_(int_bias)
+                self.add_bias = int_bias.view(1, self.out_channels, 1, 1)
             else:
-                self.bias = None
+                # self.bias = None
+                self.add_bias = None
+
+        # Done here to avoid the reshape op in fwd
+        self.scale = self.scale.view(1, self.out_channels, 1, 1)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of integer conv2d layer.
@@ -119,14 +130,15 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         conv_out = F.conv2d(input, self.weight, None, self.stride,
                             self.padding, self.dilation, self.groups)
         # Multiply scale factor, sum bias, shift
-        scale_out = (conv_out * self.scale + self.bias) / (2 ** self.shift)
-        # Compute floor
-        floor_out = torch.floor(scale_out)
-        # Compute relu
-        relu_out = torch.min(torch.max(torch.tensor(0.), floor_out),
-                             torch.tensor(2 ** self.a_precision - 1))
+        out = (conv_out * self.scale + self.add_bias) / (2 ** self.shift)
+        if not self.skip_floor_relu:
+            # Compute floor
+            out = torch.floor(out)
+            # Compute relu
+            out = torch.min(torch.max(torch.tensor(0.), out),
+                            torch.tensor(2 ** self.a_precision - 1))
 
-        return relu_out
+        return out
 
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer hyperparameters
@@ -140,6 +152,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             'scale_factor': self.scale_fact,
             'shift': self.shift,
         }
+
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
     def _integer_approximation(self,
                                s_w: torch.Tensor,
@@ -176,9 +192,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         # the one minimizing abs(scale / 2**shift - target).
         for idx in range(len(target)):
             for sh in range(SHIFT_POS):
-                params[sh] = []
+                if sh not in params.keys():
+                    params[sh] = []
                 params[sh].append(
-                    [idx, binary_search(2**-sh, 1, upper_bound, target[idx])]
+                    binary_search(2**-sh, 1, upper_bound, target[idx].item())
                 )
         # For each `shift` amount compute the average difference between the
         # integer approximation and targets
@@ -187,7 +204,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             diff = []
             for idx in range(len(target)):
                 diff.append(
-                    abs(params[sh][idx][1] / 2**sh - target[idx])
+                    abs(params[sh][idx] / 2**sh - target[idx].item())
                 )
             avg_diff[sh] = sum(diff) / len(diff)
         # Find the `shift` amount minimizing the avg difference between integer
@@ -195,7 +212,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         min_diff = float('inf')
         min_scale, min_shift = None, None
         for key, val in avg_diff.items():
-            scale = params[key][:][1]
+            scale = params[key]
             shift = key
             if val < min_diff:
                 min_diff = val
@@ -204,5 +221,5 @@ class DORYConv2d(nn.Conv2d, DORYModule):
 
         # Build tensors with selected quantities, move to `device` and return
         scale_t = torch.tensor(min_scale, device=device)
-        shift_t = torch.tensor(min_shift, device=device)
+        shift_t = torch.tensor([min_shift, ], device=device)
         return scale_t, shift_t

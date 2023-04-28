@@ -22,7 +22,7 @@ class ToySequentialConv2d(nn.Module):
         self.conv1 = nn.Conv2d(10, 2, (12, 12))
 
     def forward(self, x):
-        return self.conv1(self.conv0(x))
+        return self.conv1(F.relu(self.conv0(x)))
 
 
 class ToySequentialSeparated(nn.Module):

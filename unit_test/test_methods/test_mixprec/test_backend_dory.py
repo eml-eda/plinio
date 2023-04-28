@@ -57,4 +57,6 @@ class TestMixPrecConvert(unittest.TestCase):
         integer_nn = integerize_arch(quantized_nn, Backend.DORY)
         # Dummy inference
         with torch.no_grad():
-            integer_nn(dummy_inp)
+            out_int = integer_nn(dummy_inp)
+        self.assertTrue(torch.all(out_quant == out_int),
+                        "Mismatch between fake-quantized and integer outputs")
