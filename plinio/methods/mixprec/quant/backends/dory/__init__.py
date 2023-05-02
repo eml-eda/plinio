@@ -16,3 +16,9 @@
 # *                                                                            *
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
+
+from .exporter import DORYExporter
+
+__all__ = [
+    'DORYExporter',
+]

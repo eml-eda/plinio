@@ -293,9 +293,13 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                                cout,
                                                w_quantizer,
                                                w_quantizer_kwargs)
-                sq_a = nn.Identity()  # Output is not quantized
-                continue
+                # continue
         for n in c:
+            # If `c` contains an output node the output quantizer is forced to be
+            # an identity op
+            # if n in get_graph_outputs(mod.graph):
+            if any([n in get_graph_outputs(mod.graph) for n in c]):
+                sq_a = nn.Identity()  # Output is not quantized
             sq_dict[n] = (sq_a, sq_w)
     return sq_dict
 

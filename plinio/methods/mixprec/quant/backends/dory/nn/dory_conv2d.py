@@ -135,8 +135,11 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             # Compute floor
             out = torch.floor(out)
             # Compute relu
-            out = torch.min(torch.max(torch.tensor(0.), out),
-                            torch.tensor(2 ** self.a_precision - 1))
+            out = torch.clip(out,
+                             torch.tensor(0.),
+                             torch.tensor(2 ** self.a_precision - 1))
+            # out = torch.min(torch.max(torch.tensor(0.), out),
+            #                 torch.tensor(2 ** self.a_precision - 1))
 
         return out
 

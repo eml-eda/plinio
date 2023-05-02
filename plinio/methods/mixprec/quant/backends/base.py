@@ -23,6 +23,7 @@ from typing import cast, Dict, Tuple, Type
 import torch
 import torch.fx as fx
 import torch.nn as nn
+from torch.fx.experimental.optimization import replace_node_module
 
 from plinio.methods.mixprec.quant.quantizers import Quantizer
 
@@ -138,3 +139,30 @@ def integerize_arch(model: nn.Module,
     mod.graph.lint()
     mod.recompile()
     return mod
+
+
+def remove_inp_quantizer(mod: nn.Module) -> nn.Module:
+    """DORY does not expect an input quantizer.
+    """
+    if not isinstance(mod, fx.GraphModule):
+        msg = f'Input is of type {type(mod)} instead of fx.GraphModule'
+        raise ValueError(msg)
+    mod = cast(fx.GraphModule, mod)
+    modules = dict(mod.named_modules())
+    for node in mod.graph.nodes:
+        if node.name == 'input_quantizer_quantizer':  # TODO: ugly, find better way
+            inp_qtz = nn.Identity()
+            replace_node_module(node, modules, inp_qtz)
+            node.replace_all_uses_with(node.args[0])
+            mod.graph.erase_node(node)
+    mod.delete_all_unused_submodules()
+    mod.graph.lint()
+    mod.recompile()
+    return mod
+
+
+def remove_relu(mod: nn.Module) -> nn.Module:
+    """ReLU is already implemented as clip function in dory.nn modules, then we
+    can remove explicit calls to F.relu
+    """
+    ...

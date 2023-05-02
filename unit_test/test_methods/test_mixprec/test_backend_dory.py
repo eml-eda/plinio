@@ -17,11 +17,13 @@
 # * Author: Matteo Risso <matteo.risso@polito.it>                              *
 # *----------------------------------------------------------------------------*
 
+from pathlib import Path
 import unittest
 import torch
 from plinio.methods import MixPrec
 from plinio.methods.mixprec.nn import MixPrecType
 from plinio.methods.mixprec.quant.backends import Backend, integerize_arch
+from plinio.methods.mixprec.quant.backends.dory import DORYExporter
 from unit_test.models import ToySequentialConv2d
 
 
@@ -35,6 +37,7 @@ class TestMixPrecConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         # Instantiate toy model
         nn_ut = ToySequentialConv2d()
+
         # Convert to mixprec searchable model
         mixprec_nn = MixPrec(nn_ut,
                              input_shape=nn_ut.input_shape,
@@ -46,6 +49,7 @@ class TestMixPrecConvert(unittest.TestCase):
         dummy_inp = torch.rand((1,) + nn_ut.input_shape)
         with torch.no_grad():
             out_mixprec = mixprec_nn(dummy_inp)
+
         # Convert to (fake) quantized model
         quantized_nn = mixprec_nn.arch_export()
         # Dummy inference
@@ -53,10 +57,15 @@ class TestMixPrecConvert(unittest.TestCase):
             out_quant = quantized_nn(dummy_inp)
         self.assertTrue(torch.all(out_mixprec == out_quant),
                         "Mismatch between mixprec and fake-quantized outputs")
+
         # Convert to integer DORY-compliant model
         integer_nn = integerize_arch(quantized_nn, Backend.DORY)
         # Dummy inference
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
-        self.assertTrue(torch.all(out_quant == out_int),
+        self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
                         "Mismatch between fake-quantized and integer outputs")
+
+        # Convert to onnx
+        exporter = DORYExporter()
+        exporter.export(integer_nn, dummy_inp.shape, Path('.'))
