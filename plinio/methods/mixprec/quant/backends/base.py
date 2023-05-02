@@ -23,8 +23,10 @@ from typing import cast, Dict, Tuple, Type
 import torch
 import torch.fx as fx
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.fx.experimental.optimization import replace_node_module
 
+from plinio.graph.inspection import is_function
 from plinio.methods.mixprec.quant.quantizers import Quantizer
 
 
@@ -165,4 +167,31 @@ def remove_relu(mod: nn.Module) -> nn.Module:
     """ReLU is already implemented as clip function in dory.nn modules, then we
     can remove explicit calls to F.relu
     """
-    ...
+    if not isinstance(mod, fx.GraphModule):
+        msg = f'Input is of type {type(mod)} instead of fx.GraphModule'
+        raise ValueError(msg)
+    mod = cast(fx.GraphModule, mod)
+    for n in mod.graph.nodes:
+        if is_function(n, (F.relu, torch.relu,)):
+            assert len(n.all_input_nodes) == 1
+            inp_node = n.all_input_nodes[0]
+            new_submodule = nn.Identity()
+            name = str(n) + '_' + str(n.all_input_nodes) + '_identity'
+            mod.add_submodule(name, new_submodule)
+            with mod.graph.inserting_after(n):
+                new_node = mod.graph.call_module(
+                    name,
+                    args=(inp_node,)
+                )
+                # Copy metadata
+                new_node.meta = {}
+                new_node.meta = n.meta
+                # Insert node
+                n.replace_all_uses_with(new_node)
+                new_node.replace_input_with(new_node, inp_node)
+            n.args = ()
+            mod.graph.erase_node(n)
+    mod.delete_all_unused_submodules()
+    mod.graph.lint()
+    mod.recompile()
+    return mod
