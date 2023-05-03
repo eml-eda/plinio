@@ -114,7 +114,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
         self.theta_alpha = F.softmax(self.alpha_prec / self.temperature.item(), dim=0)
-        if self.hard_softmax:
+        if (self.hard_softmax) or (not self.training):
             self.theta_alpha = STEArgmax.apply(self.theta_alpha)
 
     def sample_alpha_gs(self):
