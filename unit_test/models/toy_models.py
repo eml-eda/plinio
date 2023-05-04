@@ -19,7 +19,7 @@ class ToySequentialConv2d(nn.Module):
         super(ToySequentialConv2d, self).__init__()
         self.input_shape = (3, 12, 12)
         self.conv0 = nn.Conv2d(3, 10, (3, 3), padding=(2, 2))
-        self.conv1 = nn.Conv2d(10, 2, (12, 12))
+        self.conv1 = nn.Conv2d(10, 2, (14, 14))
 
     def forward(self, x):
         return self.conv1(F.relu(self.conv0(x)))

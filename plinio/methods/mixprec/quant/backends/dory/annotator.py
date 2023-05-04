@@ -68,7 +68,20 @@ class DORYAnnotator:
             'clip': {'Clip'},
         }
 
+        # Rename input and output nodes.
+        # DORY expects a single integer as input/output node name instead of
+        # the default onnx::{operator}_{integer}
+        inp_node = onnxproto.graph.input[0].name
+        if 'onnx' in inp_node:
+            integer_idx = inp_node.split('_')[-1]
+            onnxproto.graph.input[0].name = integer_idx
+
         for n in onnxproto.graph.node:
+
+            # Rename input and output nodes.
+            # DORY expects a single integer as input/output node name instead of
+            # the default onnx::{operator}_{integer}
+            self._rename_node_io(n)
 
             op_type = n.op_type
             annotations = []
@@ -77,8 +90,8 @@ class DORYAnnotator:
                 op_name = n.input[1].rsplit('.', 1)[0]
                 pytorch_module = network.get_submodule(op_name)
                 if isinstance(pytorch_module, (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)):
-                    weight_bits = 8
-                    bias_bits = 32
+                    weight_bits = pytorch_module.w_precision
+                    bias_bits = pytorch_module.b_precision
                     annotations.append(onnx_helper.make_attribute(key='weight_bits',
                                                                   value=weight_bits))
                     annotations.append(onnx_helper.make_attribute(key='bias_bits',
@@ -94,7 +107,7 @@ class DORYAnnotator:
                 if is_requant_add:
                     add_bits = self._requantization_bits
                 else:
-                    add_bits = 8  # TODO: document this choice
+                    add_bits = 32  # TODO: where to gather this info?
                 annotations.append(onnx_helper.make_attribute(key='add_bits',
                                                               value=add_bits))
 
@@ -112,3 +125,15 @@ class DORYAnnotator:
 
             # flush attributes to the ONNX node
             n.attribute.extend(annotations)
+
+    def _rename_node_io(self, node):
+        for idx, inp in enumerate(node.input):
+            if 'onnx' in inp:
+                integer_idx = inp.split('_')[-1]
+                # assert type(integer_idx) == int
+                node.input[idx] = integer_idx
+        for idx, oup in enumerate(node.output):
+            if 'onnx' in oup:
+                integer_idx = oup.split('_')[-1]
+                # assert type(integer_idx) == int
+                node.output[idx] = integer_idx

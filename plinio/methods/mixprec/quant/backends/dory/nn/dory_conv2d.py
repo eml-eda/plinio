@@ -73,6 +73,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         if self.bias is not None:
             b_quantizer = cast(Type[Quantizer], b_quantizer)
             self.b_quantizer = b_quantizer
+            self.b_precision = b_quantizer.num_bits
         else:
             self.b_quantizer = lambda *args: None  # Do Nothing
 
@@ -84,10 +85,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         self.s_x = self.in_a_quantizer.s_a  # type: ignore
         if type(self.out_a_quantizer) != nn.Identity:
             self.s_y = self.out_a_quantizer.s_a  # type: ignore
-            self.skip_floor_relu = False
+            self.skip_requant = False
         else:
             self.s_y = torch.tensor(1., device=self.device)
-            self.skip_floor_relu = True
+            self.skip_requant = True
         self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
         # Copy and integerize pretrained weights and biases
@@ -127,19 +128,19 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         :rtype: torch.Tensor
         """
         # Convolution
-        conv_out = F.conv2d(input, self.weight, None, self.stride,
-                            self.padding, self.dilation, self.groups)
-        # Multiply scale factor, sum bias, shift
-        out = (conv_out * self.scale + self.add_bias) / (2 ** self.shift)
-        if not self.skip_floor_relu:
+        out = F.conv2d(input, self.weight, None, self.stride,
+                       self.padding, self.dilation, self.groups)
+        # This should happens on the last layer
+        # TODO: doing like this does not add bias to output layer... is this correct??
+        if not self.skip_requant:
+            # Multiply scale factor, sum bias, shift
+            out = (out * self.scale + self.add_bias) / (2 ** self.shift)
             # Compute floor
             out = torch.floor(out)
             # Compute relu
             out = torch.clip(out,
                              torch.tensor(0.),
                              torch.tensor(2 ** self.a_precision - 1))
-            # out = torch.min(torch.max(torch.tensor(0.), out),
-            #                 torch.tensor(2 ** self.a_precision - 1))
 
         return out
 

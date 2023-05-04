@@ -63,6 +63,11 @@ class TestMixPrecConvert(unittest.TestCase):
         # Dummy inference
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
+            # Requant to compare with fake-quantized output
+            scale = integer_nn.conv1.scale
+            add_bias = integer_nn.conv1.add_bias
+            shift = integer_nn.conv1.shift
+            out_int = (out_int * scale + add_bias) / (2 ** shift)
         self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
                         "Mismatch between fake-quantized and integer outputs")
 
