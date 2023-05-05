@@ -43,7 +43,7 @@ class Quantizer_Bias(nn.Module, Quantizer):
                  cout: int,
                  dequantize: bool = True):
         super(Quantizer_Bias, self).__init__()
-        self.num_bits = num_bits
+        self._num_bits = num_bits
         self._dequantize = dequantize
         # self.register_buffer('s_b', torch.Tensor(cout))
         self.s_b = torch.Tensor(cout)
@@ -121,6 +121,14 @@ class Quantizer_Bias(nn.Module, Quantizer):
         for name, param in self.named_parameters(
                 prfx + "bias_quantizer", recurse):
             yield name, param
+
+    @property
+    def num_bits(self) -> int:
+        return self._num_bits
+
+    @num_bits.setter
+    def num_bits(self, val: int):
+        self._num_bits = val
 
     @property
     def dequantize(self) -> bool:

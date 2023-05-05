@@ -42,7 +42,7 @@ class MinMax_Weight(nn.Module, Quantizer):
                  symmetric: bool = True,
                  dequantize: bool = True):
         super(MinMax_Weight, self).__init__()
-        self.num_bits = num_bits
+        self._num_bits = num_bits
         if symmetric:
             self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
             self.compute_min_max = self._compute_min_max_sym
@@ -135,6 +135,14 @@ class MinMax_Weight(nn.Module, Quantizer):
         for name, param in self.named_parameters(
                 prfx + "weight_quantizer", recurse):
             yield name, param
+
+    @property
+    def num_bits(self) -> int:
+        return self._num_bits
+
+    @num_bits.setter
+    def num_bits(self, val: int):
+        self._num_bits = val
 
     @property
     def dequantize(self) -> bool:

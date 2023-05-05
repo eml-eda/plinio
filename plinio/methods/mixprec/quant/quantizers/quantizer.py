@@ -88,6 +88,16 @@ class Quantizer:
 
     @property
     @abstractmethod
+    def num_bits(self) -> int:
+        raise NotImplementedError("Calling num_bits on base abstract Quantizer class")
+
+    @num_bits.setter
+    @abstractmethod
+    def num_bits(self, val: int):
+        raise NotImplementedError("Calling num_bits on base abstract Quantizer class")
+
+    @property
+    @abstractmethod
     def dequantize(self) -> bool:
         raise NotImplementedError("Calling dequantize on base abstract Quantizer class")
 

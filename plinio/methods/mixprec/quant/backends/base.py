@@ -28,10 +28,11 @@ from torch.fx.experimental.optimization import replace_node_module
 
 from plinio.graph.inspection import is_function
 from plinio.methods.mixprec.quant.quantizers import Quantizer
+# from plinio.methods.mixprec.quant.nn import QuantModule
+import plinio.methods.mixprec.quant.nn as qnn
 
 
 class Backend(Enum):
-    ONNX = auto()
     DORY = auto()
     DIANA = auto()
     # Add new backends here
@@ -133,9 +134,11 @@ def integerize_arch(model: nn.Module,
         m = modules.get(n.target)
         # The input quantizer is kept and forced to return integer outputs
         if n.name == 'input_quantizer_quantizer':  # TODO: ugly, find better way
+            m = cast(Quantizer, m)
             m.dequantize = False
         # Target layers are automagically converted with their backend-specific ver
         if isinstance(m, target_layers):
+            m = cast(qnn.QuantModule, m)
             m.export(n, mod, backend)
     mod.delete_all_unused_submodules()
     mod.graph.lint()

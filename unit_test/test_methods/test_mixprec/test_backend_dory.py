@@ -18,12 +18,15 @@
 # *----------------------------------------------------------------------------*
 
 from pathlib import Path
+from typing import cast
 import unittest
+
 import torch
 from plinio.methods import MixPrec
 from plinio.methods.mixprec.nn import MixPrecType
 from plinio.methods.mixprec.quant.backends import Backend, integerize_arch
 from plinio.methods.mixprec.quant.backends.dory import DORYExporter
+import plinio.methods.mixprec.quant.backends.dory.nn as dory_nn
 from unit_test.models import ToySequentialConv2d
 
 
@@ -64,9 +67,10 @@ class TestMixPrecConvert(unittest.TestCase):
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
             # Requant to compare with fake-quantized output
-            scale = integer_nn.conv1.scale
-            add_bias = integer_nn.conv1.add_bias
-            shift = integer_nn.conv1.shift
+            integer_conv1 = cast(dory_nn.DORYConv2d, integer_nn.conv1)
+            scale = integer_conv1.scale
+            add_bias = integer_conv1.add_bias
+            shift = integer_conv1.shift
             out_int = (out_int * scale + add_bias) / (2 ** shift)
         self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
                         "Mismatch between fake-quantized and integer outputs")

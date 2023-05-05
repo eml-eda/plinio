@@ -44,7 +44,7 @@ class PACT_Act(nn.Module, Quantizer):
                  init_clip_val: float = 6.,
                  dequantize: bool = True):
         super(PACT_Act, self).__init__()
-        self.num_bits = num_bits
+        self._num_bits = num_bits
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]), requires_grad=False)
         self._dequantize = dequantize
         # Buffer is probably wrong choice cause we might need gradients (?)
@@ -133,6 +133,14 @@ class PACT_Act(nn.Module, Quantizer):
             f'scale_factor={self.s_a})'
         )
         return msg
+
+    @property
+    def num_bits(self) -> int:
+        return self._num_bits
+
+    @num_bits.setter
+    def num_bits(self, val: int):
+        self._num_bits = val
 
     @property
     def dequantize(self) -> bool:
