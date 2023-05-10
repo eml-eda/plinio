@@ -36,8 +36,10 @@ class Quant_Linear(nn.Linear, QuantModule):
     :type a_precision: int
     :param w_precision: the weights' quantization precision
     :type w_precision: int
-    :param a_quantizer: activation quantizer
-    :type a_quantizer: Type[Quantizer]
+    :param in_a_quantizer: input activation quantizer
+    :type in_a_quantizer: Type[Quantizer]
+    :param out_a_quantizer: output activation quantizer
+    :type out_a_quantizer: Type[Quantizer]
     :param w_quantizer: weight quantizer
     :type w_quantizer: Type[Quantizer]
     :param b_quantizer: bias quantizer
@@ -47,7 +49,8 @@ class Quant_Linear(nn.Linear, QuantModule):
                  linear: nn.Linear,
                  a_precision: int,
                  w_precision: int,
-                 a_quantizer: Type[Quantizer],
+                 in_a_quantizer: Type[Quantizer],
+                 out_a_quantizer: Type[Quantizer],
                  w_quantizer: Type[Quantizer],
                  b_quantizer: Optional[Type[Quantizer]]):
         super(Quant_Linear, self).__init__(
@@ -64,7 +67,8 @@ class Quant_Linear(nn.Linear, QuantModule):
 
         self.a_precision = a_precision
         self.w_precision = w_precision
-        self.a_quantizer = a_quantizer
+        self.in_a_quantizer = in_a_quantizer
+        self.out_a_quantizer = out_a_quantizer
         self.w_quantizer = w_quantizer
         if self.bias is not None:
             b_quantizer = cast(Type[Quantizer], b_quantizer)
@@ -75,11 +79,11 @@ class Quant_Linear(nn.Linear, QuantModule):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of linear quantized layer.
 
-        It quantizes:
-        - The input tensor using `self.a_quantizer`.
-        - The `self.weight` tensor using `self.w_quantizer`.
-        - The `self.bias` vector using `self.b_quantizer` (if needed).
-        Then computes linear operation.
+        It performs:
+        - Quantization of the `self.weight` tensor using `self.w_quantizer`.
+        - Quantization of the `self.bias` vector using `self.b_quantizer` (if needed).
+        - Computation of linear operation.
+        - Quantization of the input tensor using `self.out_a_quantizer`.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
@@ -87,18 +91,23 @@ class Quant_Linear(nn.Linear, QuantModule):
         :rtype: torch.Tensor
         """
         # Quantization
-        q_inp = self.a_quantizer(input)  # type: ignore
-        q_inp = cast(torch.Tensor, q_inp)
         q_w = self.w_quantizer(self.weight)  # type: ignore
         q_w = cast(torch.Tensor, q_w)
         q_b = self.b_quantizer(self.bias,  # type: ignore
-                               self.a_quantizer.s_a, self.w_quantizer.s_w)  # type: ignore
+                               self.in_a_quantizer.s_a, self.w_quantizer.s_w)  # type: ignore
         q_b = cast(torch.Tensor, q_b)
 
         # Linear operation
-        q_out = F.linear(q_inp, q_w, q_b)
+        out = F.linear(input, q_w, q_b)
+
+        # Quantization of output
+        q_out = self.out_a_quantizer(out)  # type: ignore
+        q_out = cast(torch.Tensor, q_out)
+
         return q_out
 
+    # TODO: this function needs to be checked, currently the usage of this class
+    # is properly implemented only when converting from mixprec model
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
@@ -155,6 +164,7 @@ class Quant_Linear(nn.Linear, QuantModule):
         :return: the updated shared quantizer
         :rtype: Optional[Quantizer]
         """
+        raise NotImplementedError
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Linear:
             msg = f"Trying to generate Quant_Identity from layer of type {type(submodule)}"
@@ -212,11 +222,13 @@ class Quant_Linear(nn.Linear, QuantModule):
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != Quant_Linear:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        integer_linear = backend_solver(type(submodule), backend)
+        integer_linear = backend_solver(submodule, backend)
         new_submodule = integer_linear(
+            submodule,
             submodule.a_precision,
             submodule.w_precision,
-            submodule.a_quantizer,
+            submodule.in_a_quantizer,
+            submodule.out_a_quantizer,
             submodule.w_quantizer,
             submodule.b_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
@@ -230,7 +242,8 @@ class Quant_Linear(nn.Linear, QuantModule):
         return {
             'a_precision': self.a_precision,
             'w_precision': self.w_precision,
-            'a_quantizer': self.a_quantizer.summary(),  # type: ignore
+            'in_a_quantizer': self.in_a_quantizer.summary(),  # type: ignore
+            'out_a_quantizer': self.out_a_quantizer.summary(),  # type: ignore
             'w_quantizer': self.w_quantizer.summary(),  # type: ignore
             'b_quantizer': self.b_quantizer.summary(),  # type: ignore
         }
@@ -250,7 +263,7 @@ class Quant_Linear(nn.Linear, QuantModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.a_quantizer.named_quant_parameters(
+        for name, param in self.out_a_quantizer.named_quant_parameters(
                 prfx + "a_quantizer", recurse):  # type: ignore
             yield name, param
         for name, param in self.w_quantizer.named_quant_parameters(

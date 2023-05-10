@@ -59,7 +59,7 @@ class DORYExporter:
         # Export network to onnx file
         torch.onnx.export(network,
                           torch.randn(input_shape),
-                          onnxfilepath,
+                          str(onnxfilepath),
                           export_params=True,
                           do_constant_folding=True,
                           opset_version=opset_version)

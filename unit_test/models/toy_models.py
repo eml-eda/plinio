@@ -14,15 +14,29 @@ class ToySequentialConv1d(nn.Module):
         return self.conv1(self.conv0(x))
 
 
+class ToySequentialFullyConv2d(nn.Module):
+    def __init__(self):
+        super(ToySequentialFullyConv2d, self).__init__()
+        self.input_shape = (3, 12, 12)
+        self.conv0 = nn.Conv2d(3, 10, (3, 3), padding=(2, 2))
+        self.bn0 = nn.BatchNorm2d(10)
+        self.conv1 = nn.Conv2d(10, 2, (14, 14))
+
+    def forward(self, x):
+        return self.conv1(F.relu(self.bn0(self.conv0(x))))
+
+
 class ToySequentialConv2d(nn.Module):
     def __init__(self):
         super(ToySequentialConv2d, self).__init__()
         self.input_shape = (3, 12, 12)
-        self.conv0 = nn.Conv2d(3, 10, (3, 3), padding=(2, 2))
-        self.conv1 = nn.Conv2d(10, 2, (14, 14))
+        self.conv = nn.Conv2d(3, 10, (3, 3), padding=(2, 2))
+        self.bn = nn.BatchNorm2d(10)
+        self.lin = nn.Linear(1960, 2)
 
     def forward(self, x):
-        return self.conv1(F.relu(self.conv0(x)))
+        return self.lin(torch.flatten(
+            F.relu(self.bn(self.conv(x))), 1))
 
 
 class ToySequentialSeparated(nn.Module):

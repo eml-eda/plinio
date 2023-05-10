@@ -19,10 +19,11 @@
 
 from .dory_module import DORYModule
 from .dory_conv2d import DORYConv2d
-# from .dory_linear import DORYLinear
+from .dory_linear import DORYLinear
 # from .dory_identity import DORYIdentity
 
 __all__ = [
     'DORYModule', 'DORYConv2d',
-    # 'DORYLinear', 'DORYIdentity',
+    'DORYLinear',
+    # 'DORYIdentity',
 ]

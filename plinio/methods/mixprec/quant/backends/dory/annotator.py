@@ -62,32 +62,48 @@ class DORYAnnotator:
         # Define backend-specific supported ONNX nodes. The nodes belonging to
         # different node classes will be annotated using a class-specific logic.
         dory_onnxnode_op_types = {
-            'linear': {'Conv', 'Gemm'},
+            'linear': {'Conv', 'Gemm', 'MatMul'},
             'mul': {'Mul'},
             'add': {'Add'},
             'clip': {'Clip'},
         }
 
         # Rename input and output nodes.
-        # DORY expects a single integer as input/output node name instead of
-        # the default onnx::{operator}_{integer}
+        # DORY expects a single integer as input/output node name
+        # Each key of `name_to_int_map` is a input/output node name
+        # Each key is associated with the integer identifier `int_id`
+        # Input node starts at 0, then every time a new input/output is identified
+        # `int_id` is increased and the input/output associated with the number
+        name_to_int_map = {}
+        int_id = 0
+        # Graph input
         inp_node = onnxproto.graph.input[0].name
-        if 'onnx' in inp_node:
-            integer_idx = inp_node.split('_')[-1]
-            onnxproto.graph.input[0].name = integer_idx
+        name_to_int_map[inp_node] = str(int_id)  # Map
+        int_id += 1
+        onnxproto.graph.input[0].name = name_to_int_map[inp_node]  # Rename with int
 
         for n in onnxproto.graph.node:
-
-            # Rename input and output nodes.
-            # DORY expects a single integer as input/output node name instead of
-            # the default onnx::{operator}_{integer}
-            self._rename_node_io(n)
 
             op_type = n.op_type
             annotations = []
 
+            # Map inputs and outputs of node n to corresponding int_id
+            for idx, inp in enumerate(n.input):
+                if ('weight' in inp) or ('onnx::MatMul' in inp):
+                    continue
+                if inp not in name_to_int_map.keys():
+                    name_to_int_map[inp] = str(int_id)  # Map
+                    int_id += 1
+                n.input[idx] = name_to_int_map[inp]  # Rename with int
+            for idx, oup in enumerate(n.output):
+                if oup not in name_to_int_map.keys():
+                    name_to_int_map[oup] = str(int_id)  # Map
+                    int_id += 1
+                n.output[idx] = name_to_int_map[oup]  # Rename with int
+
             if op_type in dory_onnxnode_op_types['linear']:
-                op_name = n.input[1].rsplit('.', 1)[0]
+                # op_name = n.input[1].rsplit('.', 1)[0]
+                op_name = n.name.split('/')[1]
                 pytorch_module = network.get_submodule(op_name)
                 if isinstance(pytorch_module, (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)):
                     weight_bits = pytorch_module.w_precision
@@ -126,6 +142,12 @@ class DORYAnnotator:
             # flush attributes to the ONNX node
             n.attribute.extend(annotations)
 
+        # Graph output
+        oup_node = onnxproto.graph.output[0].name
+        name_to_int_map[oup_node] = str(int_id - 1)  # Map
+        onnxproto.graph.output[0].name = name_to_int_map[oup_node]  # Rename with int
+
+    # This function is rhigt now not used but was helpful for exporting onnx with torch 1.11
     def _rename_node_io(self, node):
         for idx, inp in enumerate(node.input):
             if 'onnx' in inp:

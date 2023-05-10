@@ -35,8 +35,10 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
     :type a_precision: int
     :param w_precision: the weights' quantization precision
     :type w_precision: int
-    :param a_quantizer: activation quantizer
-    :type a_quantizer: Type[Quantizer]
+    :param in_a_quantizer: input activation quantizer
+    :type in_a_quantizer: Type[Quantizer]
+    :param out_a_quantizer: output activation quantizer
+    :type out_a_quantizer: Type[Quantizer]
     :param w_quantizer: weight quantizer
     :type w_quantizer: Type[Quantizer]
     :param b_quantizer: bias quantizer
@@ -86,7 +88,7 @@ class Quant_Conv2d(nn.Conv2d, QuantModule):
         - Quantization of the `self.weight` tensor using `self.w_quantizer`.
         - Quantization of the `self.bias` vector using `self.b_quantizer` (if needed).
         - Computation of conv2d operation.
-        - Quantization of the input tensor using `self.a_quantizer`.
+        - Quantization of the input tensor using `self.out_a_quantizer`.
 
         :param input: the input activations tensor
         :type input: torch.Tensor

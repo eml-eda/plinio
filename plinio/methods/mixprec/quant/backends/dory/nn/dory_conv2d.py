@@ -85,10 +85,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         self.s_x = self.in_a_quantizer.s_a  # type: ignore
         if type(self.out_a_quantizer) != nn.Identity:
             self.s_y = self.out_a_quantizer.s_a  # type: ignore
-            self.skip_requant = False
+            self.skip_floor_clip = False
         else:
             self.s_y = torch.tensor(1., device=self.device)
-            self.skip_requant = True
+            self.skip_floor_clip = True
         self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
         # Copy and integerize pretrained weights and biases
@@ -99,13 +99,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             self.weight.copy_(int_weight)
             if conv.bias is not None:
                 self.b_quantizer.dequantize = False
-                # self.bias = cast(nn.parameter.Parameter, self.bias)
                 int_bias = self.b_quantizer(conv.bias, self.s_x, self.s_w)
-                int_bias = int_bias * self.scale  # TODO: check this mul
-                # self.bias.copy_(int_bias)
+                int_bias = int_bias * self.scale
                 self.add_bias = int_bias.view(1, self.out_channels, 1, 1)
             else:
-                # self.bias = None
                 self.add_bias = None
 
         # Done here to avoid the reshape op in fwd
@@ -116,11 +113,12 @@ class DORYConv2d(nn.Conv2d, DORYModule):
 
         It performs:
         - Convolution of the input with the integerized `self.weight` tensor.
-        - Multiplication of the `self.scale`
-        - Sum the integerized `self.bias` vector.
-        - Divide by 2 ** `self.shift` amount.
-        - Computes floor operation.
-        - Apply clipped relu between 0 and (2 ** `self.a_precision` - 1)
+        - Requantization (if not self.skip_requant):
+            - Multiplication of the `self.scale`
+            - Sum the integerized `self.bias` vector.
+            - Divide by 2 ** `self.shift` amount.
+            - Computes floor operation.
+            - Apply clipped relu between 0 and (2 ** `self.a_precision` - 1)
 
         :param input: the input activations tensor
         :type input: torch.Tensor
@@ -130,11 +128,9 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         # Convolution
         out = F.conv2d(input, self.weight, None, self.stride,
                        self.padding, self.dilation, self.groups)
-        # This should happens on the last layer
-        # TODO: doing like this does not add bias to output layer... is this correct??
-        if not self.skip_requant:
-            # Multiply scale factor, sum bias, shift
-            out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+        # Multiply scale factor, sum bias, shift
+        out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+        if not self.skip_floor_clip:  # This should happens on the last layer
             # Compute floor
             out = torch.floor(out)
             # Compute relu

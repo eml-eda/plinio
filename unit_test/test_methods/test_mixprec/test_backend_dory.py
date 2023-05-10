@@ -18,7 +18,6 @@
 # *----------------------------------------------------------------------------*
 
 from pathlib import Path
-from typing import cast
 import unittest
 
 import torch
@@ -26,8 +25,7 @@ from plinio.methods import MixPrec
 from plinio.methods.mixprec.nn import MixPrecType
 from plinio.methods.mixprec.quant.backends import Backend, integerize_arch
 from plinio.methods.mixprec.quant.backends.dory import DORYExporter
-import plinio.methods.mixprec.quant.backends.dory.nn as dory_nn
-from unit_test.models import ToySequentialConv2d
+from unit_test.models import ToySequentialFullyConv2d, ToySequentialConv2d
 
 
 class TestMixPrecConvert(unittest.TestCase):
@@ -35,9 +33,47 @@ class TestMixPrecConvert(unittest.TestCase):
        nn.MixPrec and nn.Quant.
     """
 
+    def test_autoimport_fullyconv_layer(self):
+        """Test the conversion of a simple fully convolutional sequential model
+        with layer autoconversion with PER_LAYER weight mixed-precision (default)"""
+        # Instantiate toy model
+        nn_ut = ToySequentialFullyConv2d()
+
+        # Convert to mixprec searchable model
+        mixprec_nn = MixPrec(nn_ut,
+                             input_shape=nn_ut.input_shape,
+                             activation_precisions=(8,),
+                             weight_precisions=(8,),
+                             w_mixprec_type=MixPrecType.PER_LAYER
+                             )
+        # Dummy inference
+        dummy_inp = torch.rand((1,) + nn_ut.input_shape)
+        with torch.no_grad():
+            out_mixprec = mixprec_nn(dummy_inp)
+
+        # Convert to (fake) quantized model
+        quantized_nn = mixprec_nn.arch_export()
+        # Dummy inference
+        with torch.no_grad():
+            out_quant = quantized_nn(dummy_inp)
+        self.assertTrue(torch.all(out_mixprec == out_quant),
+                        "Mismatch between mixprec and fake-quantized outputs")
+
+        # Convert to integer DORY-compliant model
+        integer_nn = integerize_arch(quantized_nn, Backend.DORY)
+        # Dummy inference
+        with torch.no_grad():
+            out_int = integer_nn(dummy_inp)
+        self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
+                        "Mismatch between fake-quantized and integer outputs")
+
+        # Convert to onnx
+        exporter = DORYExporter()
+        exporter.export(integer_nn, dummy_inp.shape, Path('.'))
+
     def test_autoimport_simple_layer(self):
-        """Test the conversion of a simple sequential model with layer autoconversion
-        with PER_LAYER weight mixed-precision (default)"""
+        """Test the conversion of a simple convolutional and linear sequential model
+        with layer autoconversion with PER_LAYER weight mixed-precision (default)"""
         # Instantiate toy model
         nn_ut = ToySequentialConv2d()
 
@@ -66,12 +102,6 @@ class TestMixPrecConvert(unittest.TestCase):
         # Dummy inference
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
-            # Requant to compare with fake-quantized output
-            integer_conv1 = cast(dory_nn.DORYConv2d, integer_nn.conv1)
-            scale = integer_conv1.scale
-            add_bias = integer_conv1.add_bias
-            shift = integer_conv1.shift
-            out_int = (out_int * scale + add_bias) / (2 ** shift)
         self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
                         "Mismatch between fake-quantized and integer outputs")
 

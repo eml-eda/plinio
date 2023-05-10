@@ -392,7 +392,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
     @property
     def selected_out_a_precision(self) -> Union[int, str]:
         """Return the selected precision based on the magnitude of `alpha_prec`
-        components for output activations
+        components for output activations.
+        If output is not quantized returns the 'float' string.
 
         :return: the selected precision
         :rtype: Union[int, str]

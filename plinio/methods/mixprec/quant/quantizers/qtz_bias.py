@@ -64,9 +64,8 @@ class Quantizer_Bias(nn.Module, Quantizer):
         :return: the output fake-quantized bias tensor
         :rtype: torch.Tensor
         """
-        # s_a = self.scale_act
-        # s_w = self.scale_weight
-        self.s_b = (s_a * s_w).squeeze()
+        # self.s_b = (s_a * s_w).squeeze()
+        self.s_b = s_a * s_w
 
         # mask = (self.s_b != 0)
         # scaled_inp = torch.zeros(input.shape, device=input.device)

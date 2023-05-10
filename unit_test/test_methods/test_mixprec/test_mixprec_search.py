@@ -110,7 +110,8 @@ class TestMixPrecSearch(unittest.TestCase):
                               w_mixprec_type=MixPrecType.PER_CHANNEL)
         optimizer = torch.optim.Adam(mixprec_net.parameters())
         n_steps = 10
-        prev_loss = mixprec_net.get_regularization_loss()
+        # prev_loss = mixprec_net.get_regularization_loss()
+        prev_loss = torch.tensor(float('inf'))
         print("Initial Reg. Loss:", prev_loss.item())
         for i in range(n_steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)

@@ -17,26 +17,29 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, cast, Type
+from typing import Dict, Any, Optional, Tuple, cast, Type
 import torch
-import torch.fx as fx
 import torch.nn as nn
 import torch.nn.functional as F
+from plinio.methods.mixprec.quant.quantizers import Quantizer
+from plinio.methods.mixprec.quant.backends.utils import binary_search
 from .dory_module import DORYModule
 
 
 class DORYLinear(nn.Linear, DORYModule):
-    # TODO
-    """A nn.Module implementing a quantized Linear layer
+    """A nn.Module implementing an integer quantized Linear layer compatible
+    with the DORY backend.
 
-    :param linear: the inner `nn.Linear` layer to be optimized
+    :param linear: the inner `nn.Linear` layer
     :type linear: nn.Linear
     :param a_precision: the input activation quantization precision
     :type a_precision: int
     :param w_precision: the weights' quantization precision
     :type w_precision: int
-    :param a_quantizer: activation quantizer
-    :type a_quantizer: Type[Quantizer]
+    :param in_a_quantizer: input activation quantizer
+    :type in_a_quantizer: Type[Quantizer]
+    :param out_a_quantizer: output activation quantizer
+    :type out_a_quantizer: Type[Quantizer]
     :param w_quantizer: weight quantizer
     :type w_quantizer: Type[Quantizer]
     :param b_quantizer: bias quantizer
@@ -46,179 +49,89 @@ class DORYLinear(nn.Linear, DORYModule):
                  linear: nn.Linear,
                  a_precision: int,
                  w_precision: int,
-                 a_quantizer: Type[Quantizer],
+                 in_a_quantizer: Type[Quantizer],
+                 out_a_quantizer: Type[Quantizer],
                  w_quantizer: Type[Quantizer],
                  b_quantizer: Optional[Type[Quantizer]]):
-        super(Quant_Linear, self).__init__(
+        super(DORYLinear, self).__init__(
             linear.in_features,
             linear.out_features,
             linear.bias is not None)
-        with torch.no_grad():
-            self.weight.copy_(linear.weight)
-            if linear.bias is not None:
-                self.bias = cast(torch.nn.parameter.Parameter, self.bias)
-                self.bias.copy_(linear.bias)
-            else:
-                self.bias = None
 
+        # Store precisions and quantizers
         self.a_precision = a_precision
         self.w_precision = w_precision
-        self.a_quantizer = a_quantizer
+        self.in_a_quantizer = in_a_quantizer
+        self.out_a_quantizer = out_a_quantizer
         self.w_quantizer = w_quantizer
         if self.bias is not None:
             b_quantizer = cast(Type[Quantizer], b_quantizer)
             self.b_quantizer = b_quantizer
+            self.b_precision = b_quantizer.num_bits
         else:
             self.b_quantizer = lambda *args: None  # Do Nothing
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of linear quantized layer.
+        # Compute self.scale_fact and self.shift
+        # TODO: to avoid to ignore linter warning refactor s_w and s_a
+        # to be simply s (or similar name) and put it as a property
+        # in the abstract Quantizer class
+        self.s_w = self.w_quantizer.s_w  # type: ignore
+        self.s_x = self.in_a_quantizer.s_a  # type: ignore
+        if type(self.out_a_quantizer) != nn.Identity:
+            self.s_y = self.out_a_quantizer.s_a  # type: ignore
+            self.skip_floor_clip = False
+        else:
+            self.s_y = torch.tensor(1., device=self.device)
+            self.skip_floor_clip = True
+        self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
-        It quantizes:
-        - The input tensor using `self.a_quantizer`.
-        - The `self.weight` tensor using `self.w_quantizer`.
-        - The `self.bias` vector using `self.b_quantizer` (if needed).
-        Then computes linear operation.
+        # Copy and integerize pretrained weights and biases
+        with torch.no_grad():
+            self.w_quantizer.dequantize = False
+            int_weight = self.w_quantizer(linear.weight)
+            int_weight = cast(torch.Tensor, int_weight)
+            self.weight.copy_(int_weight)
+            if linear.bias is not None:
+                self.b_quantizer.dequantize = False
+                int_bias = self.b_quantizer(linear.bias, self.s_x, self.s_w)
+                int_bias = int_bias * self.scale
+                self.add_bias = int_bias.view(1, self.out_features)
+            else:
+                self.add_bias = None
+
+        # Done here to avoid the reshape op in fwd
+        self.scale = self.scale.view(1, self.out_features)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        """The forward function of integer linear layer.
+
+        It performs:
+        - MatMul of the input with the integerized `self.weight` tensor.
+        - Requantization (if not self.skip_requant):
+            - Multiplication of the `self.scale`
+            - Sum the integerized `self.bias` vector.
+            - Divide by 2 ** `self.shift` amount.
+            - Computes floor operation.
+            - Apply clipped relu between 0 and (2 ** `self.a_precision` - 1)
 
         :param input: the input activations tensor
         :type input: torch.Tensor
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        # Quantization
-        q_inp = self.a_quantizer(input)  # type: ignore
-        q_inp = cast(torch.Tensor, q_inp)
-        q_w = self.w_quantizer(self.weight)  # type: ignore
-        q_w = cast(torch.Tensor, q_w)
-        q_b = self.b_quantizer(self.bias,  # type: ignore
-                               self.a_quantizer.s_a, self.w_quantizer.s_w)  # type: ignore
-        q_b = cast(torch.Tensor, q_b)
+        # Convolution
+        out = F.linear(input, self.weight, None)
+        # Multiply scale factor, sum bias, shift
+        out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+        if not self.skip_floor_clip:  # This should happens on the last layer
+            # Compute floor
+            out = torch.floor(out)
+            # Compute relu
+            out = torch.clip(out,
+                             torch.tensor(0.),
+                             torch.tensor(2 ** self.a_precision - 1))
 
-        # Linear operation
-        q_out = F.linear(q_inp, q_w, q_b)
-        return q_out
-
-    @staticmethod
-    def autoimport(n: fx.Node,
-                   mod: fx.GraphModule,
-                   a_precision: int,
-                   w_precision: int,
-                   a_quantizer: Quantizer,
-                   w_quantizer: Quantizer,
-                   b_quantizer: Quantizer,
-                   a_sq: Optional[Quantizer],
-                   w_sq: Optional[Quantizer],
-                   b_sq: Optional[Quantizer],
-                   a_quantizer_kwargs: Dict = {},
-                   w_quantizer_kwargs: Dict = {},
-                   b_quantizer_kwargs: Dict = {}
-                   ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a Quant_Linear layer, starting from the fx.Node
-        of a nn.Linear layer, and replace it into the parent fx.GraphModule
-
-        Also returns a quantizer in case it needs to be shared with other layers
-
-        :param n: a fx.Node corresponding to a nn.ReLU layer, with shape annotations
-        :type n: fx.Node
-        :param mod: the parent fx.GraphModule
-        :type mod: fx.GraphModule
-        :param a_precision: the input activation quantization precision
-        :type a_precision: int
-        :param w_precision: the weight quantization precision
-        :type w_precision: int
-        :param a_quantizer: the quantizer to be used for input activations
-        :type a_quantizer: Type[Quantizer]
-        :param w_quantizer: the quantizer to be used for weights
-        :type w_quantizer: Type[Quantizer]
-        :param b_quantizer: the quantizer to be used for biases
-        :type b_quantizer: Type[Quantizer]
-        :param a_sq: An optional shared quantizer derived from other layers
-        for input activations
-        :type a_sq: Optional[Quantizer]
-        :param w_sq: An optional shared quantizer derived from other layers
-        for weights
-        :type w_sq: Optional[Quantizer]
-        :param b_sq: An optional shared quantizer derived from other layers
-        for biases
-        :type b_sq: Optional[Quantizer]
-        :param a_quantizer_kwargs: Activations' quantizer kwargs,
-        if no kwargs are passed default is used
-        :type a_quantizer_kwargs: Dict
-        :param w_quantizer_kwargs: Weights' quantizer kwargs,
-        if no kwargs are passed default is used
-        :type w_quantizer_kwargs: Dict
-        :param b_quantizer_kwargs: Biases' quantizer kwargs,
-        if no kwargs are passed default is used
-        :type b_quantizer_kwargs: Dict
-        :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared quantizer
-        :rtype: Optional[Quantizer]
-        """
-        submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != nn.Linear:
-            msg = f"Trying to generate Quant_Identity from layer of type {type(submodule)}"
-            raise TypeError(msg)
-        # here, this is guaranteed
-        submodule = cast(nn.Linear, submodule)
-
-        # Build activation quantizer
-        if a_sq is not None:
-            a_qtz_obj = a_sq
-        else:
-            a_qtz_obj = a_quantizer(a_precision,
-                                    **a_quantizer_kwargs)  # type: ignore
-        a_qtz_obj = cast(Type[Quantizer], a_qtz_obj)
-
-        # Build weight quantizer
-        if w_sq is not None:
-            w_qtz_obj = w_sq
-        else:
-            w_qtz_obj = w_quantizer(w_precision,
-                                    **w_quantizer_kwargs)  # type: ignore
-        w_qtz_obj = cast(Type[Quantizer], w_qtz_obj)
-
-        # Build bias quantizer
-        if b_sq is not None:
-            b_qtz_obj = b_sq
-        else:
-            b_qtz_obj = b_quantizer(w_precision,
-                                    **b_quantizer_kwargs)  # type: ignore
-        b_qtz_obj = cast(Type[Quantizer], b_qtz_obj)
-
-        new_submodule = Quant_Linear(submodule,
-                                     a_precision,
-                                     w_precision,
-                                     a_qtz_obj,
-                                     w_qtz_obj,
-                                     b_qtz_obj)
-        mod.add_submodule(str(n.target), new_submodule)
-        return None  # TODO: Understand if I should return something and when
-
-    @staticmethod
-    def export(n: fx.Node,
-               mod: fx.GraphModule,
-               backend: Backend):
-        """Replaces a fx.Node corresponding to a Quant_Linear layer,
-        with a backend-specific quantized Linear layer within a fx.GraphModule
-
-        :param n: the node to be rewritten
-        :type n: fx.Node
-        :param mod: the parent module, where the new node has to be inserted
-        :type mod: fx.GraphModule
-        :param backend: the specific backend to be used
-        :type backend: Backend
-        """
-        submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != Quant_Linear:
-            raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        integer_linear = backend_solver(type(submodule), backend)
-        new_submodule = integer_linear(
-            submodule.a_precision,
-            submodule.w_precision,
-            submodule.a_quantizer,
-            submodule.w_quantizer,
-            submodule.b_quantizer)
-        mod.add_submodule(str(n.target), new_submodule)
+        return out
 
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer hyperparameters
@@ -229,33 +142,77 @@ class DORYLinear(nn.Linear, DORYModule):
         return {
             'a_precision': self.a_precision,
             'w_precision': self.w_precision,
-            'a_quantizer': self.a_quantizer.summary(),  # type: ignore
-            'w_quantizer': self.w_quantizer.summary(),  # type: ignore
-            'b_quantizer': self.b_quantizer.summary(),  # type: ignore
+            'scale_factor': self.scale_fact,
+            'shift': self.shift,
         }
 
-    def named_quant_parameters(
-            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
-        """Returns an iterator over the quantization parameters of this layer, yielding
-        both the name of the parameter as well as the parameter itself
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
-        :param prefix: prefix to prepend to all parameter names.
-        :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but QuantModule never have sub-layers TODO: check if true
-        :type recurse: bool
-        :return: an iterator over the architectural parameters of this layer
-        :rtype: Iterator[nn.Parameter]
+    def _integer_approximation(self,
+                               s_w: torch.Tensor,
+                               s_x: torch.Tensor,
+                               s_y: torch.Tensor
+                               ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute an approximation of `s_w * s_x / s_y` as `scale` / 2**`shift`
+        where scale is a vector of len(s_w) integer on 32bits and shift is
+        a scalar between [0, 31].
+
+        :param s_w: the floating-point weights' quantizer scale-factor
+        :type s_w: torch.Tensor
+        :param s_x: the floating-point input activations' quantizer scale-factor
+        :type s_x: torch.Tensor
+        :param s_y: the floating-point output activations' quantizer scale-factor
+        :type s_y: torch.Tensor
+        :return: a tuple containing the computed `scale` and `shift` factors
+        :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
-        prfx = prefix
-        prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.a_quantizer.named_quant_parameters(
-                prfx + "a_quantizer", recurse):  # type: ignore
-            yield name, param
-        for name, param in self.w_quantizer.named_quant_parameters(
-                prfx + "w_quantizer", recurse):  # type: ignore
-            yield name, param
-        if self.bias is not None:
-            for name, param in self.b_quantizer.named_quant_parameters(
-                    prfx + "b_quantizer", recurse):  # type: ignore
-                yield name, param
+        # Constants, depend on the specific backend
+        SCALE_BIT = 32
+        SHIFT_POS = 32
+
+        # Value to be approximated as `scale` / 2**`shift`
+        target = s_w * s_x / s_y
+        device = target.device
+        target = target.clone().detach().cpu()
+
+        # Integer approximation #
+        params = {}
+        upper_bound = 2 ** (SCALE_BIT - 1)
+        # Create a dict indexed by possible shift amounts, each entry of the dict
+        # contains a list where for each channel a `scale` factor is selected as
+        # the one minimizing abs(scale / 2**shift - target).
+        for idx in range(len(target)):
+            for sh in range(SHIFT_POS):
+                if sh not in params.keys():
+                    params[sh] = []
+                params[sh].append(
+                    binary_search(2**-sh, 1, upper_bound, target[idx].item())
+                )
+        # For each `shift` amount compute the average difference between the
+        # integer approximation and targets
+        avg_diff = {}
+        for sh in range(SHIFT_POS):
+            diff = []
+            for idx in range(len(target)):
+                diff.append(
+                    abs(params[sh][idx] / 2**sh - target[idx].item())
+                )
+            avg_diff[sh] = sum(diff) / len(diff)
+        # Find the `shift` amount minimizing the avg difference between integer
+        # approximation and targets
+        min_diff = float('inf')
+        min_scale, min_shift = None, None
+        for key, val in avg_diff.items():
+            scale = params[key]
+            shift = key
+            if val < min_diff:
+                min_diff = val
+                min_scale = scale
+                min_shift = shift
+
+        # Build tensors with selected quantities, move to `device` and return
+        scale_t = torch.tensor(min_scale, device=device)
+        shift_t = torch.tensor([min_shift, ], device=device)
+        return scale_t, shift_t

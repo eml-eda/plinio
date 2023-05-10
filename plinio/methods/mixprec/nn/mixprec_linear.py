@@ -234,10 +234,12 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
 
         # Select precision and quantizer for activations
-        selected_a_precision = submodule.selected_a_precision
+        selected_a_precision = submodule.selected_out_a_precision
         selected_a_precision = cast(int, selected_a_precision)
-        selected_a_quantizer = submodule.selected_a_quantizer
-        selected_a_quantizer = cast(Type[Quantizer], selected_a_quantizer)
+        selected_out_a_quantizer = submodule.selected_out_a_quantizer
+        selected_out_a_quantizer = cast(Type[Quantizer], selected_out_a_quantizer)
+        selected_in_a_quantizer = submodule.selected_in_a_quantizer
+        selected_in_a_quantizer = cast(Type[Quantizer], selected_in_a_quantizer)
 
         # Select precision(s) and quantizer(s) for weights and biases
         selected_w_precision = submodule.selected_w_precision
@@ -262,7 +264,8 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             new_submodule = Quant_Linear(submodule,
                                          selected_a_precision,
                                          selected_w_precision,
-                                         selected_a_quantizer,
+                                         selected_in_a_quantizer,
+                                         selected_out_a_quantizer,
                                          selected_w_quantizer,
                                          b_quantizer)
         # w_mixprec_type is `PER_CHANNEL` => multiple precision/quantizer
@@ -300,7 +303,8 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                 quant_lin = Quant_Linear(new_lin,
                                          selected_a_precision,
                                          prec,
-                                         selected_a_quantizer,
+                                         selected_in_a_quantizer,
+                                         selected_out_a_quantizer,
                                          w_quant,
                                          b_quantizer)
                 nn_list.append(quant_lin)
@@ -318,7 +322,8 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'a_precision': self.selected_a_precision,
+            'in_a_precision': self.selected_in_a_precision,
+            'out_a_precision': self.selected_out_a_precision,
             'w_precision': self.selected_w_precision,
         }
 
@@ -348,9 +353,9 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         #     yield name, param
 
     @property
-    def selected_a_precision(self) -> int:
+    def selected_in_a_precision(self) -> int:
         """Return the selected precision based on the magnitude of `alpha_prec`
-        components for activations
+        components for input activations
 
         :return: the selected precision
         :rtype: int
@@ -358,6 +363,22 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         with torch.no_grad():
             idx = int(torch.argmax(self.input_quantizer.alpha_prec))
             return self.a_precisions[idx]
+
+    @property
+    def selected_out_a_precision(self) -> Union[int, str]:
+        """Return the selected precision based on the magnitude of `alpha_prec`
+        components for output activations.
+        If output is not quantized returns the 'float' string.
+
+        :return: the selected precision
+        :rtype: Union[int, str]
+        """
+        if type(self.mixprec_a_quantizer) != nn.Identity:
+            with torch.no_grad():
+                idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
+                return self.a_precisions[idx]
+        else:
+            return 'float'
 
     @property
     def selected_w_precision(self) -> Union[int, List[int]]:
@@ -379,9 +400,9 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
                 raise ValueError(msg)
 
     @property
-    def selected_a_quantizer(self) -> Type[Quantizer]:
+    def selected_in_a_quantizer(self) -> Type[Quantizer]:
         """Return the selected quantizer based on the magnitude of `alpha_prec`
-        components for activations
+        components for input activations
 
         :return: the selected quantizer(s)
         :rtype: Type[Quantizer]
@@ -390,6 +411,24 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
             idx = int(torch.argmax(self.input_quantizer.alpha_prec))
             qtz = self.input_quantizer.mix_qtz[idx]
             qtz = cast(Type[Quantizer], qtz)
+            return qtz
+
+    @property
+    def selected_out_a_quantizer(self) -> Type[Quantizer]:
+        """Return the selected quantizer based on the magnitude of `alpha_prec`
+        components for output activations
+
+        :return: the selected quantizer
+        :rtype: Type[Quantizer]
+        """
+        if type(self.mixprec_a_quantizer) != nn.Identity:
+            with torch.no_grad():
+                idx = int(torch.argmax(self.mixprec_a_quantizer.alpha_prec))
+                qtz = self.mixprec_a_quantizer.mix_qtz[idx]
+                qtz = cast(Type[Quantizer], qtz)
+                return qtz
+        else:
+            qtz = cast(Type[Quantizer], self.mixprec_a_quantizer)
             return qtz
 
     @property
@@ -517,3 +556,24 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         """
         calc.register(self)
         self._input_features_calculator = calc
+
+    @property
+    def input_quantizer(self) -> MixPrec_Qtz_Layer:
+        """Returns the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :return: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :rtype: MixPrec_Qtz_Layer
+        """
+        return self._input_quantizer
+
+    @input_quantizer.setter
+    def input_quantizer(self, qtz: MixPrec_Qtz_Layer):
+        """Set the `MixPrec_Qtz_Layer` for input activations calculation
+
+        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MixPrec_Qtz_Layer
+        """
+        self._input_quantizer = qtz
+        self.mixprec_b_quantizer.mixprec_a_quantizer = self._input_quantizer
