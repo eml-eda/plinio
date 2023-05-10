@@ -20,7 +20,7 @@
 from enum import Enum, auto
 import torch.nn as nn
 
-import dory
+from . import dory
 
 
 class Backend(Enum):
