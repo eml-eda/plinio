@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.fx.experimental.optimization import replace_node_module
 
-from plinio.graph.inspection import is_function
+from plinio.graph.inspection import is_function, is_layer
 from plinio.methods.mixprec.quant.quantizers import Quantizer
 # from plinio.methods.mixprec.quant.nn import QuantModule
 import plinio.methods.mixprec.quant.nn as qnn
@@ -168,14 +168,14 @@ def remove_inp_quantizer(mod: nn.Module) -> nn.Module:
 
 def remove_relu(mod: nn.Module) -> nn.Module:
     """ReLU is already implemented as clip function in dory.nn modules, then we
-    can remove explicit calls to F.relu
+    can remove explicit calls to F.relu, torch.relu and nn.ReLU
     """
     if not isinstance(mod, fx.GraphModule):
         msg = f'Input is of type {type(mod)} instead of fx.GraphModule'
         raise ValueError(msg)
     mod = cast(fx.GraphModule, mod)
     for n in mod.graph.nodes:
-        if is_function(n, (F.relu, torch.relu,)):
+        if is_function(n, (F.relu, torch.relu,)) or is_layer(n, mod, (nn.ReLU,)):
             assert len(n.all_input_nodes) == 1
             inp_node = n.all_input_nodes[0]
             new_submodule = nn.Identity()

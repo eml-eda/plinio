@@ -89,7 +89,7 @@ class DORYAnnotator:
 
             # Map inputs and outputs of node n to corresponding int_id
             for idx, inp in enumerate(n.input):
-                if ('weight' in inp) or ('onnx::MatMul' in inp):
+                if ('weight' in inp) or ('bias' in inp) or ('onnx::MatMul' in inp):
                     continue
                 if inp not in name_to_int_map.keys():
                     name_to_int_map[inp] = str(int_id)  # Map

@@ -85,10 +85,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         self.s_x = self.in_a_quantizer.s_a  # type: ignore
         if type(self.out_a_quantizer) != nn.Identity:
             self.s_y = self.out_a_quantizer.s_a  # type: ignore
-            self.skip_floor_clip = False
+            self.skip_requant = False
         else:
             self.s_y = torch.tensor(1., device=self.device)
-            self.skip_floor_clip = True
+            self.skip_requant = True
         self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
         # Copy and integerize pretrained weights and biases
@@ -100,8 +100,13 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             if conv.bias is not None:
                 self.b_quantizer.dequantize = False
                 int_bias = self.b_quantizer(conv.bias, self.s_x, self.s_w)
-                int_bias = int_bias * self.scale
-                self.add_bias = int_bias.view(1, self.out_channels, 1, 1)
+                int_bias = cast(torch.Tensor, int_bias)
+                if not self.skip_requant:
+                    int_bias = int_bias * self.scale
+                    self.add_bias = int_bias.view(1, self.out_channels, 1, 1)
+                else:
+                    self.bias = cast(torch.Tensor, self.bias)
+                    self.bias.copy_(int_bias)
             else:
                 self.add_bias = None
 
@@ -125,18 +130,21 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        # Convolution
-        out = F.conv2d(input, self.weight, None, self.stride,
-                       self.padding, self.dilation, self.groups)
-        # Multiply scale factor, sum bias, shift
-        out = (out * self.scale + self.add_bias) / (2 ** self.shift)
-        if not self.skip_floor_clip:  # This should happens on the last layer
+
+        if not self.skip_requant:  # This should happens on the last layer
+            # Convolution
+            out = F.conv2d(input, self.weight, None, self.stride,
+                           self.padding, self.dilation, self.groups)
+            # Multiply scale factor, sum bias, shift
+            out = (out * self.scale + self.add_bias) / (2 ** self.shift)
             # Compute floor
             out = torch.floor(out)
             # Compute relu
-            out = torch.clip(out,
-                             torch.tensor(0.),
-                             torch.tensor(2 ** self.a_precision - 1))
+            out = torch.clip(out, self.clip_inf, self.clip_sup)
+        else:
+            # Convolution
+            out = F.conv2d(input, self.weight, self.bias, self.stride,
+                           self.padding, self.dilation, self.groups)
 
         return out
 
@@ -156,6 +164,16 @@ class DORYConv2d(nn.Conv2d, DORYModule):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    @property
+    def clip_inf(self):
+        # Define ReLU inferior extreme
+        return torch.tensor(0., device=self.device)
+
+    @property
+    def clip_sup(self):
+        # Define ReLU superior extreme
+        return torch.tensor(2 ** self.a_precision - 1, device=self.device)
 
     def _integer_approximation(self,
                                s_w: torch.Tensor,
