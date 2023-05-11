@@ -28,6 +28,7 @@ from .toy_models import ToyTimeCat, ToyChannelsCat
 from .toy_models import ToyFlatten, ToyMultiPath1, ToyMultiPath2, ToyRegression, \
     ToyMultiPath1_2D, ToyMultiPath2_2D, ToyAdd_2D, ToyRegression_2D, ToyInputConnectedDW, \
     ToyBatchNorm, ToyIllegalBN
+from .phd_course_model import TutorialModel
 
 __all__ = ['TCResNet14', 'SimpleNN', 'SimpleNN2D', 'SimplePitNN', 'DSCNN',
            'ToySequentialConv1d', 'ToySequentialConv2d', 'ToySequentialFullyConv2d',
@@ -37,4 +38,5 @@ __all__ = ['TCResNet14', 'SimpleNN', 'SimpleNN2D', 'SimplePitNN', 'DSCNN',
            'SimpleMixPrecNN', 'SimpleExportedNN2D', 'ToyAdd_2D', 'ToyRegression_2D',
            'SimpleNN2D_NoBN', 'SimpleExportedNN2D_NoBias', 'SimpleExportedNN2D_ch',
            'SimpleExportedNN2D_NoBias_ch', 'ToyBatchNorm', 'ToyIllegalBN',
+           'TutorialModel',
            ]

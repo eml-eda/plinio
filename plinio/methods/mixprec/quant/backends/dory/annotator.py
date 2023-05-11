@@ -103,7 +103,12 @@ class DORYAnnotator:
 
             if op_type in dory_onnxnode_op_types['linear']:
                 # op_name = n.input[1].rsplit('.', 1)[0]
-                op_name = n.name.split('/')[1]
+                if op_type == 'Conv':
+                    op_name = n.input[1].rsplit('.', 1)[0]
+                elif op_type == 'MatMul':
+                    op_name = n.name.split('/')[1]
+                else:
+                    op_name = n.name.split('/')[1]
                 pytorch_module = network.get_submodule(op_name)
                 if isinstance(pytorch_module, (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)):
                     weight_bits = pytorch_module.w_precision
