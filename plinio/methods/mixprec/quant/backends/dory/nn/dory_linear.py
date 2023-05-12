@@ -71,6 +71,16 @@ class DORYLinear(nn.Linear, DORYModule):
         else:
             self.b_quantizer = lambda *args: None  # Do Nothing
 
+        # Copy and integerize pretrained weights
+        # N.B., is mandatory to first integerize weight
+        # compute self.scale and self.shift which depends upon
+        # self.w_quantizer.s_w which is updated every time we quantize a tensor
+        with torch.no_grad():
+            self.w_quantizer.dequantize = False
+            int_weight = self.w_quantizer(linear.weight)
+            int_weight = cast(torch.Tensor, int_weight)
+            self.weight.copy_(int_weight)
+
         # Compute self.scale_fact and self.shift
         # TODO: to avoid to ignore linter warning refactor s_w and s_a
         # to be simply s (or similar name) and put it as a property
@@ -79,27 +89,20 @@ class DORYLinear(nn.Linear, DORYModule):
         self.s_x = self.in_a_quantizer.s_a  # type: ignore
         if type(self.out_a_quantizer) != nn.Identity:
             self.s_y = self.out_a_quantizer.s_a  # type: ignore
-            self.skip_requant = False
+            self.last_layer = False
         else:
             self.s_y = torch.tensor(1., device=self.device)
-            self.skip_requant = True
+            self.last_layer = True
         self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
-        # Copy and integerize pretrained weights and biases
+        # Copy and integerize pretrained biases
         with torch.no_grad():
-            self.w_quantizer.dequantize = False
-            int_weight = self.w_quantizer(linear.weight)
-            int_weight = cast(torch.Tensor, int_weight)
-            self.weight.copy_(int_weight)
             if linear.bias is not None:
                 self.b_quantizer.dequantize = False
                 int_bias = self.b_quantizer(linear.bias, self.s_x, self.s_w)
                 int_bias = cast(torch.Tensor, int_bias)
-                if not self.skip_requant:
-                    int_bias = int_bias * self.scale
-                    self.add_bias = int_bias.view(1, self.out_features)
-                else:
-                    self.bias.copy_(int_bias)
+                int_bias = int_bias * self.scale
+                self.add_bias = int_bias.view(1, self.out_features)
             else:
                 self.add_bias = None
 
@@ -123,18 +126,15 @@ class DORYLinear(nn.Linear, DORYModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        if not self.skip_requant:  # This should happens on the last layer
-            # Linear
-            out = F.linear(input, self.weight, None)
-            # Multiply scale factor, sum bias, shift
-            out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+        # Linear
+        out = F.linear(input, self.weight, None)
+        # Multiply scale factor, sum bias, shift
+        out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+        if not self.last_layer:  # This should happens on the last layer
             # Compute floor
             out = torch.floor(out)
-            # Compute relu
-            out = torch.clip(out, self.clip_inf, self.clip_sup)
-        else:
-            # Linear
-            out = F.linear(input, self.weight, self.bias)
+        # Compute relu
+        out = torch.clip(out, self.clip_inf, self.clip_sup)
 
         return out
 
@@ -163,7 +163,10 @@ class DORYLinear(nn.Linear, DORYModule):
     @property
     def clip_sup(self):
         # Define ReLU superior extreme
-        return torch.tensor(2 ** self.a_precision - 1, device=self.device)
+        if self.last_layer:
+            return torch.tensor(2 ** 32 - 1, device=self.device)
+        else:
+            return torch.tensor(2 ** self.a_precision - 1, device=self.device)
 
     def _integer_approximation(self,
                                s_w: torch.Tensor,

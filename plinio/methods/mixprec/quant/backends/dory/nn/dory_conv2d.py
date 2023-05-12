@@ -77,6 +77,16 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         else:
             self.b_quantizer = lambda *args: None  # Do Nothing
 
+        # Copy and integerize pretrained weights
+        # N.B., is mandatory to first integerize weight
+        # compute self.scale and self.shift which depends upon
+        # self.w_quantizer.s_w which is updated every time we quantize a tensor
+        with torch.no_grad():
+            self.w_quantizer.dequantize = False
+            int_weight = self.w_quantizer(conv.weight)
+            int_weight = cast(torch.Tensor, int_weight)
+            self.weight.copy_(int_weight)
+
         # Compute self.scale_fact and self.shift
         # TODO: to avoid to ignore linter warning refactor s_w and s_a
         # to be simply s (or similar name) and put it as a property
@@ -91,12 +101,8 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             self.skip_requant = True
         self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
-        # Copy and integerize pretrained weights and biases
+        # Copy and integerize pretrained biases
         with torch.no_grad():
-            self.w_quantizer.dequantize = False
-            int_weight = self.w_quantizer(conv.weight)
-            int_weight = cast(torch.Tensor, int_weight)
-            self.weight.copy_(int_weight)
             if conv.bias is not None:
                 self.b_quantizer.dequantize = False
                 int_bias = self.b_quantizer(conv.bias, self.s_x, self.s_w)

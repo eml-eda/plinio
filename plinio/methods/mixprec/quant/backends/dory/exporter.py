@@ -53,7 +53,7 @@ class DORYExporter:
 
         # Remove input quantizer from `network`
         network = remove_inp_quantizer(network)
-        # Remove calls to functional relu from `network`
+        # Remove every relu from `network`
         network = remove_relu(network)
 
         # Export network to onnx file
