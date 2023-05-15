@@ -228,6 +228,9 @@ class TestMixPrecConvert(unittest.TestCase):
         self._check_target_layers(new_nn, exp_tgt=5)
         self._check_layers_exclusion(new_nn, excluded)
 
+        # TODO: the following part of the test fails during registration of input
+        # quantizer in the specific case of this network that shares the input with
+        # multiple layers.
         nn_ut = ToyMultiPath2_2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
         # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
@@ -245,6 +248,9 @@ class TestMixPrecConvert(unittest.TestCase):
         self._check_target_layers(new_nn, exp_tgt=5)
         self._check_layers_exclusion(new_nn, excluded)
 
+        # TODO: the following part of the test fails during registration of input
+        # quantizer in the specific case of this network that shares the input with
+        # multiple layers.
         nn_ut = ToyMultiPath2_2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
         # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
@@ -289,6 +295,7 @@ class TestMixPrecConvert(unittest.TestCase):
     def test_export_initial_simple_channel(self):
         """Test the export of a simple sequential model, just after import
         with PER_CHANNEL weight mixed-precision"""
+        # TODO: Not supported at the moment
         nn_ut = SimpleNN2D()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
                          w_mixprec_type=MixPrecType.PER_CHANNEL,
@@ -344,6 +351,7 @@ class TestMixPrecConvert(unittest.TestCase):
     def test_export_initial_cuda_channel(self):
         """Test the export of a simple sequential model, just after import using
         GPU (if available) with PER_CHANNEL weight mixed-precision"""
+        # TODO: Not supported at the moment
         # Check CUDA availability
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         print("Training on:", device)
@@ -398,6 +406,7 @@ class TestMixPrecConvert(unittest.TestCase):
     def test_export_initial_nobn_channel(self):
         """Test the export of a simple sequential model with no bn, just after import
         with PER_LAYER weight mixed-precision (default)"""
+        # TODO: Not supported at the moment
         nn_ut = SimpleNN2D_NoBN()
         new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
                          activation_precisions=(8,), weight_precisions=(4, 8),
@@ -477,14 +486,14 @@ class TestMixPrecConvert(unittest.TestCase):
                 child = cast(qnn.Quant_Conv2d, child)
                 # mixprec_child = cast(MixPrec_Conv2d, new_nn.seed._modules[name])
                 self.assertEqual(child.a_precision, 8, "Wrong act precision")
-                self.assertEqual(child.a_quantizer.clip_val, 5.,  # type: ignore
+                self.assertEqual(child.out_a_quantizer.clip_val, 5.,  # type: ignore
                                  "Wrong act qtz clip_val")
                 self.assertEqual(child.w_precision, 2, "Wrong weight precision")
             if name == 'conv1':
                 child = cast(qnn.Quant_Conv2d, child)
                 # mixprec_child = cast(MixPrec_Conv2d, new_nn.seed._modules[name])
                 self.assertEqual(child.a_precision, 4, "Wrong act precision")
-                self.assertEqual(child.a_quantizer.clip_val, 1.,  # type: ignore
+                self.assertEqual(child.out_a_quantizer.clip_val, 1.,  # type: ignore
                                  "Wrong act qtz clip_val")
                 self.assertEqual(child.w_precision, 8, "Wrong weight precision")
 
@@ -611,7 +620,10 @@ class TestMixPrecConvert(unittest.TestCase):
         self.assertTrue(child.in_features == new_child.in_features)
         self.assertTrue(child.out_features == new_child.out_features)
         # Check qtz param
-        self.assertTrue(child.a_precision == new_child.a_precision)
+        if type(new_child.out_a_quantizer) == nn.Identity:
+            self.assertTrue(new_child.a_precision == 'float')
+        else:
+            self.assertTrue(child.a_precision == new_child.a_precision)
         self.assertTrue(child.w_precision == new_child.w_precision)
 
     def test_repeated_precisions(self):

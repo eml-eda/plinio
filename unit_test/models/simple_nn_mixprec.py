@@ -133,7 +133,8 @@ class SimpleExportedNN2D_NoBias(nn.Module):
         super(SimpleExportedNN2D_NoBias, self).__init__()
         self.qargs = {'a_precision': 8,
                       'w_precision': 4,
-                      'a_quantizer': PACT_Act,
+                      'in_a_quantizer': PACT_Act,
+                      'out_a_quantizer': PACT_Act,
                       'w_quantizer': MinMax_Weight,
                       'b_quantizer': Quantizer_Bias,
                       }
@@ -166,7 +167,8 @@ class SimpleExportedNN2D_NoBias_ch(nn.Module):
         super(SimpleExportedNN2D_NoBias_ch, self).__init__()
         self.qargs = {'a_precision': 8,
                       'w_precision': 4,
-                      'a_quantizer': PACT_Act,
+                      'in_a_quantizer': PACT_Act,
+                      'out_a_quantizer': PACT_Act,
                       'w_quantizer': MinMax_Weight,
                       'b_quantizer': Quantizer_Bias,
                       }

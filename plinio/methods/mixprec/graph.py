@@ -276,7 +276,8 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                                cout,
                                                w_quantizer,
                                                w_quantizer_kwargs)
-            if n in get_graph_outputs(mod.graph) or n in get_graph_inputs(mod.graph):
+            # if n in get_graph_outputs(mod.graph) or n in get_graph_inputs(mod.graph):
+            if n in get_graph_outputs(mod.graph):
                 # distinguish the case in which the number of features must "frozen"
                 # i.e., the case of input-connected or output-connected components,
                 # this may overwrite a previously set "sq_w"
@@ -569,11 +570,6 @@ def register_input_quantizers(mod: fx.GraphModule):
             while not is_inherited_layer(prev_n, mod, (MixPrecModule,)):
                 prev_n = prev_n.meta['input_features_set_by']
             prev_submod = mod.get_submodule(str(prev_n.target))
-            # sub_mod = cast(MixPrec_Conv2d, sub_mod)
-            # cast(nn.Module,
-            #      sub_mod.mixprec_b_quantizer
-            #      ).mixprec_a_quantizer = prev_submod.mixprec_a_quantizer
-            # sub_mod.input_quantizer = cast(MixPrec_Qtz_Layer, prev_submod.mixprec_a_quantizer)
             sub_mod.update_input_quantizer(
                 cast(MixPrec_Qtz_Layer, prev_submod.mixprec_a_quantizer))
 
