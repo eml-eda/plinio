@@ -222,7 +222,11 @@ def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
         scale_factor = scale_factor.view(shape)
 
         # Quantize
-        y = torch.round(x / scale_factor)
+        # N.B., round gives problems during integerazation cause may happen that
+        # a positive signed number is rounded-up exceeding what is representable
+        # on n bits (e.g., n=8bits round(127.6)-->128).
+        # y = torch.round(x / scale_factor)
+        y = torch.floor(x / scale_factor)
 
         if dequantize:
             y = y * scale_factor
