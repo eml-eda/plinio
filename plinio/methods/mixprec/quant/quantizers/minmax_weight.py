@@ -224,14 +224,19 @@ def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
         # Quantize
         # N.B., round gives problems during integerazation cause may happen that
         # a positive signed number is rounded-up exceeding what is representable
-        # on n bits (e.g., n=8bits round(127.6)-->128).
-        # y = torch.round(x / scale_factor)
-        y = torch.floor(x / scale_factor)
+        # on n bits (e.g., n=8bits round(127.5)-->128).
+        # Conversely, floor is a biased rounding operator which introduces
+        # asymmetric quantization erros that severely hinder computation.
+        # We solve the problem using the unbiased rounding to nearest even strategy
+        # (aka round) and we clip to avoid exceeding the dynamic.
+        y = torch.round(x / scale_factor)
+        y = torch.clip(y, max=2 ** (num_bits - 1) - 1)
+        # y = torch.floor(x / scale_factor)
 
         if dequantize:
             y = y * scale_factor
 
     else:  # 0-bit precision
         y = torch.zeros(x.shape, device=x.device)
-    # return y, scale_factor
+
     return y
