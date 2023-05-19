@@ -104,6 +104,9 @@ def convert(model: nn.Module,
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
+    :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
+    sharing. It can be useful if precision '0' is in the searhc options.
+    :type disable_shared_quantizers: bool
     :raises ValueError: for unsupported conversion types
     :return: the converted model, and the list of target layers for the NAS (only for imports)
     :rtype: Tuple[nn.Module, List]
@@ -181,6 +184,9 @@ def convert_layers(mod: fx.GraphModule,
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
+    :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
+    sharing. It can be useful if precision '0' is in the searhc options.
+    :type disable_shared_quantizers: bool
     :return: the list of target layers that will be optimized by the NAS
     :rtype: List[nn.Module]
     """
@@ -234,6 +240,9 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the num_bits precision
     :type qinfo: Dict
+    :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
+    sharing. It can be useful if precision '0' is in the searhc options.
+    :type disable_shared_quantizers: bool
     :return: a map (node -> quantizer_a, quantizer_w)
     :rtype: Dict[fx.Node, Tuple[Quantizer, Quantizer]]
     """
@@ -317,7 +326,6 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
             # one previously set in "sq_w".
             # This can become useful if precision '0' is not included in the search options.
             # if (0 not in weight_precisions):
-            breakpoint()
             if disable_shared_quantizers:
                 w_quantizer = qinfo['w_quantizer']['quantizer']
                 w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
