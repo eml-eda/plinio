@@ -25,6 +25,7 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
+from plinio.methods.mixprec.quant.quantizers import PACT_Act_Signed
 from plinio.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, MixPrec_Identity, \
     MixPrecModule, MixPrec_Add
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
@@ -294,13 +295,37 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                                cout,
                                                w_quantizer,
                                                w_quantizer_kwargs)
+                    # If `c` contains an output node the output quantizer is forced to be
+                    # an identity op
+                    sq_a = nn.Identity()  # Output is not quantized
                 # continue
         for n in c:
             # If `c` contains an output node the output quantizer is forced to be
             # an identity op
             # if n in get_graph_outputs(mod.graph):
-            if any([n in get_graph_outputs(mod.graph) for n in c]):
-                sq_a = nn.Identity()  # Output is not quantized
+            # if any([n in get_graph_outputs(mod.graph) for n in c]):
+            #     sq_a = nn.Identity()  # Output is not quantized
+
+            # If precision '0' is not included in the search options, then we can keep one quantizer
+            # per connected component, which is the one defined in the previous for loop. Otherwise,
+            # we are not forced to have the same weights quantizer between the various nodes.
+            # Thus, we can instantiate a new weights quantizer per node, which will overwrite the
+            # one previously set in "sq_w".
+            if 0 not in weight_precisions:
+                w_quantizer = qinfo['w_quantizer']['quantizer']
+                w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
+                cout = n.meta['tensor_meta'].shape[1]
+                w_quantizer_kwargs['cout'] = cout
+                if w_mixprec_type == MixPrecType.PER_LAYER:
+                    sq_w = MixPrec_Qtz_Layer(weight_precisions,
+                                             w_quantizer,
+                                             w_quantizer_kwargs)
+                elif w_mixprec_type == MixPrecType.PER_CHANNEL:
+                    sq_w = MixPrec_Qtz_Channel(weight_precisions,
+                                               cout,
+                                               w_quantizer,
+                                               w_quantizer_kwargs)
+
             sq_dict[n] = (sq_a, sq_w)
     return sq_dict
 
@@ -420,6 +445,51 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
         layer.export(n, mod)
 
 
+# def add_input_quantizer(mod: fx.GraphModule,
+#                         activation_precisions: Tuple[int, ...],
+#                         qinfo: Dict):
+#     """Add input quantizer at the network input.
+
+#     :param mod: the parent module, where the new node has to be optionally inserted
+#     :type mod: fx.GraphModule
+#     :param activation_precisions: the possible activations' precisions assigment to be explored
+#     by the NAS
+#     :type activation_precisions: Tuple[int, ...]
+#     :param qinfo: dict containing desired quantizers for act, weight and bias
+#     and their arguments excluding the num_bits precision
+#     :type qinfo: Dict
+#     """
+#     g = mod.graph
+#     queue = get_graph_inputs(g)
+#     while queue:
+#         n = queue.pop(0)
+#         # Create quantizer
+#         a_quantizer = qinfo['a_quantizer']['quantizer']
+#         a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
+#         cout = n.meta['tensor_meta'].shape[1]
+#         a_quantizer_kwargs['cout'] = cout
+#         a_quantizer_kwargs['init_clip_val'] = 1.
+#         # TODO: give more flexibility upon the choice of the input quantizer
+#         q_a = MixPrec_Qtz_Layer(activation_precisions,
+#                                 a_quantizer,
+#                                 a_quantizer_kwargs)
+#         inp_qtz = MixPrec_Identity(activation_precisions, q_a)
+#         # Add quantizer to graph
+#         mod.add_submodule('input_quantizer', inp_qtz)
+#         with mod.graph.inserting_after(n):
+#             new_node = mod.graph.call_module(
+#                 'input_quantizer',
+#                 args=(n,)
+#             )
+#             n.replace_all_uses_with(new_node)
+#             new_node.replace_input_with(new_node, n)
+#         # Add new node properties
+#         add_single_node_properties(new_node, mod)
+#         # Force the new node to be features_defining in order to be recognized
+#         # as predecessor when performin the `register_input_quantizers` step
+#         new_node.meta['features_defining'] = True
+
+
 def add_input_quantizer(mod: fx.GraphModule,
                         activation_precisions: Tuple[int, ...],
                         qinfo: Dict):
@@ -439,11 +509,13 @@ def add_input_quantizer(mod: fx.GraphModule,
     while queue:
         n = queue.pop(0)
         # Create quantizer
-        a_quantizer = qinfo['a_quantizer']['quantizer']
-        a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
+        # a_quantizer = qinfo['a_quantizer']['quantizer']
+        a_quantizer = PACT_Act_Signed
+        # a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
+        a_quantizer_kwargs = {}
         cout = n.meta['tensor_meta'].shape[1]
         a_quantizer_kwargs['cout'] = cout
-        a_quantizer_kwargs['init_clip_val'] = 1.
+        # a_quantizer_kwargs['init_clip_val'] = 1.
         # TODO: give more flexibility upon the choice of the input quantizer
         q_a = MixPrec_Qtz_Layer(activation_precisions,
                                 a_quantizer,
