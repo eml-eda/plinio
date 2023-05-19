@@ -73,6 +73,7 @@ def convert(model: nn.Module,
             input_quantization: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
+            disable_shared_quantizers: bool = False
             ) -> Tuple[nn.Module, List]:
     """Converts a nn.Module, to/from "NAS-able" MixPrec format
 
@@ -131,7 +132,8 @@ def convert(model: nn.Module,
                                    qinfo,
                                    conversion_type,
                                    exclude_names,
-                                   exclude_types)
+                                   exclude_types,
+                                   disable_shared_quantizers)
     if conversion_type in ('autoimport', 'import'):
         if input_quantization:
             add_input_quantizer(mod, activation_precisions, qinfo)
@@ -152,6 +154,7 @@ def convert_layers(mod: fx.GraphModule,
                    conversion_type: str,
                    exclude_names: Iterable[str],
                    exclude_types: Iterable[Type[nn.Module]],
+                   disable_shared_quantizers: bool
                    ) -> List[nn.Module]:
     """Replaces target layers with their NAS-able version, or vice versa, while also
     recording the list of NAS-able layers for speeding up later regularization loss
@@ -186,7 +189,7 @@ def convert_layers(mod: fx.GraphModule,
     # Dictionary of shared quantizers. Used only in 'autoimport' mode.
     sq_dict = build_shared_quantizers_map(mod,
                                           activation_precisions, weight_precisions,
-                                          w_mixprec_type, qinfo)
+                                          w_mixprec_type, qinfo, disable_shared_quantizers)
     # the list of target layers is only used in 'import' and 'autoimport' modes. Empty for export
     target_layers = []
     visited = []
@@ -211,7 +214,8 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                 activation_precisions: Tuple[int, ...],
                                 weight_precisions: Tuple[int, ...],
                                 w_mixprec_type: MixPrecType,
-                                qinfo: Dict) -> Dict[fx.Node, Tuple[Quantizer, Quantizer]]:
+                                qinfo: Dict,
+                                disable_shared_quantizers: bool) -> Dict[fx.Node, Tuple[Quantizer, Quantizer]]:
     """Create a map from fx.Node instances to instances of Quantizer to be used by MixPrec
     to optimize precision selection for both activations and weights of that node.
     Handles the sharing of quantizers among multiple nodes.
@@ -306,12 +310,15 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
             # if any([n in get_graph_outputs(mod.graph) for n in c]):
             #     sq_a = nn.Identity()  # Output is not quantized
 
-            # If precision '0' is not included in the search options, then we can keep one quantizer
+            # if the flag 'disable_shared_quantizers' is set to True, then we can keep one quantizer
             # per connected component, which is the one defined in the previous for loop. Otherwise,
             # we are not forced to have the same weights quantizer between the various nodes.
             # Thus, we can instantiate a new weights quantizer per node, which will overwrite the
             # one previously set in "sq_w".
-            if 0 not in weight_precisions:
+            # This can become useful if precision '0' is not included in the search options.
+            # if (0 not in weight_precisions):
+            breakpoint()
+            if disable_shared_quantizers:
                 w_quantizer = qinfo['w_quantizer']['quantizer']
                 w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
