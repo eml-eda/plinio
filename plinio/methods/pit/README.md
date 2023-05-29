@@ -37,11 +37,11 @@ To optimize your model with PIT you will need in most situations only **three ad
     ```
 
 ### Exclude layers from the optimization
-In general, when `plinio.PIT` is applied to a network all the [supported layers](#supported-layers) are automatically marked as optimizable.
+In general, when `PIT` is applied to a network all the [supported layers](#supported-layers) are automatically marked as optimizable.
 
-In the spirit of giving maximum flexibility to the user, `plinio.PIT` allows to exclude layers from the optimization process.
+In the spirit of giving maximum flexibility to the user, `PIT` allows to exclude layers from the optimization process.
 
-In particular, `plinio.PIT` exposes two arguments that can be used with this aim:
+In particular, `PIT` exposes two arguments that can be used with this aim:
 1. `exclude_names`, is an optional tuple of layer identifiers that we want to exclude. Only the specified layers will **not** be optimized. E.g.,
     ```python
     class Net(nn.Module):
@@ -53,7 +53,7 @@ In particular, `plinio.PIT` exposes two arguments that can be used with this aim
 
     net = Net()
     exclude_names = ('net.lin1', 'net.lin2')
-    pit_net = plinio.PIT(net, exclude_names=exclude_names)
+    pit_net = PIT(net, exclude_names=exclude_names)
     ```
     In the example, the `Linear` layers `lin1` and `lin2` will **not** be optimized.
 
@@ -68,7 +68,7 @@ In particular, `plinio.PIT` exposes two arguments that can be used with this aim
 
     net = Net()
     exclude_types = (nn.Conv1d)
-    pit_net = plinio.PIT(net, exclude_types=exclude_types)
+    pit_net = PIT(net, exclude_types=exclude_types)
     ```
     In the example, all the `nn.Conv1d` will **not** be optimized. I.e., the layer `c0` will be excluded from the optimization process.
 
@@ -77,10 +77,10 @@ In particular, `plinio.PIT` exposes two arguments that can be used with this aim
 Conversely, it may happens that we would to optimize only specific layers of our network.
 In this case, we give the possibility to the user to directly define and use the optimizable version of such layers in the net.
 
-In particular, the user will use the layers defined in `plinio.pit.nn`. E.g.,
+In particular, the user will use the layers defined in `plinio.methods.pit.nn`. E.g.,
 
 ```python
-from plinio.pit.nn import PITConv1d
+from plinio.methods.pit.nn import PITConv1d
 
 class Net(nn.Module):
         def __init__(self):
@@ -90,11 +90,11 @@ class Net(nn.Module):
             self.lin2 = nn.Linear()
 
     net = Net()
-    pit_net = plinio.PIT(net, autoconvert_layers=False)
+    pit_net = PIT(net, autoconvert_layers=False)
 ```
 In this example, only the layer `c0` will be optimized.
 
-Please note that in this case we need to specify the `autoconvert_layers=False` argument to `plinio.PIT` to tell that we do **not** want to automatically convert all [supported layers](#supported-layers).
+Please note that in this case we need to specify the `autoconvert_layers=False` argument to `PIT` to tell that we do **not** want to automatically convert all [supported layers](#supported-layers).
 
 ## Supported Regularizers
 At the current state the following regularization strategies are supported:
