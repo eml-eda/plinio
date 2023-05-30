@@ -221,7 +221,9 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                 weight_precisions: Tuple[int, ...],
                                 w_mixprec_type: MixPrecType,
                                 qinfo: Dict,
-                                disable_shared_quantizers: bool) -> Dict[fx.Node, Tuple[Quantizer, Quantizer]]:
+                                disable_shared_quantizers: bool) -> Dict[
+                                    fx.Node,
+                                    Tuple[Quantizer, Quantizer]]:
     """Create a map from fx.Node instances to instances of Quantizer to be used by MixPrec
     to optimize precision selection for both activations and weights of that node.
     Handles the sharing of quantizers among multiple nodes.
