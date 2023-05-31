@@ -297,21 +297,27 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
                 return False
         # add others
     if n.op == 'call_function':
+        if n.target == F.log_softmax:
+            return True
         if n.target == F.relu:
             return True
         if n.target == F.relu6:
             return True
-        if n.target == F.log_softmax:
-            return True
         if n.target == torch.add:
             return True
         if n.target == operator.add:
+            return True
+        if n.target == torch.relu:
+            return True
+        if n.target == torch.sigmoid:
             return True
         if n.target == torch.sub:
             return True
         if n.target == operator.sub:
             return True
         if n.target == torch.squeeze:
+            return True
+        if n.target == torch.tanh:
             return True
     return False
 

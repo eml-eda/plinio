@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -19,7 +20,7 @@ class SimpleNN(nn.Module):
 
     def forward(self, x):
         x = F.relu6(self.pool0(self.bn0(self.conv0(x))))
-        x = F.relu6(self.pool1(self.bn1(self.conv1(x))))
+        x = torch.relu(self.pool1(self.bn1(self.conv1(x))))
         x = self.dpout(x.flatten(1))
         res = self.fc(x)
         return res
