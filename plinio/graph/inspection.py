@@ -332,6 +332,10 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
     :return: `True` if `n` corresponds to a flatten op.
     :rtype: bool
     """
+    if n.op == 'call_module':
+        submodule = parent.get_submodule(str(n.target))
+        if isinstance(submodule, nn.Flatten):
+            return True
     if n.op == 'call_method' and n.target == 'flatten':
         return True
     if n.op == 'call_function' and n.target == torch.flatten:
@@ -367,7 +371,7 @@ def is_features_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
     :return: `True` if `n` corresponds to a concat op.
     :rtype: bool
     """
-    dim = try_get_args(n, 1, 'dim', 0)
+    dim = try_get_args(n, parent, 1, 'dim', 0)
     if n.op == 'call_function' and n.target == torch.cat and dim == 1:
         return True
     return False

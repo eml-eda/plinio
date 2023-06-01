@@ -95,8 +95,8 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
             # NAS-able one, for which some features # could be de-activated
             ifc = n.all_input_nodes[0].meta['features_calculator']
             input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
-            start_dim = try_get_args(n, 1, 'start_dim', 0)
-            end_dim = try_get_args(n, 2, 'end_dim', -1)
+            start_dim = try_get_args(n, mod, 1, 'start_dim', 0)
+            end_dim = try_get_args(n, mod, 2, 'end_dim', -1)
             assert start_dim != 0 and len(input_shape) - start_dim != 0, \
                 "Flattening the batch not supported"
             # if flatten includes the channels
@@ -109,7 +109,7 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
             # Squeeze is similar to flatten but the pytorch operation is slightly different
             ifc = n.all_input_nodes[0].meta['features_calculator']
             input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
-            dim = try_get_args(n, 1, 'dim', None)
+            dim = try_get_args(n, mod, 1, 'dim', None)
             # TODO: add support for no dim by looking at which dimensions are 1
             if dim is None:
                 raise ValueError("Squeeze without dim not supported")
@@ -177,7 +177,7 @@ def associate_input_features(mod: fx.GraphModule):
             n.meta['input_features_set_by'] = n.all_input_nodes
         elif prev.meta['flatten']:
             input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
-            start_dim = try_get_args(prev, 1, 'start_dim', 0)
+            start_dim = try_get_args(prev, mod, 1, 'start_dim', 0)
             assert start_dim != 0 and len(input_shape) - start_dim != 0, \
                 "Flattening the batch not supported"
             # if flatten includes the channels
@@ -187,7 +187,7 @@ def associate_input_features(mod: fx.GraphModule):
                 n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
         elif prev.meta['squeeze']:
             input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
-            dim = try_get_args(prev, 1, 'dim', None)
+            dim = try_get_args(prev, mod, 1, 'dim', None)
             if dim is None:
                 raise ValueError("Squeeze without dim not supported")
             assert dim != 0 and len(input_shape) - dim != 0, \

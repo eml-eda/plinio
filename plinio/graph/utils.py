@@ -35,12 +35,15 @@ def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:
     return nx_graph
 
 
-def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> Any:
+def try_get_args(n: fx.Node, parent: fx.GraphModule,
+                 args_idx: int, kwargs_str: str, default: Any) -> Any:
     """Look for an argument in a fx.Node. First looks within n.args, then n.kwargs.
     If not found, returns a default.
 
     :param n: the target node
     :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
     :param args_idx: the index of the searched arg in the positional arguments
     :type args_idx: int
     :param kwargs_str: the name of the searched arg in the keyword arguments
@@ -50,9 +53,14 @@ def try_get_args(n: fx.Node, args_idx: int, kwargs_str: str, default: Any) -> An
     :return: the searched argument or the default value
     :rtype: Any
     """
-    if len(n.args) > args_idx:
-        return n.args[args_idx]
-    arg = n.kwargs.get(kwargs_str)
+    arg = None
+    if n.op == 'call_method' or n.op == 'call_function':
+        if len(n.args) > args_idx:
+            return n.args[args_idx]
+        arg = n.kwargs.get(kwargs_str)
+    if n.op == 'call_module':
+        submodule = parent.get_submodule(str(n.target))
+        arg = getattr(submodule, kwargs_str, None)
     return arg if arg is not None else default
 
 
