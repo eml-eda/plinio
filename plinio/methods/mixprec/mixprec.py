@@ -46,6 +46,16 @@ DEFAULT_QINFO = {
 }
 
 
+DEFAULT_QINFO_INPUT_QUANTIZER = {
+    'a_quantizer': {
+        'quantizer': PACT_Act,
+        'kwargs': {
+            'init_clip_val': 1
+        },
+    }
+}
+
+
 class MixPrec(DNAS):
     """A class that wraps a nn.Module with DNAS-enabled Mixed Precision assigment
 
@@ -105,7 +115,9 @@ class MixPrec(DNAS):
             exclude_types: Iterable[Type[nn.Module]] = (),
             gumbel_softmax: bool = False,
             hard_softmax: bool = False,
-            disable_sampling: bool = False):
+            disable_sampling: bool = False,
+            disable_shared_quantizers: bool = False,
+            qinfo_input_quantizer: Dict = DEFAULT_QINFO_INPUT_QUANTIZER):
         super(MixPrec, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_shape = input_shape
         self.seed, self._target_layers = convert(
@@ -115,10 +127,12 @@ class MixPrec(DNAS):
             weight_precisions,
             w_mixprec_type,
             qinfo,
+            qinfo_input_quantizer,
             'autoimport' if autoconvert_layers else 'import',
             input_quantization,
             exclude_names,
-            exclude_types)
+            exclude_types,
+            disable_shared_quantizers)
         self.activation_precisions = activation_precisions
         self.weight_precisions = weight_precisions
         self.w_mixprec_type = w_mixprec_type
@@ -242,6 +256,7 @@ class MixPrec(DNAS):
         :return: the precision-assignement found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
+        # TODO update
         mod, _ = convert(self.seed,
                          self._input_shape,
                          self.activation_precisions,
