@@ -39,9 +39,11 @@ class MixPrec_Add(nn.Module, MixPrecModule):
     """
     def __init__(self,
                  precisions: Tuple[int, ...],
+                 cout: int,
                  quantizer: MixPrec_Qtz_Layer):
         super(MixPrec_Add, self).__init__()
-        self.in_features = quantizer.quantizer_kwargs['cout']
+        # self.in_features = quantizer.quantizer_kwargs['cout']
+        self.in_features = cout
         self.precisions = precisions
         self.mixprec_a_quantizer = quantizer
         # this will be overwritten later when we process the model graph
@@ -140,7 +142,8 @@ class MixPrec_Add(nn.Module, MixPrecModule):
         mixprec_quantizer = aw_q[0]
 
         mixprec_quantizer = cast(MixPrec_Qtz_Layer, mixprec_quantizer)
-        new_submodule = MixPrec_Add(a_precisions, mixprec_quantizer)
+        cout = n.meta['tensor_meta'].shape[1]
+        new_submodule = MixPrec_Add(a_precisions, cout, mixprec_quantizer)
         name = str(n) + '_' + str(n.all_input_nodes) + '_quant'
         mod.add_submodule(name, new_submodule)
         with mod.graph.inserting_after(n):
@@ -240,7 +243,8 @@ class MixPrec_Add(nn.Module, MixPrecModule):
         :return: the number of channels for this layer.
         :rtype: torch.Tensor
         """
-        return torch.tensor(self.in_features, dtype=torch.float32)
+        # return torch.tensor(self.in_features, dtype=torch.float32)
+        return self.input_features_calculator.features
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:
