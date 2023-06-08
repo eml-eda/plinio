@@ -42,7 +42,6 @@ class MixPrec_Add(nn.Module, MixPrecModule):
                  cout: int,
                  quantizer: MixPrec_Qtz_Layer):
         super(MixPrec_Add, self).__init__()
-        # self.in_features = quantizer.quantizer_kwargs['cout']
         self.in_features = cout
         self.precisions = precisions
         self.mixprec_a_quantizer = quantizer
@@ -243,7 +242,6 @@ class MixPrec_Add(nn.Module, MixPrecModule):
         :return: the number of channels for this layer.
         :rtype: torch.Tensor
         """
-        # return torch.tensor(self.in_features, dtype=torch.float32)
         return self.input_features_calculator.features
 
     @property

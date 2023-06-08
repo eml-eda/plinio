@@ -17,6 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
+import copy
 import operator
 from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Callable
 import networkx as nx
@@ -266,22 +267,24 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
     for c in nx.weakly_connected_components(sharing_graph):
         sq_a = None
         sq_w = None
+        # This ensure to work at every iteration with a 'fresh' dict
+        curr_qinfo = copy.deepcopy(qinfo)
         for n in c:
             # identify a node which can give us the number of features with 100% certainty
             # nodes such as flatten/squeeze etc make this necessary
             if (n.meta['features_defining'] or n.meta['untouchable']) and \
                (sq_a is None or sq_w is None):
                 # Build activation shared quantizer
-                a_quantizer = qinfo['a_quantizer']['quantizer']
-                a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
+                a_quantizer = curr_qinfo['a_quantizer']['quantizer']
+                a_quantizer_kwargs = curr_qinfo['a_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
                 a_quantizer_kwargs['cout'] = cout
                 sq_a = MixPrec_Qtz_Layer(activation_precisions,
                                          a_quantizer,
                                          a_quantizer_kwargs)
                 # Build weight shared quantizer
-                w_quantizer = qinfo['w_quantizer']['quantizer']
-                w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
+                w_quantizer = curr_qinfo['w_quantizer']['quantizer']
+                w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
                 w_quantizer_kwargs['cout'] = cout
                 if w_mixprec_type == MixPrecType.PER_LAYER:
@@ -303,8 +306,8 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                 if w_mixprec_type == MixPrecType.PER_CHANNEL:
                     new_weight_precisions = tuple(p for p in weight_precisions if p != 0)
                     # new_weight_precisions = weight_precisions  # uncomment to have 0 in last fc
-                    w_quantizer = qinfo['w_quantizer']['quantizer']
-                    w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
+                    w_quantizer = curr_qinfo['w_quantizer']['quantizer']
+                    w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
                     cout = n.meta['tensor_meta'].shape[1]
                     w_quantizer_kwargs['cout'] = cout
                     sq_w = MixPrec_Qtz_Channel(new_weight_precisions,
@@ -479,7 +482,6 @@ def add_input_quantizer(mod: fx.GraphModule,
     """
     g = mod.graph
     queue = get_graph_inputs(g)
-    breakpoint()
     while queue:
         n = queue.pop(0)
         # Create quantizer
