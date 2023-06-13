@@ -253,6 +253,9 @@ class MixPrec_Qtz_Layer(nn.Module):
         with torch.no_grad():
             self.theta_alpha.data = self.alpha_prec
             self.sample_alpha()
+            max_precision = max(precisions)
+            for i, p in enumerate(self.precisions):
+                self.alpha_prec.data[i].fill_(float(p) / max_precision)
 
     def sample_alpha_sm(self):
         """
