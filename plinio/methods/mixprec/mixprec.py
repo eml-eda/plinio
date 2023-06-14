@@ -404,3 +404,6 @@ class MixPrec(DNAS):
         """
         arch = self.arch_summary()
         return str(arch)
+
+    def get_cost(self):
+        raise NotImplementedError()
