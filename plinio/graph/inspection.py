@@ -319,6 +319,8 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if n.target == torch.tanh:
             return True
+    if is_concatenate(n, parent):  # cat NOT along features' dimension
+        return True
     return False
 
 
@@ -339,6 +341,23 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
     if n.op == 'call_method' and n.target == 'flatten':
         return True
     if n.op == 'call_function' and n.target == torch.flatten:
+        return True
+    return False
+
+
+def is_unsqueeze(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` instance corresponds to an unsqueeze operation.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to an unsqueeze op.
+    :rtype: bool
+    """
+    if n.op == 'call_method' and n.target == 'unsqueeze':
+        return True
+    if n.op == 'call_function' and n.target == torch.unsqueeze:
         return True
     return False
 

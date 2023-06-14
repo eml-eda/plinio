@@ -16,9 +16,12 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator
+from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator, Optional
+from warnings import warn
+
 import torch
 import torch.nn as nn
+
 from plinio.methods.dnas_base import DNAS
 from .graph import convert
 from .nn.module import PITModule
@@ -29,9 +32,12 @@ class PIT(DNAS):
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
+    :param input_example: an input example, it has same type of the expected
+    `model`'s input, required for symbolic tracing (default: None)
+    :type input_example: Optional[Any]
     :param input_shape: the shape of an input tensor, without batch size, required for symbolic
-    tracing
-    :type input_shape: Tuple[int, ...]
+    tracing (default: None)
+    :type input_shape: Optional[Tuple[int, ...]]
     :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
     :type regularizer: Optional[str], optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
@@ -52,11 +58,16 @@ class PIT(DNAS):
     :param train_dilation: flag to control whether dilation is optimized by PIT or not, defaults
     to True
     :type train_dilation: bool, optional
+
+    :raises UserWarning: when both `input_example` and `input_shape` are NOT None,
+    a warning is raised and `input_example` will be used.
+    :raises ValueError: when both `input_example` and `input_shape` are None
     """
     def __init__(
             self,
             model: nn.Module,
-            input_shape: Tuple[int, ...],
+            input_example: Optional[Any] = None,
+            input_shape: Optional[Tuple[int, ...]] = None,
             regularizer: str = 'size',
             autoconvert_layers: bool = True,
             exclude_names: Iterable[str] = (),
@@ -65,14 +76,23 @@ class PIT(DNAS):
             train_rf: bool = True,
             train_dilation: bool = True):
         super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
-        self._input_shape = input_shape
+        self._device = next(model.parameters()).device
+        self._input_example = self._resolve_input_example(input_example, input_shape)
+        # self._input_shape = input_shape
         self.seed, self._target_layers = convert(
             model,
-            input_shape,
+            self._input_example,
             'autoimport' if autoconvert_layers else 'import',
             exclude_names,
             exclude_types
         )
+        # Get unique target layers, this is needed to compute properly size and
+        # macs in the case when we execute a specific layer multiple time in
+        # a single fwd pass
+        self._unique_target_layers = []
+        for _, layer in self.seed.named_modules():
+            if layer in self._target_layers:
+                self._unique_target_layers.append(layer)
         # after conversion to make sure they are applied to all layers
         self.train_features = train_features
         self.train_rf = train_rf
@@ -104,7 +124,7 @@ class PIT(DNAS):
         """
         size = torch.tensor(0, dtype=torch.float32)
         # size = torch.tensor(0)
-        for layer in self._target_layers:
+        for layer in self._unique_target_layers:
             # size += layer.get_size()
             size = size + layer.get_size()
         return size
@@ -118,7 +138,7 @@ class PIT(DNAS):
         """
         size = torch.tensor(0, dtype=torch.float32)
         # size = torch.tensor(0)
-        for layer in self._target_layers:
+        for layer in self._unique_target_layers:
             # size += layer.get_size()
             size = size + layer.get_size_binarized()
         return size
@@ -252,7 +272,7 @@ class PIT(DNAS):
                 if hasattr(layer, 'following_bn_args'):
                     layer.following_bn_args = None
 
-        mod, _ = convert(self.seed, self._input_shape, 'export')
+        mod, _ = convert(self.seed, self._input_example, 'export')
 
         return mod
 
@@ -312,6 +332,27 @@ class PIT(DNAS):
         for name, param in self.named_parameters():
             if name not in exclude:
                 yield name, param
+
+    def _resolve_input_example(self, example, shape):
+        """Document here"""
+        if example is None and shape is None:
+            msg = 'One of `input_example` and `input_shape` must be different than None'
+            raise ValueError(msg)
+        if example is not None and shape is not None:
+            msg = ('Warning: you specified both `input_example` and `input_shape`.'
+                   'The first will be considered for shape propagation')
+            warn(msg)
+        if example is not None:
+            return example
+        if shape is not None:
+            try:
+                # create a "fake" minibatch of 1 input for shape prop
+                example = torch.stack([torch.rand(shape)] * 1, 0).to(self._device)
+                return example
+            except TypeError:
+                msg = ('If the provided `input_shape` is not a simple tuple '
+                       'the user should pass instead an `input_example`.')
+                raise TypeError(msg)
 
     def __str__(self):
         """Prints the architecture found by the NAS to screen

@@ -18,6 +18,8 @@
 # *----------------------------------------------------------------------------*
 from typing import cast, Iterable, Tuple, Type, Dict
 import unittest
+import warnings
+
 import torch
 import torch.nn as nn
 from plinio.methods import PIT
@@ -30,6 +32,7 @@ from unit_test.models import SimplePitNN
 from unit_test.models import ToyAdd, ToyMultiPath1, ToyMultiPath2, ToyInputConnectedDW
 from unit_test.models import ToyBatchNorm, ToyIllegalBN
 from unit_test.models import DSCNN
+from unit_test.models import TCN_IR
 
 
 class TestPITConvert(unittest.TestCase):
@@ -74,10 +77,29 @@ class TestPITConvert(unittest.TestCase):
         }
         self._check_input_features(new_nn, expected_features)
 
+    def test_raised_err_complex_shape(self):
+        """Test that PIT raises TypeError"""
+        nn_ut = SimpleNN()
+        complex_shape = [nn_ut.input_shape, nn_ut.input_shape]
+        with self.assertRaises(TypeError) as context:
+            PIT(nn_ut, input_shape=complex_shape)
+        msg = 'A TypeError error must be raised.'
+        self.assertTrue(isinstance(context.exception, TypeError), msg)
+
+    def test_raised_warn_on_example_and_shape(self):
+        """Test that PIT raises Warning when both example and shape are passed"""
+        nn_ut = SimpleNN()
+        example = torch.stack([torch.rand(nn_ut.input_shape)] * 1, 0)
+        with warnings.catch_warnings(record=True) as context:
+            PIT(nn_ut, input_example=example, input_shape=nn_ut.input_shape)
+        msg = 'An UserWarning must be raised.'
+        self.assertTrue(context[0].category is UserWarning, msg)
+
     def test_autoimport_depthwise(self):
         """Test the conversion of a model with depthwise convolutions (cin=cout=groups)"""
         nn_ut = DSCNN()
-        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        example = torch.stack([torch.rand(nn_ut.input_shape)] * 3, 0)
+        new_nn = PIT(nn_ut, input_example=example, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=14)
         self._check_input_features(new_nn, {'inputlayer': 1, 'depthwise2': 64,
@@ -90,10 +112,21 @@ class TestPITConvert(unittest.TestCase):
         )
         self._check_shared_maskers(new_nn, shared_masker_rules)
 
+    def test_autoimport_net_with_complex_input(self):
+        """Test the conversion of a model with a complex input type
+        (e.g., list of tensors)"""
+        nn_ut = TCN_IR()
+        example = [torch.stack([torch.rand(nn_ut.input_shape)] * 2, 0) for _ in range(3)]
+        new_nn = PIT(nn_ut, input_example=example)
+        self._compare_prepared(nn_ut, new_nn.seed)
+        self._check_target_layers(new_nn, exp_tgt=8)
+        self._check_target_layers(new_nn, exp_tgt=4, unique=True)
+
     def test_autoimport_multipath(self):
         """Test the conversion of a toy model with multiple concat and add operations"""
         nn_ut = ToyMultiPath1()
-        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        example = torch.stack([torch.rand(nn_ut.input_shape)] * 1, 0)
+        new_nn = PIT(nn_ut, input_example=example)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=7)
         self._check_input_features(new_nn, {'conv2': 3, 'conv4': 50, 'conv5': 64, 'fc': 640})
@@ -454,9 +487,13 @@ class TestPITConvert(unittest.TestCase):
                 # else:
                 #     self.assertIsNone(new_child.bias)
 
-    def _check_target_layers(self, new_nn: PIT, exp_tgt: int):
+    def _check_target_layers(self, new_nn: PIT, exp_tgt: int,
+                             unique: bool = False):
         """Check if number of target layers is as expected"""
-        n_tgt = len(new_nn._target_layers)
+        if unique:
+            n_tgt = len(new_nn._unique_target_layers)
+        else:
+            n_tgt = len(new_nn._target_layers)
         self.assertEqual(exp_tgt, n_tgt,
                          "Expected {} target layers, but found {}".format(exp_tgt, n_tgt))
 

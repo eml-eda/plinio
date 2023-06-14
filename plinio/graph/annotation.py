@@ -23,7 +23,8 @@ from .features_calculation import FlattenFeaturesCalculator, ConcatFeaturesCalcu
     ConstFeaturesCalculator
 from .utils import try_get_args
 from .inspection import is_features_propagating_op, is_features_defining_op, \
-    is_shared_input_features_op, is_flatten, is_squeeze, is_features_concatenate, \
+    is_shared_input_features_op, is_flatten, is_squeeze, is_unsqueeze, \
+    is_features_concatenate, \
     is_untouchable_op, is_zero_or_one_input_op, get_graph_inputs, all_output_nodes
 
 
@@ -54,6 +55,7 @@ def add_single_node_properties(n: fx.Node, mod: fx.GraphModule):
     n.meta['shared_input_features'] = is_shared_input_features_op(n, mod)
     n.meta['flatten'] = is_flatten(n, mod)
     n.meta['squeeze'] = is_squeeze(n, mod)
+    n.meta['unsqueeze'] = is_unsqueeze(n, mod)
     n.meta['features_concatenate'] = is_features_concatenate(n, mod)
     n.meta['untouchable'] = is_untouchable_op(n)
     n.meta['zero_or_one_input'] = is_zero_or_one_input_op(n)
@@ -104,6 +106,20 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
                 flattened_size = math.prod(input_shape[2:end_dim if end_dim != -1 else None])
                 n.meta['features_calculator'] = FlattenFeaturesCalculator(ifc, int(flattened_size))
             else:
+                n.meta['features_calculator'] = ifc  # just propagate the features
+        elif n.meta['unsqueeze']:
+            ifc = n.all_input_nodes[0].meta['features_calculator']
+            input_shape = n.all_input_nodes[0].meta['tensor_meta'].shape
+            dim = try_get_args(n, mod, 1, 'dim', None)
+            # TODO: add support for no dim by looking at which dimensions are 1
+            if dim is None:
+                raise ValueError("Squeeze without dim not supported")
+            if dim == 0:  # batch size
+                batch_size = input_shape[0]
+                n.meta['features_calculator'] = ConstFeaturesCalculator(batch_size)
+            elif dim == 1:  # feauteres
+                n.meta['features_calculator'] = ConstFeaturesCalculator(1)
+            else:  # anyother dim
                 n.meta['features_calculator'] = ifc  # just propagate the features
         elif n.meta['squeeze']:
             # Squeeze is similar to flatten but the pytorch operation is slightly different
@@ -185,6 +201,15 @@ def associate_input_features(mod: fx.GraphModule):
                 n.meta['input_features_set_by'] = prev
             else:
                 n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
+        elif prev.meta['unsqueeze']:
+            input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
+            dim = try_get_args(prev, mod, 1, 'dim', None)
+            if dim is None:
+                raise ValueError("Unsqueeze without dim not supported")
+            if dim == 0 or dim == 1:
+                n.meta['input_features_set_by'] = prev
+            else:
+                n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
         elif prev.meta['squeeze']:
             input_shape = prev.all_input_nodes[0].meta['tensor_meta'].shape
             dim = try_get_args(prev, mod, 1, 'dim', None)
@@ -205,6 +230,33 @@ def associate_input_features(mod: fx.GraphModule):
         else:
             raise ValueError("Unsupported node {} (op: {}, target: {})"
                              .format(n, n.op, n.target))
+
+        for succ in all_output_nodes(n):
+            queue.append(succ)
+        visited.append(n)
+
+
+def clean_up_propagated_shapes(mod: fx.GraphModule):
+    """Clean up the `meta['tensor_meta']` field of nodes from equal and repeated
+    TensorMetadata. This happens in standard fx ShapeProp when we iterate multiple
+    times on the same layer
+
+    :param mod: module
+    :type mod: fx.GraphModule
+    """
+    g = mod.graph
+    queue = get_graph_inputs(g)
+    visited = []
+    while queue:
+        n = queue.pop(0)
+        if n in visited:
+            continue
+
+        if isinstance(n.meta['tensor_meta'], list):
+            all_equal = all(item == n.meta['tensor_meta'][0]
+                            for item in n.meta['tensor_meta'])
+            if all_equal:
+                n.meta['tensor_meta'] = n.meta['tensor_meta'][0]
 
         for succ in all_output_nodes(n):
             queue.append(succ)

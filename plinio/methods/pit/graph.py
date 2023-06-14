@@ -16,7 +16,8 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import cast, List, Iterable, Type, Tuple, Optional, Dict
+from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Any
+
 import networkx as nx
 import torch
 import torch.nn as nn
@@ -31,7 +32,7 @@ from .nn.batchnorm_2d import PITBatchNorm2d
 from .nn.module import PITModule
 from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
-    associate_input_features
+    associate_input_features, clean_up_propagated_shapes
 from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
     get_graph_inputs
 from plinio.graph.transformation import fuse_consecutive_layers
@@ -59,7 +60,7 @@ class PITTracer(fx.Tracer):
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
 
 
-def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str,
+def convert(model: nn.Module, input_example: Any, conversion_type: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             ) -> Tuple[nn.Module, List]:
@@ -67,9 +68,9 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
 
     :param model: the input nn.Module
     :type model: nn.Module
-    :param input_shape: the shape of an input tensor, without batch size, required for symbolic
-    tracing
-    :type input_shape: Tuple[int, ...]
+    :param input_example: an input example, it has same type of the expected
+    `model`'s input, required for symbolic tracing
+    :type input_example: Any
     :param conversion_type: a string specifying the type of conversion. Supported types:
     ('import', 'autoimport', 'export')
     :type conversion_type: str
@@ -89,10 +90,11 @@ def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str
     graph = tracer.trace(model.eval())
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
-    # create a "fake" minibatch of 1 input for shape prop
-    batch_example = torch.stack([torch.rand(input_shape)] * 1, 0)
-    device = next(model.parameters()).device
-    ShapeProp(mod).propagate(batch_example.to(device))
+    if len(get_graph_inputs(mod.graph)) > 1:
+        ShapeProp(mod).propagate(*input_example)
+    else:
+        ShapeProp(mod).propagate(input_example)
+    clean_up_propagated_shapes(mod)
     add_node_properties(mod)
     target_layers = convert_layers(mod, conversion_type, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
