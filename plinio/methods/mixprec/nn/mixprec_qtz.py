@@ -87,16 +87,12 @@ class MixPrec_Qtz_Channel(nn.Module):
             self.sample_alpha()
         self.register_buffer('out_features_eff', torch.tensor(self.cout, dtype=torch.float32))
         self.zero_index = None
+
+        max_precision = max(precisions)
         for i, p in enumerate(self.precisions):
-            # self.alpha_prec.data[i, :].fill_(1.)
             if p == 0:
                 self.zero_index = i
-        self.alpha_prec.data[-3, :].fill_(0.25)
-        self.alpha_prec.data[-2, :].fill_(0.5)
-        self.alpha_prec.data[-1, :].fill_(1.)
-        if self.alpha_prec.data.shape[0] > 3:
-            self.alpha_prec.data[0, :].fill_(0.)
-
+            self.alpha_prec.data[i, :].fill_(float(p) / max_precision)
 
     @property
     def features_mask(self) -> torch.Tensor:
@@ -257,6 +253,9 @@ class MixPrec_Qtz_Layer(nn.Module):
         with torch.no_grad():
             self.theta_alpha.data = self.alpha_prec
             self.sample_alpha()
+            max_precision = max(precisions)
+            for i, p in enumerate(self.precisions):
+                self.alpha_prec.data[i].fill_(float(p) / max_precision)
 
     def sample_alpha_sm(self):
         """

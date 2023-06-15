@@ -519,6 +519,15 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         eff_cost = self.get_size() * self.out_height * self.out_width * eff_a_prec
         return eff_cost
 
+    def get_macs_layer(self) -> torch.Tensor:
+        """Method that computes the MACs operations for the layer
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        macs = self.get_size() * self.out_height * self.out_width
+        return macs
+
     def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
         """Set the `MixPrec_Qtz_Layer` for input activations calculation
 

@@ -17,6 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
+import copy
 import operator
 from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Callable
 import networkx as nx
@@ -25,6 +26,7 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
+from plinio.methods.mixprec.quant.quantizers import PACT_Act_Signed
 from plinio.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, MixPrec_Identity, \
     MixPrecModule, MixPrec_Add
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
@@ -68,10 +70,12 @@ def convert(model: nn.Module,
             weight_precisions: Tuple[int, ...],
             w_mixprec_type: MixPrecType,
             qinfo: Dict,
+            qinfo_input_quantizer: Dict,
             conversion_type: str,
             input_quantization: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
+            disable_shared_quantizers: bool = False
             ) -> Tuple[nn.Module, List]:
     """Converts a nn.Module, to/from "NAS-able" MixPrec format
 
@@ -102,6 +106,9 @@ def convert(model: nn.Module,
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
+    :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
+    sharing. It can be useful if precision '0' is in the searhc options.
+    :type disable_shared_quantizers: bool
     :raises ValueError: for unsupported conversion types
     :return: the converted model, and the list of target layers for the NAS (only for imports)
     :rtype: Tuple[nn.Module, List]
@@ -130,10 +137,11 @@ def convert(model: nn.Module,
                                    qinfo,
                                    conversion_type,
                                    exclude_names,
-                                   exclude_types)
+                                   exclude_types,
+                                   disable_shared_quantizers)
     if conversion_type in ('autoimport', 'import'):
         if input_quantization:
-            add_input_quantizer(mod, activation_precisions, qinfo)
+            add_input_quantizer(mod, activation_precisions, qinfo_input_quantizer)
         add_features_calculator(mod, [mixprec_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
@@ -151,6 +159,7 @@ def convert_layers(mod: fx.GraphModule,
                    conversion_type: str,
                    exclude_names: Iterable[str],
                    exclude_types: Iterable[Type[nn.Module]],
+                   disable_shared_quantizers: bool
                    ) -> List[nn.Module]:
     """Replaces target layers with their NAS-able version, or vice versa, while also
     recording the list of NAS-able layers for speeding up later regularization loss
@@ -177,6 +186,9 @@ def convert_layers(mod: fx.GraphModule,
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
+    :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
+    sharing. It can be useful if precision '0' is in the searhc options.
+    :type disable_shared_quantizers: bool
     :return: the list of target layers that will be optimized by the NAS
     :rtype: List[nn.Module]
     """
@@ -185,7 +197,7 @@ def convert_layers(mod: fx.GraphModule,
     # Dictionary of shared quantizers. Used only in 'autoimport' mode.
     sq_dict = build_shared_quantizers_map(mod,
                                           activation_precisions, weight_precisions,
-                                          w_mixprec_type, qinfo)
+                                          w_mixprec_type, qinfo, disable_shared_quantizers)
     # the list of target layers is only used in 'import' and 'autoimport' modes. Empty for export
     target_layers = []
     visited = []
@@ -210,7 +222,10 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                                 activation_precisions: Tuple[int, ...],
                                 weight_precisions: Tuple[int, ...],
                                 w_mixprec_type: MixPrecType,
-                                qinfo: Dict) -> Dict[fx.Node, Tuple[Quantizer, Quantizer]]:
+                                qinfo: Dict,
+                                disable_shared_quantizers: bool) -> Dict[
+                                    fx.Node,
+                                    Tuple[Quantizer, Quantizer]]:
     """Create a map from fx.Node instances to instances of Quantizer to be used by MixPrec
     to optimize precision selection for both activations and weights of that node.
     Handles the sharing of quantizers among multiple nodes.
@@ -229,6 +244,9 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the num_bits precision
     :type qinfo: Dict
+    :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
+    sharing. It can be useful if precision '0' is in the searhc options.
+    :type disable_shared_quantizers: bool
     :return: a map (node -> quantizer_a, quantizer_w)
     :rtype: Dict[fx.Node, Tuple[Quantizer, Quantizer]]
     """
@@ -249,22 +267,24 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
     for c in nx.weakly_connected_components(sharing_graph):
         sq_a = None
         sq_w = None
+        # This ensure to work at every iteration with a 'fresh' dict
+        curr_qinfo = copy.deepcopy(qinfo)
         for n in c:
             # identify a node which can give us the number of features with 100% certainty
             # nodes such as flatten/squeeze etc make this necessary
             if (n.meta['features_defining'] or n.meta['untouchable']) and \
                (sq_a is None or sq_w is None):
                 # Build activation shared quantizer
-                a_quantizer = qinfo['a_quantizer']['quantizer']
-                a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
+                a_quantizer = curr_qinfo['a_quantizer']['quantizer']
+                a_quantizer_kwargs = curr_qinfo['a_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
                 a_quantizer_kwargs['cout'] = cout
                 sq_a = MixPrec_Qtz_Layer(activation_precisions,
                                          a_quantizer,
                                          a_quantizer_kwargs)
                 # Build weight shared quantizer
-                w_quantizer = qinfo['w_quantizer']['quantizer']
-                w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
+                w_quantizer = curr_qinfo['w_quantizer']['quantizer']
+                w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
                 w_quantizer_kwargs['cout'] = cout
                 if w_mixprec_type == MixPrecType.PER_LAYER:
@@ -286,21 +306,47 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                 if w_mixprec_type == MixPrecType.PER_CHANNEL:
                     new_weight_precisions = tuple(p for p in weight_precisions if p != 0)
                     # new_weight_precisions = weight_precisions  # uncomment to have 0 in last fc
-                    w_quantizer = qinfo['w_quantizer']['quantizer']
-                    w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
+                    w_quantizer = curr_qinfo['w_quantizer']['quantizer']
+                    w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
                     cout = n.meta['tensor_meta'].shape[1]
                     w_quantizer_kwargs['cout'] = cout
                     sq_w = MixPrec_Qtz_Channel(new_weight_precisions,
                                                cout,
                                                w_quantizer,
                                                w_quantizer_kwargs)
+                    # If `c` contains an output node the output quantizer is forced to be
+                    # an identity op
+                    sq_a = nn.Identity()  # Output is not quantized
                 # continue
         for n in c:
             # If `c` contains an output node the output quantizer is forced to be
             # an identity op
             # if n in get_graph_outputs(mod.graph):
-            if any([n in get_graph_outputs(mod.graph) for n in c]):
-                sq_a = nn.Identity()  # Output is not quantized
+            # if any([n in get_graph_outputs(mod.graph) for n in c]):
+            #     sq_a = nn.Identity()  # Output is not quantized
+
+            # if the flag 'disable_shared_quantizers' is set to True, then we can keep one quantizer
+            # per connected component, which is the one defined in the previous for loop. Otherwise,
+            # we are not forced to have the same weights quantizer between the various nodes.
+            # Thus, we can instantiate a new weights quantizer per node, which will overwrite the
+            # one previously set in "sq_w".
+            # This can become useful if precision '0' is not included in the search options.
+            # if (0 not in weight_precisions):
+            if disable_shared_quantizers:
+                w_quantizer = qinfo['w_quantizer']['quantizer']
+                w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
+                cout = n.meta['tensor_meta'].shape[1]
+                w_quantizer_kwargs['cout'] = cout
+                if w_mixprec_type == MixPrecType.PER_LAYER:
+                    sq_w = MixPrec_Qtz_Layer(weight_precisions,
+                                             w_quantizer,
+                                             w_quantizer_kwargs)
+                elif w_mixprec_type == MixPrecType.PER_CHANNEL:
+                    sq_w = MixPrec_Qtz_Channel(weight_precisions,
+                                               cout,
+                                               w_quantizer,
+                                               w_quantizer_kwargs)
+
             sq_dict[n] = (sq_a, sq_w)
     return sq_dict
 
@@ -430,8 +476,8 @@ def add_input_quantizer(mod: fx.GraphModule,
     :param activation_precisions: the possible activations' precisions assigment to be explored
     by the NAS
     :type activation_precisions: Tuple[int, ...]
-    :param qinfo: dict containing desired quantizers for act, weight and bias
-    and their arguments excluding the num_bits precision
+    :param qinfo: dict containing desired quantizers for act and their arguments excluding
+    the num_bits precision
     :type qinfo: Dict
     """
     g = mod.graph
@@ -443,7 +489,7 @@ def add_input_quantizer(mod: fx.GraphModule,
         a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
         cout = n.meta['tensor_meta'].shape[1]
         a_quantizer_kwargs['cout'] = cout
-        a_quantizer_kwargs['init_clip_val'] = 1.
+        # a_quantizer_kwargs['init_clip_val'] = 1.
         # TODO: give more flexibility upon the choice of the input quantizer
         q_a = MixPrec_Qtz_Layer(activation_precisions,
                                 a_quantizer,
@@ -463,6 +509,53 @@ def add_input_quantizer(mod: fx.GraphModule,
         # Force the new node to be features_defining in order to be recognized
         # as predecessor when performin the `register_input_quantizers` step
         new_node.meta['features_defining'] = True
+
+
+# def add_input_quantizer(mod: fx.GraphModule,
+#                         activation_precisions: Tuple[int, ...],
+#                         qinfo: Dict):
+#     """Add input quantizer at the network input.
+# #
+#     :param mod: the parent module, where the new node has to be optionally inserted
+#     :type mod: fx.GraphModule
+#     :param activation_precisions: the possible activations' precisions assigment to be explored
+#     by the NAS
+#     :type activation_precisions: Tuple[int, ...]
+#     :param qinfo: dict containing desired quantizers for act, weight and bias
+#     and their arguments excluding the num_bits precision
+#     :type qinfo: Dict
+#     """
+#     g = mod.graph
+#     queue = get_graph_inputs(g)
+#     while queue:
+#         n = queue.pop(0)
+#         # Create quantizer
+#         # a_quantizer = qinfo['a_quantizer']['quantizer']
+#         a_quantizer = PACT_Act_Signed
+#         # a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
+#         a_quantizer_kwargs = {}
+#         cout = n.meta['tensor_meta'].shape[1]
+#         a_quantizer_kwargs['cout'] = cout
+#         # a_quantizer_kwargs['init_clip_val'] = 1.
+#         # TODO: give more flexibility upon the choice of the input quantizer
+#         q_a = MixPrec_Qtz_Layer(activation_precisions,
+#                                 a_quantizer,
+#                                 a_quantizer_kwargs)
+#         inp_qtz = MixPrec_Identity(activation_precisions, q_a)
+#         # Add quantizer to graph
+#         mod.add_submodule('input_quantizer', inp_qtz)
+#         with mod.graph.inserting_after(n):
+#             new_node = mod.graph.call_module(
+#                 'input_quantizer',
+#                 args=(n,)
+#             )
+#             n.replace_all_uses_with(new_node)
+#             new_node.replace_input_with(new_node, n)
+#         # Add new node properties
+#         add_single_node_properties(new_node, mod)
+#         # Force the new node to be features_defining in order to be recognized
+#         # as predecessor when performin the `register_input_quantizers` step
+#         new_node.meta['features_defining'] = True
 
 
 def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Module],

@@ -492,6 +492,16 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         cost = self.in_features * self.out_features * eff_w_prec * eff_a_prec
         return cost
 
+    def get_macs_layer(self) -> torch.Tensor:
+        """Method that computes the MACs operations for the layer
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        cout = self.out_features_eff
+        cin = self.input_features_calculator.features
+        return cout * cin
+
     def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
         """Set the `MixPrec_Qtz_Layer` for input activations calculation
 
