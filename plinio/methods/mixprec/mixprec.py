@@ -137,6 +137,9 @@ class MixPrec(DNAS):
         self.weight_precisions = weight_precisions
         self.w_mixprec_type = w_mixprec_type
         self.qinfo = qinfo
+        self.qinfo_input_quantizer = qinfo_input_quantizer
+        self.input_quantization = input_quantization
+        self.disable_shared_quantizers = disable_shared_quantizers
         self.initial_temperature = temperature  # initial, not current temperature
         self._regularizer = regularizer
         # save the parameters of the softmax
@@ -263,7 +266,10 @@ class MixPrec(DNAS):
                          self.weight_precisions,
                          self.w_mixprec_type,
                          self.qinfo,
-                         'export')
+                         self.qinfo_input_quantizer,
+                         'export',
+                         input_quantization=self.input_quantization,
+                         disable_shared_quantizers=self.disable_shared_quantizers)
 
         return mod
 

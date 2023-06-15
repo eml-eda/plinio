@@ -218,6 +218,7 @@ class TestMixPrecConvert(unittest.TestCase):
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
 
+    # TODO: not passing, fix!
     def test_exclude_names_simple_layer(self):
         """Test the conversion of a Toy model while excluding layers by name
         with PER_LAYER weight mixed-precision (default)"""
@@ -237,6 +238,7 @@ class TestMixPrecConvert(unittest.TestCase):
         self._check_target_layers(new_nn, exp_tgt=4)
         self._check_layers_exclusion(new_nn, excluded)
 
+    # TODO: not passing, fix!
     def test_exclude_names_simple_channel(self):
         """Test the conversion of a Toy model while excluding layers by name
         with PER_CHANNEL weight mixed-precision"""

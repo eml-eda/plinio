@@ -85,8 +85,11 @@ class TestMixPrecSearch(unittest.TestCase):
         nn_ut = ToyAdd_2D()
         batch_size = 8
         mixprec_net = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
-        optimizer = torch.optim.Adam(mixprec_net.parameters())
+        optimizer = torch.optim.Adam(mixprec_net.parameters(), lr=1e-2)
         n_steps = 10
+        with torch.no_grad():
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
+            mixprec_net(x)
         prev_loss = mixprec_net.get_regularization_loss()
         print("Initial Reg. Loss:", prev_loss.item())
         for i in range(n_steps):
@@ -349,6 +352,9 @@ class TestMixPrecSearch(unittest.TestCase):
         mixprec_net = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(mixprec_net.parameters())
+        with torch.no_grad():
+            x = torch.rand((batch_size,) + nn_ut.input_shape)
+            mixprec_net(x)
         for i in range(n_steps):
             input = torch.stack([torch.rand(nn_ut.input_shape)] * batch_size)
             target = torch.ones((batch_size,), dtype=torch.long)

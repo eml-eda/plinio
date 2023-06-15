@@ -72,6 +72,7 @@ class TestMixPrecConvert(unittest.TestCase):
         # Convert to onnx
         exporter = DORYExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path('.'))
+        Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
 
     def test_autoimport_simple_layer(self):
         """Test the conversion of a simple convolutional and linear sequential model
@@ -112,6 +113,7 @@ class TestMixPrecConvert(unittest.TestCase):
         # Convert to onnx
         exporter = DORYExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path('.'))
+        Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
 
     def test_autoimport_sequential(self):
         """Test the conversion of a more complex convolutional and linear sequential model
@@ -153,3 +155,4 @@ class TestMixPrecConvert(unittest.TestCase):
         # Convert to onnx
         exporter = DORYExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path('.'))
+        Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
