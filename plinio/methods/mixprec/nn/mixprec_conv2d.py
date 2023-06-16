@@ -525,7 +525,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         :return: the number of MACs
         :rtype: torch.Tensor
         """
-        macs = self.get_size() * self.out_height * self.out_width
+        eff_w_prec = self.mixprec_w_quantizer.effective_precision
+        macs = self.get_size() / eff_w_prec * self.out_height * self.out_width
         return macs
 
     def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
