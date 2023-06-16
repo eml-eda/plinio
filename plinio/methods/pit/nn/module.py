@@ -18,7 +18,6 @@
 # *----------------------------------------------------------------------------*
 from abc import abstractmethod
 from typing import Dict, Any, Iterator, Tuple
-import torch
 import torch.fx as fx
 import torch.nn as nn
 from .features_masker import PITFeaturesMasker
@@ -109,22 +108,14 @@ class PITModule:
         raise NotImplementedError("Calling arch_parameters on base abstract PITModule class")
 
     @abstractmethod
-    def get_size(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer
+    def get_modified_vars(self) -> Dict[str, Any]:
+        """Method that returns the modified vars(self) dictionary for the instance, used for
+        cost computation
 
-        :return: the number of weights
-        :rtype: torch.Tensor
+        :return: the modified vars(self) data structure
+        :rtype: Dict[str, Any]
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract PITModule class")
-
-    @abstractmethod
-    def get_macs(self) -> torch.Tensor:
-        """Method that computes the number of MAC operations for the layer
-
-        :return: the number of MACs
-        :rtype: torch.Tensor
-        """
-        raise NotImplementedError("Calling arch_parameters on base abstract PITModule class")
+        raise NotImplementedError("Calling get_modified_vars on base abstract PITModule class")
 
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the architectural parameters (masks) of this layer

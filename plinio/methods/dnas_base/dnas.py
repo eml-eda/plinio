@@ -18,7 +18,8 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Any, Iterable, Tuple, Type, Iterator
+from typing import Any, Iterable,  Iterator, List, Tuple, Type, Union, cast
+from plinio.cost import CostSpec
 import torch
 import torch.nn as nn
 
@@ -28,8 +29,8 @@ class DNAS(nn.Module):
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
-    :param regularizer: the name of the model cost regularizer used by the NAS
-    :type regularizer: Optional[str], optional
+    :param cost: the cost model(s) used by the NAS
+    :type cost: Union[CostSpec, List[CostSpec]]
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
     defaults to ()
     :type exclude_names: Iterable[str], optional
@@ -41,13 +42,11 @@ class DNAS(nn.Module):
     @abstractmethod
     def __init__(
             self,
-            regularizer: str,
+            cost: Union[CostSpec, List[CostSpec]],
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
         super(DNAS, self).__init__()
-        if regularizer not in self.supported_regularizers():
-            raise ValueError("Unsupported regularizer {}".format(regularizer))
-        self.regularizer = regularizer
+        self._cost_specification = cost
         self.exclude_names = exclude_names
         self.exclude_types = tuple(exclude_types)
 
@@ -61,22 +60,33 @@ class DNAS(nn.Module):
         """
         raise NotImplementedError
 
+    @property
+    def cost_specification(self) -> Union[CostSpec, List[CostSpec]]:
+        return self._cost_specification
+
+    @cost_specification.setter
+    def cost_specification(self, _: Union[CostSpec, List[CostSpec]]):
+        raise NotImplementedError(
+                "Currently changing the list of cost specifications " +
+                "after model conversion is not supported")
+
+    @property
     @abstractmethod
-    def supported_regularizers(self) -> Tuple[str, ...]:
-        """Returns a tuple of strings with the names of the supported cost regularizers
+    def cost(self) -> torch.Tensor:
+        """Returns the value of the first cost metric
 
         :raises NotImplementedError: on the base DNAS class
-        :return: a tuple of strings with the names of the supported cost regularizers
-        :rtype: Tuple[str, ...]
+        :return: a scalar tensor with the cost value
+        :rtype: torch.Tensor
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def get_regularization_loss(self) -> torch.Tensor:
-        """Returns the value of the model cost regularization loss
+    # use method instead of property in case of multiple costs
+    def get_cost(self, i: int = 0) -> torch.Tensor:
+        """Returns the value of the model i-th cost metric
 
         :raises NotImplementedError: on the base DNAS class
-        :return: a scalar tensor with the loss value
+        :return: a scalar tensor with the cost value
         :rtype: torch.Tensor
         """
         raise NotImplementedError

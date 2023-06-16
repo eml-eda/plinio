@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import List, Type, Tuple, Any, Callable
+from typing import Dict, List, Type, Tuple, Any, Callable
 import operator
 import torch
 import torch.nn as nn
@@ -420,3 +420,9 @@ def parent_name(target: str) -> Tuple[str, str]:
     # https://github.com/pytorch/pytorch/blob/master/torch/fx/experimental/optimization.py
     *parent, name = target.rsplit('.', 1)
     return parent[0] if parent else '', name
+
+
+def shapes_dict(n: fx.Node) -> Dict[str, Any]:
+    d = {}
+    d['output_shape'] = n.meta['tensor_meta'].shape
+    return d

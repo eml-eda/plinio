@@ -16,14 +16,17 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator, Optional
+from typing import Any, Callable, List, Union, Tuple, Type, Iterable, Dict, cast, Iterator, Optional
 from warnings import warn
 
 import torch
 import torch.nn as nn
+import torch.fx as fx
 
 from plinio.methods.dnas_base import DNAS
-from .graph import convert
+from plinio.cost import CostSpec, PatternSpec, params
+from plinio.graph.inspection import shapes_dict
+from .graph import convert, pit_layer_map
 from .nn.module import PITModule
 
 
@@ -33,16 +36,22 @@ class PIT(DNAS):
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
     :param input_example: an input example, it has same type of the expected
-    `model`'s input, required for symbolic tracing (default: None)
+    `model`'s input, used for symbolic tracing (default: None)
     :type input_example: Optional[Any]
-    :param input_shape: the shape of an input tensor, without batch size, required for symbolic
-    tracing (default: None)
+    :param input_shape: the shape of an input tensor, without batch size, used as an
+    alternative to input_example to generate a random input for symbolic tracing (default: None)
     :type input_shape: Optional[Tuple[int, ...]]
-    :param regularizer: a string defining the type of cost regularizer, defaults to 'size'
-    :type regularizer: Optional[str], optional
+    :param cost: the cost models(s) used by the NAS, defaults to the number of params.
+    :type cost: Union[CostSpec, List[CostSpec]]
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
+    :param discrete_sampling: True is the cost model should be applied to a discrete sample,
+    rather than a continuous relaxation, defaults to False
+    :type discrete_sampling: bool, optional
+    :param full_cost: True is the cost model should be applied to the entire network, rather
+    than just to the NAS-able layers, defaults to False
+    :type discrete_sampling: bool, optional
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
@@ -68,36 +77,37 @@ class PIT(DNAS):
             model: nn.Module,
             input_example: Optional[Any] = None,
             input_shape: Optional[Tuple[int, ...]] = None,
-            regularizer: str = 'size',
+            cost: Union[CostSpec, List[CostSpec]] = params,
             autoconvert_layers: bool = True,
+            discrete_cost: bool = False,
+            full_cost: bool = False,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             train_features: bool = True,
             train_rf: bool = True,
             train_dilation: bool = True):
-        super(PIT, self).__init__(regularizer, exclude_names, exclude_types)
+        super(PIT, self).__init__(cost, exclude_names, exclude_types)
         self._device = next(model.parameters()).device
         self._input_example = self._resolve_input_example(input_example, input_shape)
         # self._input_shape = input_shape
-        self.seed, self._target_layers = convert(
+        self.seed, self._leaf_modules = convert(
             model,
             self._input_example,
             'autoimport' if autoconvert_layers else 'import',
             exclude_names,
             exclude_types
         )
-        # Get unique target layers, this is needed to compute properly size and
-        # macs in the case when we execute a specific layer multiple time in
-        # a single fwd pass
-        self._unique_target_layers = []
-        for _, layer in self.seed.named_modules():
-            if layer in self._target_layers:
-                self._unique_target_layers.append(layer)
+        # Get unique leaf modules, needed to correctly compute cost metrics that should not
+        # be counted twice when a layer is used twice in a single fwd pass
+        # (e.g. true for params, false for ops)
+        self._unique_leaf_modules = self._uniquify_leaf_modules()
+        self.cost_fn_maps = self._create_cost_fn_maps()
         # after conversion to make sure they are applied to all layers
         self.train_features = train_features
         self.train_rf = train_rf
         self.train_dilation = train_dilation
-        self._regularizer = regularizer
+        self.discrete_cost = discrete_cost
+        self.full_cost = full_cost
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model. Simply invokes the inner model's forward
@@ -107,89 +117,48 @@ class PIT(DNAS):
         """
         return self.seed.forward(*args)
 
-    def supported_regularizers(self) -> Tuple[str, ...]:
-        """Returns a list of names of supported regularizers
+    @property
+    def cost(self) -> torch.Tensor:
+        if isinstance(self._cost_specification, list):
+            return self._evaluate_ith_cost_metric(0, self._cost_specification[0])
+        else:
+            return self._evaluate_ith_cost_metric(0, self._cost_specification)
 
-        :return: a tuple of strings with the name of supported regularizers
-        :rtype: Tuple[str, ...]
-        """
-        return ('size', 'macs')
+    # use method instead of property in case of multiple costs
+    def get_cost(self, i: int = 0) -> torch.Tensor:
+        assert \
+            i == 0 or \
+            (isinstance(self._cost_specification, list) and len(self._cost_specification) > i), \
+            f"Cannot access {i}-th cost specification"
+        if isinstance(self._cost_specification, list):
+            return self._evaluate_ith_cost_metric(i, self._cost_specification[i])
+        else:
+            return self._evaluate_ith_cost_metric(0, self._cost_specification)
 
-    def get_size(self) -> torch.Tensor:
-        """Computes the total number of parameters of all NAS-able layers
-        using float version of masks
-
-        :return: the total number of parameters
-        :rtype: torch.Tensor
-        """
-        size = torch.tensor(0, dtype=torch.float32)
-        # size = torch.tensor(0)
-        for layer in self._unique_target_layers:
-            # size += layer.get_size()
-            size = size + layer.get_size()
-        return size
-
-    def get_size_binarized(self) -> torch.Tensor:
-        """Computes the total number of parameters of all NAS-able layers
-        using binary masks
-
-        :return: the total number of parameters
-        :rtype: torch.Tensor
-        """
-        size = torch.tensor(0, dtype=torch.float32)
-        # size = torch.tensor(0)
-        for layer in self._unique_target_layers:
-            # size += layer.get_size()
-            size = size + layer.get_size_binarized()
-        return size
-
-    def get_macs(self) -> torch.Tensor:
-        """Computes the total number of MACs in all NAS-able layers
-        using float version of masks
-
-        :return: the total number of MACs
-        :rtype: torch.Tensor
-        """
-        macs = torch.tensor(0, dtype=torch.float32)
-        # macs = torch.tensor(0)
-        for layer in self._target_layers:
-            # macs += layer.get_macs()
-            macs = macs + layer.get_macs()
-        return macs
-
-    def get_macs_binarized(self) -> torch.Tensor:
-        """Computes the total number of MACs in all NAS-able layers
-        using binary masks
-
-        :return: the total number of MACs
-        :rtype: torch.Tensor
-        """
-        macs = torch.tensor(0, dtype=torch.float32)
-        # macs = torch.tensor(0)
-        for layer in self._target_layers:
-            # macs += layer.get_macs()
-            macs = macs + layer.get_macs_binarized()
-        return macs
+    def _evaluate_ith_cost_metric(self, cost_idx: int, cost_spec: CostSpec) -> torch.Tensor:
+        cost = torch.tensor(0, dtype=torch.float32)
+        target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
+        for name, node, layer in target_list:
+            if isinstance(layer, PITModule):
+                v = layer.get_modified_vars()
+                v.update(shapes_dict(node))
+                cost = cost + self.cost_fn_maps[cost_idx][name](v)
+            elif self.full_cost:
+                v = vars(layer)
+                v.update(shapes_dict(node))
+                cost = cost + self.cost_fn_maps[cost_idx][name](vars(layer))
+        return cost
 
     @property
-    def regularizer(self) -> str:
-        """Returns the regularizer type
+    def discrete_cost(self) -> bool:
+        return self._discrete_cost
 
-        :raises ValueError: for unsupported conversion types
-        :return: the string identifying the regularizer type
-        :rtype: str
-        """
-        return self._regularizer
-
-    @regularizer.setter
-    def regularizer(self, value: str):
-        if value == 'size':
-            self.get_regularization_loss = self.get_size
-        elif value == 'macs':
-            self.get_regularization_loss = self.get_macs
-        else:
-            raise ValueError(f"Invalid regularizer {value}")
-        self._regularizer = value
+    @discrete_cost.setter
+    def discrete_cost(self, value: bool):
+        for _, _, layer in self._unique_leaf_modules:
+            if hasattr(layer, 'discrete_cost'):
+                layer.discrete_cost = value
+        self._discrete_cost = value
 
     @property
     def train_features(self) -> bool:
@@ -207,7 +176,7 @@ class PIT(DNAS):
         :param value: set to True to let PIT train the output features masks
         :type value: bool
         """
-        for layer in self._target_layers:
+        for _, _, layer in self._leaf_modules:
             if hasattr(layer, 'train_features'):
                 layer.train_features = value
         self._train_features = value
@@ -228,7 +197,7 @@ class PIT(DNAS):
         :param value: set to True to let PIT train the filters receptive fields masks
         :type value: bool
         """
-        for layer in self._target_layers:
+        for _, _, layer in self._leaf_modules:
             if hasattr(layer, 'train_rf'):
                 layer.train_rf = value
         self._train_rf = value
@@ -249,7 +218,7 @@ class PIT(DNAS):
         :param value: set to True to let PIT train the filters dilation masks
         :type value: bool
         """
-        for layer in self._target_layers:
+        for _, _, layer in self._leaf_modules:
             if hasattr(layer, 'train_dilation'):
                 layer.train_dilation = value
         self._train_dilation = value
@@ -268,8 +237,8 @@ class PIT(DNAS):
         :rtype: Dict[str, Dict[str, Any]]
         """
         if not add_bn:
-            for layer in self._target_layers:
-                if hasattr(layer, 'following_bn_args'):
+            for _, _, layer in self._leaf_modules:
+                if isinstance(layer, PITModule) and hasattr(layer, 'following_bn_args'):
                     layer.following_bn_args = None
 
         mod, _ = convert(self.seed, self._input_example, 'export')
@@ -285,8 +254,7 @@ class PIT(DNAS):
         """
         arch = {}
         for name, layer in self.seed.named_modules():
-            if layer in self._target_layers:
-                layer = cast(PITModule, layer)
+            if isinstance(layer, PITModule):
                 arch[name] = layer.summary()
                 arch[name]['type'] = layer.__class__.__name__
         return arch
@@ -304,8 +272,8 @@ class PIT(DNAS):
         :rtype: Iterator[nn.Parameter]
         """
         included = set()
-        for lname, layer in self.named_modules():
-            if layer in self._target_layers:
+        for lname, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, PITModule):
                 layer = cast(PITModule, layer)
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
@@ -332,6 +300,39 @@ class PIT(DNAS):
         for name, param in self.named_parameters():
             if name not in exclude:
                 yield name, param
+
+    def _uniquify_leaf_modules(self) -> List[Tuple[str, fx.Node, nn.Module]]:
+        names = set()
+        unique_modules = []
+        for name, node, layer in self._leaf_modules:
+            if name not in names:
+                names.add(name)
+                unique_modules.append((name, node, layer))
+        return unique_modules
+
+    # TODO: this could be made general for all DNAS?
+    def _create_cost_fn_maps(self) -> List[Dict[str, Callable[[PatternSpec], torch.Tensor]]]:
+        cost_fn_maps = []
+        if isinstance(self._cost_specification, list):
+            for c in self._cost_specification:
+                cost_fn_maps.append(self._single_cost_fn_map(c))
+        else:
+            cost_fn_maps.append(self._single_cost_fn_map(self._cost_specification))
+        return cost_fn_maps
+
+    def _single_cost_fn_map(self, c: CostSpec) -> Dict[str, Callable[[PatternSpec], torch.Tensor]]:
+        cost_fn_map = {}
+        for name, layer in self.seed.named_modules():
+            if isinstance(layer, PITModule):
+                # get original layer type from PITModule type
+                # TODO: make this more readable
+                t = list(pit_layer_map.keys())[list(pit_layer_map.values()).index(type(layer))]
+                # equally unreadable alternative
+                # t = layer.__class__.__bases__[0]
+            else:
+                t = type(layer)
+            cost_fn_map[name] = c[(t, vars(layer))]
+        return cost_fn_map
 
     def _resolve_input_example(self, example, shape):
         """Document here"""

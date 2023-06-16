@@ -142,7 +142,7 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = ToyMultiPath2()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=6)
+        self._check_target_layers(new_nn, exp_tgt=7)
         self._check_input_features(new_nn, {'conv2': 3, 'conv4': 40})
         shared_masker_rules = (
             ('conv0', 'conv1', True),   # inputs to add
@@ -189,7 +189,7 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = ToyMultiPath2()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
         # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
-        self._check_target_layers(new_nn, exp_tgt=4)
+        self._check_target_layers(new_nn, exp_tgt=5)
         self._check_layers_exclusion(new_nn, excluded)
 
     def test_import_simple(self):
@@ -222,10 +222,16 @@ class TestPITConvert(unittest.TestCase):
         """Test the exclude_names functionality on a ResNet like model"""
         config = self.tc_resnet_config
         nn_ut = TCResNet14(config)
-        excluded = ['conv0', 'tcn.network.5.tcn1', 'tcn.network.3.tcn0']
+        excluded = [
+                'conv0',
+                'tcn.network.5.tcn1',
+                'tcn.network.5.batchnorm1',
+                'tcn.network.3.tcn0',
+                'tcn.network.3.batchnorm0'
+                ]
         new_nn = PIT(nn_ut, input_shape=(6, 50), exclude_names=excluded)
         self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
-        n_layers = 3 * len(config['num_channels'][1:]) + 2 - len(excluded)
+        n_layers = 3 * len(config['num_channels'][1:]) + 2 - 3
         self._check_layers_exclusion(new_nn, excluded)
         self._check_target_layers(new_nn, exp_tgt=n_layers)
 
@@ -489,11 +495,11 @@ class TestPITConvert(unittest.TestCase):
 
     def _check_target_layers(self, new_nn: PIT, exp_tgt: int,
                              unique: bool = False):
-        """Check if number of target layers is as expected"""
+        """Check if number of converted layers is as expected"""
         if unique:
-            n_tgt = len(new_nn._unique_target_layers)
+            n_tgt = len([_ for _ in new_nn._unique_leaf_modules if isinstance(_[2], PITModule)])
         else:
-            n_tgt = len(new_nn._target_layers)
+            n_tgt = len([_ for _ in new_nn._leaf_modules if isinstance(_[2], PITModule)])
         self.assertEqual(exp_tgt, n_tgt,
                          "Expected {} target layers, but found {}".format(exp_tgt, n_tgt))
 

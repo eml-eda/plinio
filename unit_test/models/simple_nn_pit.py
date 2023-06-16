@@ -12,7 +12,6 @@ class SimplePitNN(nn.Module):
         super(SimplePitNN, self).__init__()
         self.input_shape = input_shape
         self.conv0 = PITConv1d(nn.Conv1d(3, 32, (3,), padding='same'),
-                               32,
                                PITFeaturesMasker(32),
                                PITTimestepMasker(3),
                                PITDilationMasker(1))

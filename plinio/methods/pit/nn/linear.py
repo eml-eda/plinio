@@ -222,51 +222,17 @@ class PITLinear(nn.Linear, PITModule):
             theta_alpha = self.out_features_masker.theta
             return PITBinarizer.apply(theta_alpha, self._binarization_threshold)
 
-    def get_size(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer
+    def get_modified_vars(self) -> Dict[str, Any]:
+        """Method that returns the modified vars(self) dictionary for the instance, used for
+        cost computation
 
-        :return: the number of weights
-        :rtype: torch.Tensor
+        :return: the modified vars(self) data structure
+        :rtype: Dict[str, Any]
         """
-        cin = self.input_features_calculator.features
-        cost = cin * self.out_features_eff
-        return cost
-
-    def get_size_binarized(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer considering
-        binarized masks
-
-        :return: the number of weights
-        :rtype: torch.Tensor
-        """
-        # Compute actual integer number of input channels
-        cin_mask = self.input_features_calculator.features_mask
-        cin = torch.sum(PITBinarizer.apply(cin_mask, self._binarization_threshold))
-        # Compute actual integer number of output channels
-        cout_mask = self.out_features_masker.theta
-        cout = torch.sum(PITBinarizer.apply(cout_mask, self._binarization_threshold))
-        # Finally compute cost
-        cost = cin * cout
-        return cost
-
-    def get_macs(self) -> torch.Tensor:
-        """Method that computes the number of MAC operations for the layer
-
-        :return: the number of MACs
-        :rtype: torch.Tensor
-        """
-        # size and MACs are roughly the same for a Linear layer
-        return self.get_size()
-
-    def get_macs_binarized(self) -> torch.Tensor:
-        """Method that computes the number of MAC operations for the layer considering
-        binarized masks
-
-        :return: the number of MACs
-        :rtype: torch.Tensor
-        """
-        # size and MACs are roughly the same for a Linear layer
-        return self.get_size_binarized()
+        v = dict(vars(self))
+        v['in_features'] = self.input_features_calculator.features
+        v['out_features'] = self.out_features_eff
+        return v
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:

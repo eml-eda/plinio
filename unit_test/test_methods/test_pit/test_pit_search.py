@@ -21,6 +21,7 @@ import unittest
 import math
 import torch
 import torch.nn as nn
+from plinio.cost import params, ops
 from plinio.methods import PIT
 from plinio.methods.pit.nn import PITConv1d, PITConv2d
 from unit_test.models import SimpleNN
@@ -68,39 +69,26 @@ class TestPITSearch(unittest.TestCase):
         # computation
         net = ToyAdd()
 
+        # Check the number of params for the whole net
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, regularizer='macs')
-        # Check the number of weights for a single conv layer
-        # conv1 has Cin=3, Cout=10, K=3
-        exp_size_conv1 = 3 * 10 * 3
-        conv1 = cast(PITConv1d, pit_net.seed.conv1)
-        self.assertEqual(conv1.get_size(), exp_size_conv1, "Wrong layer size")
-        # Check the number of MACs for a single conv layer
-        # all convs have "same" padding
-        exp_macs_conv1 = exp_size_conv1 * input_shape[1]
-        self.assertEqual(conv1.get_macs(), exp_macs_conv1, "Wrong layer MACs")
-
-        # Check the number of weights for the whole net
-        # conv0 is identical to conv1, and conv2 has Cin=10, Cout=20, K=5
+        pit_net = PIT(net, input_shape=input_shape, cost=params)
+        # conv0 and conv1 have Cin=3, Cout=10, K=3
+        # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
-        exp_size_conv2 = (10 * 20 * 5)
+        exp_size_conv_01 = 3 * 10 * 3
+        exp_size_conv_2 = (10 * 20 * 5)
         exp_size_fc = (140 * 2)
-        exp_size_net = 2 * exp_size_conv1 + exp_size_conv2 + exp_size_fc
-        self.assertEqual(pit_net.get_size(), exp_size_net, "Wrong net size ")
+        exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
+        self.assertEqual(pit_net.cost, exp_size_net, "Wrong net size ")
+
         # Check the number of MACs for the whole net
+        pit_net = PIT(net, input_shape=input_shape, cost=ops)
         # conv2 has half the output length due to pooling
-        exp_macs_net = 2 * exp_macs_conv1 + (exp_size_conv2 * (input_shape[1] // 2))
+        exp_macs_net = 2 * (exp_size_conv_01 * input_shape[1]) + \
+            (exp_size_conv_2 * (input_shape[1] // 2))
         # for FC, macs and size are equal
         exp_macs_net = exp_macs_net + exp_size_fc
-        self.assertEqual(pit_net.get_macs(), exp_macs_net, "Wrong net MACs")
-
-        # Check that get_regularization_loss and get_macs give the same result
-        # since we specified the macs regularizer
-        self.assertEqual(pit_net.get_regularization_loss(), pit_net.get_macs())
-
-        # change the regularizer and check again
-        pit_net.regularizer = 'size'
-        self.assertEqual(pit_net.get_regularization_loss(), pit_net.get_size())
+        self.assertEqual(pit_net.cost, exp_macs_net, "Wrong net MACs")
 
     def test_regularization_loss_binarized_1D(self):
         """Test the binarized regularization loss computation on a model with 1D
@@ -110,7 +98,7 @@ class TestPITSearch(unittest.TestCase):
         net = ToyAdd()
 
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, regularizer='macs')
+        pit_net = PIT(net, input_shape=input_shape, cost=ops)
         # Check the number of weights for a single conv layer
         # conv1 has Cin=3, Cout=10, K=3
         exp_size_conv1 = 3 * 10 * 3
@@ -172,7 +160,7 @@ class TestPITSearch(unittest.TestCase):
         net = ToyAdd_2D()
 
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, regularizer='macs')
+        pit_net = PIT(net, input_shape=input_shape, cost=ops)
         # Check the number of weights for a single conv layer
         # conv1 has Cin=3, Cout=10, K=(3, 3)
         exp_size_conv1 = 3 * 10 * 3 * 3
@@ -212,18 +200,18 @@ class TestPITSearch(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         optimizer = optim.Adam(pit_net.parameters())
         n_steps = 10
-        prev_loss = pit_net.get_regularization_loss()
-        print("Initial Reg. Loss:", prev_loss.item())
-        for i in range(n_steps):
+        prev_cost = pit_net.cost
+        print("Initial Reg. Loss:", prev_cost.item())
+        for _ in range(n_steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_regularization_loss()
-            print("Reg. Loss:", loss.item())
-            self.assertLessEqual(loss.item(), prev_loss.item(), "The loss value is not descending")
+            cost = pit_net.cost
+            print("Reg. Loss:", cost.item())
+            self.assertLessEqual(cost.item(), prev_cost.item(), "The loss value is not descending")
             optimizer.zero_grad()
-            loss.backward()
+            cost.backward()
             optimizer.step()
-            prev_loss = loss
+            prev_cost = cost
 
     def test_regularization_loss_weights(self):
         """Check that the weights remain equal using only the regularization loss"""
@@ -239,10 +227,10 @@ class TestPITSearch(unittest.TestCase):
         init_conv0_weights = conv0.weight.clone().detach()
         init_conv1_weights = conv1.weight.clone().detach()
         init_conv2_weights = conv2.weight.clone().detach()
-        for i in range(n_steps):
+        for _ in range(n_steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_regularization_loss()
+            loss = pit_net.get_cost(0)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -273,11 +261,11 @@ class TestPITSearch(unittest.TestCase):
         conv2 = cast(PITConv1d, pit_net.seed.conv2)
         convs = [conv0, conv1, conv2]
         max_dils = [2, 2, 4]
-        ths = [layer._binarization_threshold for layer in convs]
+        ths = [layer.binarization_threshold for layer in convs]
         for i in range(max_steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_regularization_loss()
+            loss = pit_net.get_cost()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -320,11 +308,11 @@ class TestPITSearch(unittest.TestCase):
         convs = [conv0, conv1, conv2]
         initial_masks = [layer.out_features_masker.theta.clone().detach() for layer in convs]
         max_dils = [2, 2, 4]
-        ths = [layer._binarization_threshold for layer in convs]
+        ths = [layer.binarization_threshold for layer in convs]
         for i in range(steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_regularization_loss()
+            loss = pit_net.get_cost()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -360,11 +348,11 @@ class TestPITSearch(unittest.TestCase):
         convs = [conv0, conv1, conv2]
         initial_masks = [layer.timestep_masker.theta.clone().detach() for layer in convs]
         max_dils = [2, 2, 4]
-        ths = [layer._binarization_threshold for layer in convs]
+        ths = [layer.binarization_threshold for layer in convs]
         for i in range(steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_regularization_loss()
+            loss = pit_net.cost
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -400,11 +388,11 @@ class TestPITSearch(unittest.TestCase):
         convs = [conv0, conv1, conv2]
         initial_masks = [layer.dilation_masker.theta.clone().detach() for layer in convs]
         max_dils = [2, 2, 4]
-        ths = [layer._binarization_threshold for layer in convs]
+        ths = [layer.binarization_threshold for layer in convs]
         for i in range(steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_regularization_loss()
+            loss = pit_net.get_cost(0)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -433,12 +421,12 @@ class TestPITSearch(unittest.TestCase):
         optimizer = optim.Adam(pit_net.parameters())
         conv1 = cast(PITConv1d, pit_net.seed.conv1)
         prev_conv1_weight = torch.zeros_like(conv1.weight)
-        for i in range(n_steps):
+        for _ in range(n_steps):
             input = torch.stack([torch.rand(nn_ut.input_shape)] * batch_size)
             target = torch.randint(0, 2, (batch_size,))
             output = pit_net(input)
             task_loss = criterion(output, target)
-            nas_loss = lambda_param * pit_net.get_regularization_loss()
+            nas_loss = lambda_param * pit_net.get_cost()
             total_loss = task_loss + nas_loss
             optimizer.zero_grad()
             total_loss.backward()
@@ -458,12 +446,12 @@ class TestPITSearch(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(pit_net.parameters())
-        for i in range(n_steps):
+        for _ in range(n_steps):
             input = torch.stack([torch.rand(nn_ut.input_shape)] * batch_size)
             target = torch.ones((batch_size,), dtype=torch.long)
             output = pit_net(input)
             task_loss = criterion(output, target)
-            nas_loss = lambda_param * pit_net.get_regularization_loss()
+            nas_loss = lambda_param * pit_net.get_cost(0)
             total_loss = task_loss + nas_loss
             optimizer.zero_grad()
             total_loss.backward()
@@ -489,8 +477,7 @@ class TestPITSearch(unittest.TestCase):
             target = torch.sum(input, dim=2).reshape((batch_size, -1))
             output = pit_net(input)
             task_loss = criterion(output, target)
-            nas_loss = lambda_param * pit_net.get_regularization_loss()
-            total_loss = task_loss + nas_loss
+            total_loss = task_loss + lambda_param*pit_net.get_cost(0)
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()

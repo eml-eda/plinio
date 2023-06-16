@@ -35,9 +35,6 @@ class PITConv1d(nn.Conv1d, PITModule):
 
     :param conv: the inner `torch.nn.Conv1D` layer to be optimized
     :type conv: nn.Conv1d
-    :param out_length: the output length on the time axis (needed for timestep and dilation masking
-    and to compute the number of MACs)
-    :type out_length: int
     :param out_features_masker: the `nn.Module` that generates the output features binary masks
     :type out_features_masker: PITChannelMasker
     :param timestep_masker: the `nn.Module` that generates the output timesteps binary masks
@@ -50,11 +47,11 @@ class PITConv1d(nn.Conv1d, PITModule):
     """
     def __init__(self,
                  conv: nn.Conv1d,
-                 out_length: int,
                  out_features_masker: PITFeaturesMasker,
                  timestep_masker: PITTimestepMasker,
                  dilation_masker: PITDilationMasker,
                  binarization_threshold: float = 0.5,
+                 discrete_cost: bool = False,
                  ):
         super(PITConv1d, self).__init__(
             conv.in_channels,
@@ -76,56 +73,32 @@ class PITConv1d(nn.Conv1d, PITModule):
                 cast(torch.nn.parameter.Parameter, self.bias).copy_(conv.bias)
             else:
                 self.bias = None
-        self.out_length = out_length
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
         self.out_features_masker = out_features_masker
         self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
-        self._binarization_threshold = binarization_threshold
+        self.discrete_cost = discrete_cost
+        self.binarization_threshold = binarization_threshold
         self.following_bn_args: Optional[Dict[str, Any]] = None
-        _beta_norm, _gamma_norm = self._generate_norm_constants()
-        self.register_buffer('_beta_norm', _beta_norm)
-        self.register_buffer('_gamma_norm', _gamma_norm)
-        self.register_buffer('out_features_eff', torch.tensor(self.out_channels,
-                             dtype=torch.float32))
-        self.register_buffer('k_eff', torch.tensor(self.kernel_size[0], dtype=torch.float32))
+        self._beta_norm, self._gamma_norm = self._generate_norm_constants()
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the NAS-able layer.
 
         In a nutshell, uses the various maskers to generate the binarized masks, then runs
         the convolution with the masked weights tensor.
-        This function has side effects, since it also saves the effective output features and
-        effective filter size in `out_features_eff` and `k_eff` respectively.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        # for now we keep the same order of the old version (ch --> dil --> rf)
-        # but it's probably more natural to do ch --> rf --> dil
-        theta_alpha = self.out_features_masker.theta
-        bin_theta_alpha = PITBinarizer.apply(theta_alpha, self._binarization_threshold)
-        pruned_weight = torch.mul(self.weight, bin_theta_alpha.unsqueeze(1).unsqueeze(1))
-        theta_gamma = self.dilation_masker.theta
-        bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
-        pruned_weight = torch.mul(bin_theta_gamma, pruned_weight)
-        theta_beta = self.timestep_masker.theta
-        bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
-        pruned_weight = torch.mul(bin_theta_beta, pruned_weight)
-
-        # conv operation
-        y = self._conv_forward(input, pruned_weight, self.bias)
-
-        # save info for regularization
-        norm_theta_beta = torch.mul(theta_beta, cast(torch.Tensor, self._beta_norm))
-        norm_theta_gamma = torch.mul(theta_gamma, cast(torch.Tensor, self._gamma_norm))
-        self.out_features_eff = torch.sum(theta_alpha)
-        self.k_eff = torch.sum(torch.mul(norm_theta_beta, norm_theta_gamma))
-
-        return y
+        cout_mask = self._features_mask(discrete=True)
+        pruned_weight = torch.mul(self.weight, cout_mask.unsqueeze(1).unsqueeze(1))
+        time_mask = self._time_mask(discrete=True)
+        pruned_weight = torch.mul(time_mask, pruned_weight)
+        return self._conv_forward(input, pruned_weight, self.bias)
 
     @staticmethod
     def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
@@ -152,7 +125,6 @@ class PITConv1d(nn.Conv1d, PITModule):
         dil_masker = PITFrozenDilationMasker(rf) if stride != 1 else PITDilationMasker(rf)
         new_submodule = PITConv1d(
             submodule,
-            out_length=n.meta['tensor_meta'].shape[2],
             out_features_masker=fm,
             timestep_masker=time_masker,
             dilation_masker=dil_masker,
@@ -296,6 +268,10 @@ class PITConv1d(nn.Conv1d, PITModule):
             return int(torch.sum(bin_alpha))
 
     @property
+    def out_features_eff(self) -> torch.Tensor:
+        return torch.sum(self._features_mask(self.discrete_cost))
+
+    @property
     def in_features_opt(self) -> int:
         """Get the number of input features found during the search
 
@@ -315,7 +291,8 @@ class PITConv1d(nn.Conv1d, PITModule):
         """
         with torch.no_grad():
             theta_gamma = self.dilation_masker.theta
-            bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+            bin_theta_gamma = PITBinarizer.apply(theta_gamma, self.binarization_threshold)
+            bin_theta_gamma = cast(torch.Tensor, bin_theta_gamma)
             # find the longest sequence of 0s in the bin_theta_gamma mask
             dil = max((sum(1 for _ in group) for value, group in itertools.groupby(bin_theta_gamma)
                       if value == 0), default=0) + 1
@@ -330,8 +307,7 @@ class PITConv1d(nn.Conv1d, PITModule):
         :rtype: Tuple[int]
         """
         with torch.no_grad():
-            bg_prod = self.time_mask
-            return (int(torch.sum(bg_prod)),)
+            return (int(torch.sum(self.time_mask)),)
 
     @property
     def features_mask(self) -> torch.Tensor:
@@ -342,8 +318,7 @@ class PITConv1d(nn.Conv1d, PITModule):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            theta_alpha = self.out_features_masker.theta
-            return PITBinarizer.apply(theta_alpha, self._binarization_threshold)
+            return self._features_mask(discrete=True)
 
     @property
     def time_mask(self) -> torch.Tensor:
@@ -355,72 +330,43 @@ class PITConv1d(nn.Conv1d, PITModule):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            theta_gamma = self.dilation_masker.theta
-            bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
-            theta_beta = self.timestep_masker.theta
-            bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
-            bg_prod = torch.mul(bin_theta_gamma, bin_theta_beta)
-            return bg_prod
+            return self._time_mask(discrete=True)
 
-    def get_size(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer
+    def get_modified_vars(self) -> Dict[str, Any]:
+        """Method that returns the modified vars(self) dictionary for the instance, used for
+        cost computation
 
-        :return: the number of weights
-        :rtype: torch.Tensor
+        :return: the modified vars(self) data structure
+        :rtype: Dict[str, Any]
         """
-        cin = self.input_features_calculator.features
-        cost = cin * self.out_features_eff * self.k_eff
-        if self.groups > 1:
-            cost = cost / self.out_features_eff
-        return cost
+        v = dict(vars(self))
+        v['in_channels'] = self.input_features_calculator.features
+        v['out_channels'] = torch.sum(self._features_mask(self.discrete_cost))
+        v['kernel_size'] = torch.sum(self._time_mask(self.discrete_cost))
+        # currently we don't know how to compute the "current dilation" in a differentiable way
+        # during a search, so we set this to None to force cost models to fail if they use this
+        # parameter
+        v['dilation'] = None
+        return v
 
-    def get_size_binarized(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer considering
-        binarized masks
+    def _features_mask(self, discrete: bool) -> torch.Tensor:
+        theta_alpha = self.out_features_masker.theta
+        if discrete:
+            theta_alpha = PITBinarizer.apply(theta_alpha, self.binarization_threshold)
+        return cast(torch.Tensor, theta_alpha)
 
-        :return: the number of weights
-        :rtype: torch.Tensor
-        """
-        # TODO: Understand if it make sense to move part of this calculation
-        # in specific properties.
-        # E.g., the calculation of `k` is same of self.kernel_size_opt but such
-        # property neglects gradient accumulation which conversely are needed here.
-
-        # Compute actual integer number of input channels
-        cin_mask = self.input_features_calculator.features_mask
-        cin = torch.sum(PITBinarizer.apply(cin_mask, self._binarization_threshold))
-        # Compute actual integer number of output channels
-        cout_mask = self.out_features_masker.theta
-        cout = torch.sum(PITBinarizer.apply(cout_mask, self._binarization_threshold))
-        # Compute actual integer kernel size
-        theta_gamma = self.dilation_masker.theta
-        bin_theta_gamma = PITBinarizer.apply(theta_gamma, self._binarization_threshold)
+    def _time_mask(self, discrete: bool) -> torch.Tensor:
         theta_beta = self.timestep_masker.theta
-        bin_theta_beta = PITBinarizer.apply(theta_beta, self._binarization_threshold)
-        bg_prod = torch.mul(bin_theta_gamma, bin_theta_beta)
-        k = torch.sum(bg_prod)
-        # Finally compute cost
-        cost = cin * cout * k
-        if self.groups > 1:
-            cost = cost / cout
-        return cost
-
-    def get_macs(self) -> torch.Tensor:
-        """Method that computes the number of MAC operations for the layer
-
-        :return: the number of MACs
-        :rtype: torch.Tensor
-        """
-        return self.get_size() * self.out_length
-
-    def get_macs_binarized(self) -> torch.Tensor:
-        """Method that computes the number of MAC operations for the layer
-        considering binarized masks
-
-        :return: the number of MACs
-        :rtype: torch.Tensor
-        """
-        return self.get_size_binarized() * self.out_length
+        theta_gamma = self.dilation_masker.theta
+        if discrete:
+            theta_beta = PITBinarizer.apply(theta_beta, self.binarization_threshold)
+            theta_gamma = PITBinarizer.apply(theta_gamma, self.binarization_threshold)
+        else:
+            # this normalizaton occurs only for the continuous case
+            theta_beta = torch.mul(theta_beta, cast(torch.Tensor, self._beta_norm))
+            theta_gamma = torch.mul(theta_gamma, cast(torch.Tensor, self._gamma_norm))
+        bg_prod = torch.mul(cast(torch.Tensor, theta_gamma), cast(torch.Tensor, theta_beta))
+        return bg_prod
 
     def _generate_norm_constants(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """Method called at construction time to generate the normalization constants for the

@@ -150,21 +150,16 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITModule):
         with torch.no_grad():
             return self.input_features_calculator.features_mask.bool()
 
-    def get_size(self) -> torch.Tensor:
-        """Method that computes the number of weights for the layer
+    def get_modified_vars(self) -> Dict[str, Any]:
+        """Method that returns the modified vars(self) dictionary for the instance, used for
+        cost computation
 
-        :return: the number of weights
-        :rtype: torch.Tensor
+        :return: the modified vars(self) data structure
+        :rtype: Dict[str, Any]
         """
-        return 2 * self.get_macs()
-
-    def get_macs(self) -> torch.Tensor:
-        """Method that computes the number of MAC operations for the layer
-
-        :return: the number of MACs
-        :rtype: torch.Tensor
-        """
-        return self.input_features_calculator.features
+        v = dict(vars(self))
+        v['num_features'] = self.out_features_opt
+        return v
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:

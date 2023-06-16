@@ -127,11 +127,6 @@ class TestPITMasking(unittest.TestCase):
         bin_theta_beta_exp = torch.tensor([0, 1, 1])
         self.assertTrue(torch.all(theta_beta == theta_beta_exp))
         self.assertTrue(torch.all(bin_theta_beta == bin_theta_beta_exp))
-        k_eff = conv0.k_eff
-        # obtained from the paper formulas
-        exp_norm_factors = torch.tensor([1, (1 / 2), (1 / 3)])
-        k_eff_exp = torch.sum(torch.mul(theta_beta_exp, exp_norm_factors))
-        self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
         # second try
         self._write_rf_mask(pit_net, 'conv0', torch.tensor([0, 0.1, 0.4]))
         pit_net(torch.rand(nn_ut.input_shape))
@@ -141,9 +136,6 @@ class TestPITMasking(unittest.TestCase):
         bin_theta_beta_exp = torch.tensor([0, 0, 1])
         self.assertTrue(torch.all(theta_beta == theta_beta_exp))
         self.assertTrue(torch.all(bin_theta_beta == bin_theta_beta_exp))
-        k_eff = conv0.k_eff
-        k_eff_exp = torch.sum(torch.mul(theta_beta_exp, exp_norm_factors))
-        self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
 
     def test_dilation_mask_init(self):
         """Test a pit layer dilation masks"""
@@ -166,11 +158,6 @@ class TestPITMasking(unittest.TestCase):
         bin_theta_gamma_exp = torch.tensor([1, 0, 1])
         self.assertTrue(torch.all(theta_gamma == theta_gamma_exp))
         self.assertTrue(torch.all(bin_theta_gamma == bin_theta_gamma_exp))
-        k_eff = conv0.k_eff
-        # obtained from the paper formulas
-        exp_norm_factors = torch.tensor([(1 / 2), 1, (1 / 2)])
-        k_eff_exp = torch.sum(torch.mul(theta_gamma_exp, exp_norm_factors))
-        self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
         # second try
         self._write_dilation_mask(pit_net, 'conv0', torch.tensor([0.6, 0.4]))
         pit_net(torch.rand(nn_ut.input_shape))
@@ -180,9 +167,6 @@ class TestPITMasking(unittest.TestCase):
         bin_theta_beta_exp = torch.tensor([1, 1, 1])
         self.assertTrue(torch.all(theta_beta == theta_beta_exp))
         self.assertTrue(torch.all(bin_theta_beta == bin_theta_beta_exp))
-        k_eff = conv0.k_eff
-        k_eff_exp = torch.sum(torch.mul(theta_beta_exp, exp_norm_factors))
-        self.assertAlmostEqual(float(k_eff), k_eff_exp)  # type: ignore
 
     def test_keep_alive_masks(self):
         """Test the correctness of keep alive masks"""
