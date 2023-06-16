@@ -31,22 +31,19 @@ class PITConv2d(nn.Conv2d, PITModule):
 
     :param conv: the inner `torch.nn.Conv2D` layer to be optimized
     :type conv: nn.Conv2d
-    :param out_length: the height of the output feature map (needed to compute the MACs)
-    :type out_length: int
-    :param out_width: the width of the output feature map (needed to compute the MACs)
-    :type out_length: int
     :param out_features_masker: the `nn.Module` that generates the output features binary masks
     :type out_features_masker: PITChannelMasker
     :raises ValueError: for unsupported regularizers
     :param binarization_threshold: the binarization threshold for PIT masks, defaults to 0.5
     :type binarization_threshold: float, optional
+    :param discrete_cost: True if the layer cost should be computed on a discretized sample
+    :type discrete_cost: bool, default False
     """
     def __init__(self,
                  conv: nn.Conv2d,
-                 out_height: int,
-                 out_width: int,
                  out_features_masker: PITFeaturesMasker,
                  binarization_threshold: float = 0.5,
+                 discrete_cost: bool = False
                  ):
         super(PITConv2d, self).__init__(
             conv.in_channels,
@@ -68,15 +65,12 @@ class PITConv2d(nn.Conv2d, PITModule):
                 cast(torch.nn.parameter.Parameter, self.bias).copy_(conv.bias)
             else:
                 self.bias = None
-        self.out_height = out_height
-        self.out_width = out_width
         self.following_bn_args: Optional[Dict[str, Any]] = None
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
         self.out_features_masker = out_features_masker
-        self._binarization_threshold = binarization_threshold
-        self.register_buffer('out_features_eff', torch.tensor(self.out_channels,
-                             dtype=torch.float32))
+        self.binarization_threshold = binarization_threshold
+        self.discrete_cost = discrete_cost
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the NAS-able layer.
@@ -89,17 +83,9 @@ class PITConv2d(nn.Conv2d, PITModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        theta_alpha = self.out_features_masker.theta
-        bin_theta_alpha = PITBinarizer.apply(theta_alpha, self._binarization_threshold)
-        pruned_weight = torch.mul(self.weight, bin_theta_alpha.view(-1, 1, 1, 1))
-
-        # conv operation
-        y = self._conv_forward(input, pruned_weight, self.bias)
-
-        # save info for regularization
-        self.out_features_eff = torch.sum(theta_alpha)
-
-        return y
+        cout_mask = self._features_mask(discrete=True)
+        pruned_weight = torch.mul(self.weight, cout_mask.view(-1, 1, 1, 1))
+        return self._conv_forward(input, pruned_weight, self.bias)
 
     @staticmethod
     def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
@@ -122,8 +108,6 @@ class PITConv2d(nn.Conv2d, PITModule):
         # note: kernel size and dilation are not optimized for conv2d
         new_submodule = PITConv2d(
             submodule,
-            out_height=n.meta['tensor_meta'].shape[2],
-            out_width=n.meta['tensor_meta'].shape[3],
             out_features_masker=fm,
         )
         mod.add_submodule(str(n.target), new_submodule)
@@ -236,6 +220,10 @@ class PITConv2d(nn.Conv2d, PITModule):
             return int(torch.sum(bin_alpha))
 
     @property
+    def out_features_eff(self) -> torch.Tensor:
+        return torch.sum(self._features_mask(self.discrete_cost))
+
+    @property
     def in_features_opt(self) -> int:
         """Get the number of input features found during the search
 
@@ -255,8 +243,7 @@ class PITConv2d(nn.Conv2d, PITModule):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            theta_alpha = self.out_features_masker.theta
-            return PITBinarizer.apply(theta_alpha, self._binarization_threshold)
+            return self._features_mask(discrete=True)
 
     def get_modified_vars(self) -> Dict[str, Any]:
         """Method that returns the modified vars(self) dictionary for the instance, used for
@@ -269,6 +256,12 @@ class PITConv2d(nn.Conv2d, PITModule):
         v['in_channels'] = self.input_features_calculator.features
         v['out_channels'] = self.out_features_eff
         return v
+
+    def _features_mask(self, discrete: bool) -> torch.Tensor:
+        theta_alpha = self.out_features_masker.theta
+        if discrete:
+            theta_alpha = PITBinarizer.apply(theta_alpha, self.binarization_threshold)
+        return cast(torch.Tensor, theta_alpha)
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:

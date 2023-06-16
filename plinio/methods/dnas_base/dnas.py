@@ -67,8 +67,7 @@ class DNAS(nn.Module):
     @cost_specification.setter
     def cost_specification(self, _: Union[CostSpec, List[CostSpec]]):
         raise NotImplementedError(
-                "Currently changing the list of cost specifications " +
-                "after model conversion is not supported")
+                "Cannot set the cost specification(s) on the base DNAS class")
 
     @property
     @abstractmethod

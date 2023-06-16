@@ -76,8 +76,8 @@ class TestPITSearch(unittest.TestCase):
         # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
         exp_size_conv_01 = 3 * 10 * 3
-        exp_size_conv_2 = (10 * 20 * 5)
-        exp_size_fc = (140 * 2)
+        exp_size_conv_2 = 10 * 20 * 5
+        exp_size_fc = 140 * 2
         exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
         self.assertEqual(pit_net.cost, exp_size_net, "Wrong net size ")
 
@@ -90,106 +90,210 @@ class TestPITSearch(unittest.TestCase):
         exp_macs_net = exp_macs_net + exp_size_fc
         self.assertEqual(pit_net.cost, exp_macs_net, "Wrong net MACs")
 
-    def test_regularization_loss_binarized_1D(self):
-        """Test the binarized regularization loss computation on a model with 1D
-        convolutions with random masks."""
-        # we use ToyAdd to make sure that mask sharing does not create errors on regloss
-        # computation
+    def test_regularization_loss_discrete_continuous_1d(self):
+        """Test the regularization loss computation on a model with 1D convolutions with random
+        masks, for both continuous and discrete cost estimates."""
         net = ToyAdd()
 
+        # Check the number of params and ops for the whole net
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, cost=ops)
-        # Check the number of weights for a single conv layer
-        # conv1 has Cin=3, Cout=10, K=3
-        exp_size_conv1 = 3 * 10 * 3
-        conv1 = cast(PITConv1d, pit_net.seed.conv1)
-        self.assertEqual(conv1.get_size_binarized(), exp_size_conv1, "Wrong layer size")
-        # Now lets suppose to mask half of the output channels and reducing K to 2
-        exp_size_conv1_masked = 3 * 6 * 2  # N.B., 6 'cause last ch is always kept alive
-        conv1.out_features_masker.alpha = nn.Parameter(
-            torch.Tensor([1, 0, 1, 0, 1, 0, 1, 0, 1, 0]))
-        conv1.timestep_masker.beta = nn.Parameter(
-            torch.Tensor([0, 1, 1]))
-        self.assertEqual(conv1.get_size_binarized(), exp_size_conv1_masked, "Wrong layer size")
-        # Check the number of MACs for a single conv layer
-        # all convs have "same" padding
-        exp_macs_conv1_masked = exp_size_conv1_masked * input_shape[1]
-        self.assertEqual(conv1.get_macs_binarized(), exp_macs_conv1_masked, "Wrong layer MACs")
-
-        # Check the number of weights for the whole net
-        # conv0 is identical to conv1 concerning channels (due to shared_masker)
-        # but conv0 kernel is 3 while conv1 kernel is 2
-        # conv2 will have Cin=6, Cout=20, K=5
+        pit_net = PIT(net, input_shape=input_shape, cost=params, discrete_cost=True)
+        # conv0 and conv1 have Cin=3, Cout=10, K=3
+        # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
-        exp_size_conv0 = 3 * 6 * 3
-        exp_size_conv2 = 6 * 20 * 5
+        exp_size_conv_01 = 3 * 10 * 3
+        exp_size_conv_2 = 10 * 20 * 5
         exp_size_fc = 140 * 2
-        exp_size_net = exp_size_conv0 + exp_size_conv1_masked + exp_size_conv2 + exp_size_fc
-        self.assertEqual(pit_net.get_size_binarized(), exp_size_net, "Wrong net size")
-        # Check the number of MACs for the whole net
-        # conv2 has half the output length due to pooling
-        exp_macs_conv0 = exp_size_conv0 * input_shape[1]
-        exp_macs_net = exp_macs_conv0 + exp_macs_conv1_masked + \
-            (exp_size_conv2 * (input_shape[1] // 2))
-        # for FC, macs and size are equal
-        exp_macs_net = exp_macs_net + exp_size_fc
-        self.assertEqual(pit_net.get_macs_binarized(), exp_macs_net, "Wrong net MACs")
+        exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
+        # for the OPs, conv2 has half the output length due to pooling
+        exp_ops_conv_01 = exp_size_conv_01 * input_shape[1]
+        exp_ops_conv_2 = exp_size_conv_2 * (input_shape[1] // 2)
+        exp_ops_net = 2 * exp_ops_conv_01 + exp_ops_conv_2 + exp_size_fc
 
-        # Now lets force a dilation=2 in conv2, this means that the actual kernel
+        self.assertEqual(pit_net.cost, exp_size_net, "Wrong initial net size")
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_net, "Wrong initial net ops")
+
+        # Now let us some of the output channels and reduce K to 2
+        # We set continuous mask values, which should however be binarized again, since we are
+        # using discrete cost evaluation
+        conv1 = cast(PITConv1d, pit_net.seed.conv1)
+        alpha_mask = torch.Tensor([0.7, 0.2, 0.6, 0.4, 0.9, 0.1, 0.3, 0.3, 0.95, 1.0])
+        beta_mask = torch.Tensor([0.2, 0.6, 0.7])
+        conv1.out_features_masker.alpha = nn.Parameter(alpha_mask)
+        conv1.timestep_masker.beta = nn.Parameter(beta_mask)
+        # the expected size with discrete sampling corresponds to having a number of channels
+        # equal to the alpha_mask values > 0.5 (5, note that we kept the last channel, always
+        # kept alive at 1.0), and a kernel size equal to the number of beta_mask values > 0.5 (2)
+        exp_size_conv_1_dsc = 3 * 5 * 2
+        # Moreover, since conv1 and conv0 share the channel mask, also the size of conv0 is
+        # expected to change (only the channels)
+        exp_size_conv_0_dsc = 3 * 5 * 3
+        # lastly, conv_2 also changes because of the different number of input channels
+        exp_size_conv_2_dsc = 5 * 20 * 5
+        # So this is the new expected size
+        exp_size_dsc = exp_size_conv_1_dsc + exp_size_conv_0_dsc + exp_size_conv_2_dsc + exp_size_fc
+        # Update the OPs too
+        exp_ops_conv_0_dsc = exp_size_conv_0_dsc * input_shape[1]
+        exp_ops_conv_1_dsc = exp_size_conv_1_dsc * input_shape[1]
+        exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2)
+        exp_ops_dsc = exp_ops_conv_1_dsc + exp_ops_conv_0_dsc + exp_ops_conv_2_dsc + exp_size_fc
+
+        pit_net.cost_specification = params
+        self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
+
+        # with a continuous cost estimate, the cost will be different and depend on the mask values
+        exp_size_conv_0_cnt = 3 * torch.sum(alpha_mask) * 3
+        exp_size_conv_1_cnt = 3 * torch.sum(alpha_mask) * \
+            torch.sum(torch.mul(
+                torch.mul(conv1.timestep_masker.theta, conv1._beta_norm),
+                torch.mul(conv1.dilation_masker.theta, conv1._gamma_norm)
+            ))
+        exp_size_conv_2_cnt = torch.sum(alpha_mask) * 20 * 5
+        exp_ops_conv_0_cnt = exp_size_conv_0_cnt * input_shape[1]
+        exp_ops_conv_1_cnt = exp_size_conv_1_cnt * input_shape[1]
+        exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2)
+        exp_size_cnt = exp_size_conv_1_cnt + exp_size_conv_0_cnt + exp_size_conv_2_cnt + exp_size_fc
+        exp_ops_cnt = exp_ops_conv_1_cnt + exp_ops_conv_0_cnt + exp_ops_conv_2_cnt + exp_size_fc
+
+        # switch to continuous evaluation
+        pit_net.discrete_cost = False
+        pit_net.cost_specification = params
+        self.assertEqual(pit_net.cost, exp_size_cnt, "Wrong continuous net size")
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_cnt, "Wrong continuous net ops")
+
+        # Lastly, force a dilation=2 in conv2, this means that the actual kernel
         # will become K=3 to maintain same receptive-field
-        exp_size_conv2_masked = 6 * 20 * 3
+        gamma_mask = torch.Tensor([0.1, 0.9, 0.85])
         conv2 = cast(PITConv1d, pit_net.seed.conv2)
-        conv2.dilation_masker.gamma = nn.Parameter(
-            torch.Tensor([0, 1, 1]))
-        exp_size_net = exp_size_conv0 + exp_size_conv1_masked + \
-            exp_size_conv2_masked + exp_size_fc
-        self.assertEqual(pit_net.get_size_binarized(), exp_size_net, "Wrong net size")
-        # Check the number of MACs for the whole net
-        # conv2 has half the output length due to pooling
-        exp_macs_net = exp_macs_conv0 + exp_macs_conv1_masked + \
-            (exp_size_conv2_masked * (input_shape[1] // 2))
-        # for FC, macs and size are equal
-        exp_macs_net = exp_macs_net + exp_size_fc
-        self.assertEqual(pit_net.get_macs_binarized(), exp_macs_net, "Wrong net MACs")
+        conv2.dilation_masker.gamma = nn.Parameter(gamma_mask)
+        exp_size_conv_2_dsc = 5 * 20 * 3
+        exp_size_dsc = exp_size_conv_1_dsc + exp_size_conv_0_dsc + exp_size_conv_2_dsc + exp_size_fc
+        exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2)
+        exp_ops_dsc = exp_ops_conv_1_dsc + exp_ops_conv_0_dsc + exp_ops_conv_2_dsc + exp_size_fc
 
-    def test_regularization_loss_binarized_2D(self):
-        """Test the binarized regularization loss computation on a model with 2D
-        convolutions with random masks."""
-        # we use ToyAdd_2D to make sure that mask sharing does not create errors on regloss
-        # computation
+        # switch back to discrete evaluation, and this time we do ops before params, just in case
+        pit_net.discrete_cost = True
+        self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
+        pit_net.cost_specification = params
+        self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
+
+        # lastly, try these conditions in the continuous case
+        exp_size_conv_2_cnt = torch.sum(alpha_mask) * 20 * \
+            torch.sum(torch.mul(
+                torch.mul(conv2.timestep_masker.theta, conv2._beta_norm),
+                torch.mul(conv2.dilation_masker.theta, conv2._gamma_norm)
+            ))
+        exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2)
+        exp_size_cnt = exp_size_conv_1_cnt + exp_size_conv_0_cnt + exp_size_conv_2_cnt + exp_size_fc
+        exp_ops_cnt = exp_ops_conv_1_cnt + exp_ops_conv_0_cnt + exp_ops_conv_2_cnt + exp_size_fc
+
+        pit_net.discrete_cost = False
+        self.assertEqual(pit_net.cost, exp_size_cnt, "Wrong continuous net size")
+        pit_net.cost_specification = ops
+        # voluntary repetition
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_cnt, "Wrong continuous net ops")
+
+    def test_regularization_loss_discrete_continuous_2d(self):
+        """Test the regularization loss computation on a model with 1D convolutions with random
+        masks, for both continuous and discrete cost estimates."""
         net = ToyAdd_2D()
 
+        # Check the number of params and ops for the whole net
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, cost=ops)
-        # Check the number of weights for a single conv layer
-        # conv1 has Cin=3, Cout=10, K=(3, 3)
-        exp_size_conv1 = 3 * 10 * 3 * 3
-        conv1 = cast(PITConv2d, pit_net.seed.conv1)
-        self.assertEqual(conv1.get_size_binarized(), exp_size_conv1, "Wrong layer size")
-        # Now lets suppose to mask half of the output channels
-        exp_size_conv1_masked = 3 * 6 * 3 * 3  # N.B., 6 'cause last ch is always kept alive
-        conv1.out_features_masker.alpha = nn.Parameter(
-            torch.Tensor([1, 0, 1, 0, 1, 0, 1, 0, 1, 0]))
-        self.assertEqual(conv1.get_size_binarized(), exp_size_conv1_masked, "Wrong layer size")
-        # Check the number of MACs for a single conv layer
-        # all convs have "same" padding
-        exp_macs_conv1_masked = exp_size_conv1_masked * input_shape[1] * input_shape[2]
-        self.assertEqual(conv1.get_macs_binarized(), exp_macs_conv1_masked, "Wrong layer MACs")
-
-        # Check the number of weights for the whole net
-        # conv0 is identical to conv1, and conv2 will have Cin=6, Cout=20, K=(5, 5)
+        pit_net = PIT(net, input_shape=input_shape, cost=params, discrete_cost=True)
+        # conv0 and conv1 have Cin=3, Cout=10, K=(3,3)
+        # conv2 has Cin=10, Cout=20, K=(5,5)
         # the final FC has 980 input features and 2 output features
-        exp_size_conv2 = (6 * 20 * 5 * 5)
-        exp_size_fc = (980 * 2)
-        exp_size_net = 2 * exp_size_conv1_masked + exp_size_conv2 + exp_size_fc
-        self.assertEqual(pit_net.get_size_binarized(), exp_size_net, "Wrong net size")
-        # Check the number of MACs for the whole net
-        # conv2 has half the output length due to pooling
-        exp_macs_net = 2 * exp_macs_conv1_masked + \
-            (exp_size_conv2 * (input_shape[1] // 2) * (input_shape[2] // 2))
-        # for FC, macs and size are equal
-        exp_macs_net = exp_macs_net + exp_size_fc
-        self.assertEqual(pit_net.get_macs_binarized(), exp_macs_net, "Wrong net MACs")
+        exp_size_conv_01 = 3 * 10 * 3 * 3
+        exp_size_conv_2 = 10 * 20 * 5 * 5
+        exp_size_fc = 980 * 2
+        exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
+        # for the OPs, conv2 has half the feature size due to pooling
+        exp_ops_conv_01 = exp_size_conv_01 * input_shape[1] * input_shape[2]
+        exp_ops_conv_2 = exp_size_conv_2 * (input_shape[1] // 2) * (input_shape[1] // 2)
+        exp_ops_net = 2 * exp_ops_conv_01 + exp_ops_conv_2 + exp_size_fc
+
+        self.assertEqual(pit_net.cost, exp_size_net, "Wrong initial net size")
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_net, "Wrong initial net ops")
+
+        input_shape = net.input_shape
+        # Now let us some of the output channels
+        # We set continuous mask values, which should however be binarized again, since we are
+        # using discrete cost evaluation
+        conv1 = cast(PITConv2d, pit_net.seed.conv1)
+        alpha_mask = torch.Tensor([0.7, 0.2, 0.6, 0.4, 0.9, 0.1, 0.3, 0.3, 0.95, 1.0])
+        conv1.out_features_masker.alpha = nn.Parameter(alpha_mask)
+        # the expected size with discrete sampling corresponds to having a number of channels
+        # equal to the alpha_mask values > 0.5 (5, note that we kept the last channel, always
+        # kept alive at 1.0). This affects both conv1 and conv0 due to their shared mask
+        exp_size_conv_01_dsc = 3 * 5 * 3 * 3
+        # lastly, conv_2 also changes because of the different number of input channels
+        exp_size_conv_2_dsc = 5 * 20 * 5 * 5
+        # So this is the new expected size
+        exp_size_dsc = 2 * exp_size_conv_01_dsc + exp_size_conv_2_dsc + exp_size_fc
+        # Update the OPs too
+        exp_ops_conv_01_dsc = exp_size_conv_01_dsc * input_shape[1] * input_shape[2]
+        exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2) * (input_shape[1] // 2)
+        exp_ops_dsc = 2 * exp_ops_conv_01_dsc + exp_ops_conv_2_dsc + exp_size_fc
+
+        pit_net.cost_specification = params
+        self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
+
+        # with a continuous cost estimate, the cost will be different and depend on the mask values
+        exp_size_conv_01_cnt = 3 * torch.sum(alpha_mask) * 3 * 3
+        exp_size_conv_2_cnt = torch.sum(alpha_mask) * 20 * 5 * 5
+        exp_ops_conv_01_cnt = exp_size_conv_01_cnt * input_shape[1] * input_shape[1]
+        exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2) * (input_shape[1] // 2)
+        exp_size_cnt = 2 * exp_size_conv_01_cnt + exp_size_conv_2_cnt + exp_size_fc
+        exp_ops_cnt = 2 * exp_ops_conv_01_cnt + exp_ops_conv_2_cnt + exp_size_fc
+
+        # switch to continuous evaluation
+        pit_net.discrete_cost = False
+        pit_net.cost_specification = params
+        self.assertEqual(pit_net.cost, exp_size_cnt, "Wrong continuous net size")
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_cnt, "Wrong continuous net ops")
+
+        # Lastly, mask some channels also in conv2, which also affects the FC layer input
+        # will become K=3 to maintain same receptive-field
+        alpha_mask2 = torch.Tensor([0.1, 0.25, 0.6, 0.8] + [1] * 16)
+        conv2 = cast(PITConv2d, pit_net.seed.conv2)
+        conv2.out_features_masker.alpha = nn.Parameter(alpha_mask2)
+        exp_size_conv_2_dsc = 5 * 18 * 5 * 5
+        # each feature map after conv2 is 7*7, flattened to 49 features
+        exp_size_fc_dsc = 882 * 2
+        exp_size_dsc = 2 * exp_size_conv_01_dsc + exp_size_conv_2_dsc + exp_size_fc_dsc
+        exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2) * (input_shape[1] // 2)
+        exp_ops_dsc = 2 * exp_ops_conv_01_dsc + exp_ops_conv_2_dsc + exp_size_fc_dsc
+
+        # switch back to discrete evaluation, and this time we do ops before params, just in case
+        pit_net.discrete_cost = True
+        self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
+        pit_net.cost_specification = params
+        self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
+
+        # lastly, try these conditions in the continuous case
+        exp_size_conv_2_cnt = torch.sum(alpha_mask) * torch.sum(alpha_mask2) * 5 * 5
+        # each feature map after conv2 is 7*7, flattened to 49 features
+        exp_size_fc_cnt = 49 * torch.sum(alpha_mask2) * 2
+        exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2) * (input_shape[1] // 2)
+        exp_size_cnt = 2 * exp_size_conv_01_cnt + exp_size_conv_2_cnt + exp_size_fc_cnt
+        exp_ops_cnt = 2 * exp_ops_conv_01_cnt + exp_ops_conv_2_cnt + exp_size_fc_cnt
+
+        pit_net.discrete_cost = False
+        self.assertEqual(pit_net.cost, exp_size_cnt, "Wrong continuous net size")
+        pit_net.cost_specification = ops
+        # voluntary repetition
+        pit_net.cost_specification = ops
+        self.assertEqual(pit_net.cost, exp_ops_cnt, "Wrong continuous net ops")
 
     def test_regularization_loss_descent(self):
         """Test that the regularization loss decreases after a few forward and backward steps,

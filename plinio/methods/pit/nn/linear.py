@@ -37,11 +37,14 @@ class PITLinear(nn.Linear, PITModule):
     :raises ValueError: for unsupported regularizers
     :param binarization_threshold: the binarization threshold for PIT masks, defaults to 0.5
     :type binarization_threshold: float, optional
+    :param discrete_cost: True if the layer cost should be computed on a discretized sample
+    :type discrete_cost: bool, default False
     """
     def __init__(self,
                  linear: nn.Linear,
                  out_features_masker: PITFeaturesMasker,
                  binarization_threshold: float = 0.5,
+                 discrete_cost: bool = False,
                  ):
         super(PITLinear, self).__init__(
             linear.in_features,
@@ -53,13 +56,12 @@ class PITLinear(nn.Linear, PITModule):
                 cast(torch.nn.parameter.Parameter, self.bias).copy_(linear.bias)
             else:
                 self.bias = None
+        self.following_bn_args: Optional[Dict[str, Any]] = None
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
         self.out_features_masker = out_features_masker
-        self._binarization_threshold = binarization_threshold
-        self.following_bn_args: Optional[Dict[str, Any]] = None
-        self.register_buffer('out_features_eff', torch.tensor(self.out_features,
-                             dtype=torch.float32))
+        self.binarization_threshold = binarization_threshold
+        self.discrete_cost = discrete_cost
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the NAS-able layer.
@@ -72,19 +74,9 @@ class PITLinear(nn.Linear, PITModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        theta_alpha = self.out_features_masker.theta
-        bin_alpha = PITBinarizer.apply(theta_alpha, self._binarization_threshold)
-        # TODO: check that the result is correct after removing the two transposes present in
-        # Matteo's original version
-        pruned_weight = torch.mul(self.weight, bin_alpha.unsqueeze(1))
-
-        # linear operation
-        y = F.linear(input, pruned_weight, self.bias)
-
-        # save info for regularization
-        self.out_features_eff = torch.sum(theta_alpha)
-
-        return y
+        cout_mask = self._features_mask(discrete=True)
+        pruned_weight = torch.mul(self.weight, cout_mask.unsqueeze(1))
+        return F.linear(input, pruned_weight, self.bias)
 
     @staticmethod
     def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
@@ -200,6 +192,10 @@ class PITLinear(nn.Linear, PITModule):
             return int(torch.sum(bin_alpha))
 
     @property
+    def out_features_eff(self) -> torch.Tensor:
+        return torch.sum(self._features_mask(self.discrete_cost))
+
+    @property
     def in_features_opt(self) -> int:
         """Get the number of input features found during the search
 
@@ -219,8 +215,7 @@ class PITLinear(nn.Linear, PITModule):
         :rtype: torch.Tensor
         """
         with torch.no_grad():
-            theta_alpha = self.out_features_masker.theta
-            return PITBinarizer.apply(theta_alpha, self._binarization_threshold)
+            return self._features_mask(discrete=True)
 
     def get_modified_vars(self) -> Dict[str, Any]:
         """Method that returns the modified vars(self) dictionary for the instance, used for
@@ -233,6 +228,12 @@ class PITLinear(nn.Linear, PITModule):
         v['in_features'] = self.input_features_calculator.features
         v['out_features'] = self.out_features_eff
         return v
+
+    def _features_mask(self, discrete: bool) -> torch.Tensor:
+        theta_alpha = self.out_features_masker.theta
+        if discrete:
+            theta_alpha = PITBinarizer.apply(theta_alpha, self.binarization_threshold)
+        return cast(torch.Tensor, theta_alpha)
 
     @property
     def input_features_calculator(self) -> FeaturesCalculator:

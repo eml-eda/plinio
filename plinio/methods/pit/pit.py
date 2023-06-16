@@ -46,9 +46,9 @@ class PIT(DNAS):
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
-    :param discrete_sampling: True is the cost model should be applied to a discrete sample,
+    :param discrete_cost: True is the cost model should be computed on a discrete sample,
     rather than a continuous relaxation, defaults to False
-    :type discrete_sampling: bool, optional
+    :type discrete_cost: bool, optional
     :param full_cost: True is the cost model should be applied to the entire network, rather
     than just to the NAS-able layers, defaults to False
     :type discrete_sampling: bool, optional
@@ -123,6 +123,15 @@ class PIT(DNAS):
             return self._evaluate_ith_cost_metric(0, self._cost_specification[0])
         else:
             return self._evaluate_ith_cost_metric(0, self._cost_specification)
+
+    @property
+    def cost_specification(self) -> Union[CostSpec, List[CostSpec]]:
+        return self._cost_specification
+
+    @cost_specification.setter
+    def cost_specification(self, cs: Union[CostSpec, List[CostSpec]]):
+        self._cost_specification = cs
+        self.cost_fn_maps = self._create_cost_fn_maps()
 
     # use method instead of property in case of multiple costs
     def get_cost(self, i: int = 0) -> torch.Tensor:

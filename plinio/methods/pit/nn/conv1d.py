@@ -44,6 +44,8 @@ class PITConv1d(nn.Conv1d, PITModule):
     :raises ValueError: for unsupported regularizers
     :param binarization_threshold: the binarization threshold for PIT masks, defaults to 0.5
     :type binarization_threshold: float, optional
+    :param discrete_cost: True if the layer cost should be computed on a discretized sample
+    :type discrete_cost: bool, default False
     """
     def __init__(self,
                  conv: nn.Conv1d,
@@ -78,8 +80,8 @@ class PITConv1d(nn.Conv1d, PITModule):
         self.out_features_masker = out_features_masker
         self.timestep_masker = timestep_masker
         self.dilation_masker = dilation_masker
-        self.discrete_cost = discrete_cost
         self.binarization_threshold = binarization_threshold
+        self.discrete_cost = discrete_cost
         self.following_bn_args: Optional[Dict[str, Any]] = None
         self._beta_norm, self._gamma_norm = self._generate_norm_constants()
 
@@ -272,6 +274,10 @@ class PITConv1d(nn.Conv1d, PITModule):
         return torch.sum(self._features_mask(self.discrete_cost))
 
     @property
+    def k_eff(self) -> torch.Tensor:
+        return torch.sum(self._time_mask(self.discrete_cost))
+
+    @property
     def in_features_opt(self) -> int:
         """Get the number of input features found during the search
 
@@ -341,8 +347,8 @@ class PITConv1d(nn.Conv1d, PITModule):
         """
         v = dict(vars(self))
         v['in_channels'] = self.input_features_calculator.features
-        v['out_channels'] = torch.sum(self._features_mask(self.discrete_cost))
-        v['kernel_size'] = torch.sum(self._time_mask(self.discrete_cost))
+        v['out_channels'] = self.out_features_eff
+        v['kernel_size'] = self.k_eff
         # currently we don't know how to compute the "current dilation" in a differentiable way
         # during a search, so we set this to None to force cost models to fail if they use this
         # parameter

@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Dict, Any, Optional, cast
+from typing import Dict, Any, cast
 import torch
 import torch.nn as nn
 import torch.fx as fx

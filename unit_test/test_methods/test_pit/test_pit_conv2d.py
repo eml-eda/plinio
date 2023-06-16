@@ -39,8 +39,6 @@ class TestPITConv2d(unittest.TestCase):
         conv_ut = Conv2d(ch_in, ch_out, (k, k), padding='same', bias=False)
         pitconv_ut = PITConv2d(
             conv_ut,
-            out_height=out_height,
-            out_width=out_width,
             out_features_masker=PITFeaturesMasker(ch_out)
         )
         # Returns a tensor filled with random integers between 0 (inclusive) and 2 (exclusive)
