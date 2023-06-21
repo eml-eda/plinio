@@ -149,6 +149,17 @@ class MixPrec(DNAS):
         # update the temperature and softmax parameters at initialization
         self.update_softmax_temperature(self.initial_temperature)
         self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
+        # adjust the weights to compensate the eventual zero bit precision. The initialized
+        # weight, copied from the warmup model, is increased so that at the first forward
+        # pass its quantized value is more similar to the actual float weight value.
+        with torch.no_grad():
+            for layer in self._target_layers:
+                theta_alpha_rescaling = torch.zeros(1)
+                for i, precision in enumerate(layer.mixprec_w_quantizer.precisions):
+                    if precision != 0:
+                        theta_alpha_rescaling += layer.mixprec_w_quantizer.theta_alpha[i][0]
+
+                layer.weight.data = layer.weight.data / theta_alpha_rescaling
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model.
@@ -202,7 +213,9 @@ class MixPrec(DNAS):
         Useful for fine-tuning the model without changing its architecture
         """
         for layer in self._target_layers:
-            for quantizer in [layer.mixprec_w_quantizer, layer.mixprec_a_quantizer]:
+            for quantizer in [layer.mixprec_w_quantizer,
+                              layer.mixprec_a_quantizer,
+                              layer.input_quantizer]:
                 if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
                     quantizer.alpha_prec.requires_grad = False
 
