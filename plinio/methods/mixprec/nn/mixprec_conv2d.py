@@ -529,7 +529,7 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         cin = self.input_features_calculator.features
         cost = cin * cout * self.kernel_size[0] * self.kernel_size[1]
         if self.groups > 1:
-            cost = cost / cout
+            cost = cost / (cout + 1e-6)
         macs = cost * self.out_height * self.out_width
         return macs
 
