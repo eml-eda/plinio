@@ -65,6 +65,7 @@ class MixPrec_Qtz_Channel(nn.Module):
             raise ValueError("Precisions cannot be repeated")
         self.precisions = precisions
         self.cout = cout
+        self.register_buffer('out_features_eff', torch.tensor(self.cout, dtype=torch.float32))
         self.quantizer = quantizer
         self.quantizer_kwargs = quantizer_kwargs
         # NAS parameters
@@ -83,16 +84,16 @@ class MixPrec_Qtz_Channel(nn.Module):
         self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
         self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
         with torch.no_grad():
-            self.theta_alpha.data = self.alpha_prec
+            self.zero_index = None
+            # initalize the alpha coefficients
+            max_precision = max(precisions)
+            for i, p in enumerate(self.precisions):
+                if p == 0:
+                    self.zero_index = i
+                self.alpha_prec.data[i, :].fill_(float(p) / max_precision)
+            # once the alpha coefficients are initialized, compute the thetas according to the
+            # sampling options
             self.sample_alpha()
-        self.register_buffer('out_features_eff', torch.tensor(self.cout, dtype=torch.float32))
-        self.zero_index = None
-
-        max_precision = max(precisions)
-        for i, p in enumerate(self.precisions):
-            if p == 0:
-                self.zero_index = i
-            self.alpha_prec.data[i, :].fill_(float(p) / max_precision)
 
     @property
     def features_mask(self) -> torch.Tensor:
@@ -251,11 +252,10 @@ class MixPrec_Qtz_Layer(nn.Module):
         self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
         self.register_buffer('theta_alpha', torch.tensor(len(precisions), dtype=torch.float32))
         with torch.no_grad():
-            self.theta_alpha.data = self.alpha_prec
-            self.sample_alpha()
             max_precision = max(precisions)
             for i, p in enumerate(self.precisions):
                 self.alpha_prec.data[i].fill_(float(p) / max_precision)
+            self.sample_alpha()
 
     def sample_alpha_sm(self):
         """
