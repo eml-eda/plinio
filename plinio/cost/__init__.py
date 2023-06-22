@@ -16,8 +16,8 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .cost_spec import CostSpec, PatternSpec
+from .cost_spec import CostFn, CostSpec, PatternSpec
 from .params import params
 from .ops import ops
 
-__all__ = ['CostSpec', 'PatternSpec', 'params', 'ops']
+__all__ = ['CostFn', 'CostSpec', 'PatternSpec', 'params', 'ops']

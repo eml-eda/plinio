@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Any, Iterable,  Iterator, List, Tuple, Type, Union, cast
+from typing import Any, Dict, Iterable,  Iterator, List, Tuple, Type, Union
 from plinio.cost import CostSpec
 import torch
 import torch.nn as nn
@@ -42,7 +42,7 @@ class DNAS(nn.Module):
     @abstractmethod
     def __init__(
             self,
-            cost: Union[CostSpec, List[CostSpec]],
+            cost: Union[CostSpec, Dict[str, CostSpec]],
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = ()):
         super(DNAS, self).__init__()
@@ -61,7 +61,7 @@ class DNAS(nn.Module):
         raise NotImplementedError
 
     @property
-    def cost_specification(self) -> Union[CostSpec, List[CostSpec]]:
+    def cost_specification(self) -> Union[CostSpec, Dict[str, CostSpec]]:
         return self._cost_specification
 
     @cost_specification.setter
@@ -72,7 +72,7 @@ class DNAS(nn.Module):
     @property
     @abstractmethod
     def cost(self) -> torch.Tensor:
-        """Returns the value of the first cost metric
+        """Returns the value of the default cost metric
 
         :raises NotImplementedError: on the base DNAS class
         :return: a scalar tensor with the cost value
@@ -81,8 +81,8 @@ class DNAS(nn.Module):
         raise NotImplementedError
 
     # use method instead of property in case of multiple costs
-    def get_cost(self, i: int = 0) -> torch.Tensor:
-        """Returns the value of the model i-th cost metric
+    def get_cost(self, name: str) -> torch.Tensor:
+        """Returns the value of the model cost metric named "name"
 
         :raises NotImplementedError: on the base DNAS class
         :return: a scalar tensor with the cost value

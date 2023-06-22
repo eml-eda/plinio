@@ -22,6 +22,9 @@ import torch
 from .pattern import Constraint, Pattern, PatternSpec
 
 
+CostFn = Callable[[PatternSpec], torch.Tensor]
+
+
 def cost_spec_zero_fn(_):
     return torch.tensor([0.0])
 
@@ -59,7 +62,7 @@ class CostSpec(UserDict):
 
     def __setitem__(self,
                     key: Tuple[Pattern, Constraint],
-                    cost_fn: Callable[[PatternSpec], torch.Tensor]):
+                    cost_fn: CostFn):
         """Associates a cost function to a pattern + constraint pair"""
         if key[0] not in self.data:
             self.data[key[0]] = []

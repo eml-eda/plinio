@@ -71,7 +71,7 @@ class TestPITSearch(unittest.TestCase):
 
         # Check the number of params for the whole net
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, cost=params)
+        pit_net = PIT(net, input_shape=input_shape, cost={'params': params, 'ops': ops})
         # conv0 and conv1 have Cin=3, Cout=10, K=3
         # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
@@ -79,16 +79,15 @@ class TestPITSearch(unittest.TestCase):
         exp_size_conv_2 = 10 * 20 * 5
         exp_size_fc = 140 * 2
         exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
-        self.assertEqual(pit_net.cost, exp_size_net, "Wrong net size ")
+        self.assertEqual(pit_net.get_cost('params'), exp_size_net, "Wrong net size ")
 
         # Check the number of MACs for the whole net
-        pit_net = PIT(net, input_shape=input_shape, cost=ops)
         # conv2 has half the output length due to pooling
         exp_macs_net = 2 * (exp_size_conv_01 * input_shape[1]) + \
             (exp_size_conv_2 * (input_shape[1] // 2))
         # for FC, macs and size are equal
         exp_macs_net = exp_macs_net + exp_size_fc
-        self.assertEqual(pit_net.cost, exp_macs_net, "Wrong net MACs")
+        self.assertEqual(pit_net.get_cost('ops'), exp_macs_net, "Wrong net MACs")
 
     def test_regularization_loss_discrete_continuous_1d(self):
         """Test the regularization loss computation on a model with 1D convolutions with random
@@ -97,7 +96,8 @@ class TestPITSearch(unittest.TestCase):
 
         # Check the number of params and ops for the whole net
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, cost=params, discrete_cost=True)
+        pit_net = PIT(net, input_shape=input_shape,
+                      cost={'params': params, 'ops': ops}, discrete_cost=True)
         # conv0 and conv1 have Cin=3, Cout=10, K=3
         # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
@@ -110,9 +110,8 @@ class TestPITSearch(unittest.TestCase):
         exp_ops_conv_2 = exp_size_conv_2 * (input_shape[1] // 2)
         exp_ops_net = 2 * exp_ops_conv_01 + exp_ops_conv_2 + exp_size_fc
 
-        self.assertEqual(pit_net.cost, exp_size_net, "Wrong initial net size")
-        pit_net.cost_specification = ops
-        self.assertEqual(pit_net.cost, exp_ops_net, "Wrong initial net ops")
+        self.assertEqual(pit_net.get_cost('params'), exp_size_net, "Wrong initial net size")
+        self.assertEqual(pit_net.get_cost('ops'), exp_ops_net, "Wrong initial net ops")
 
         # Now let us some of the output channels and reduce K to 2
         # We set continuous mask values, which should however be binarized again, since we are
@@ -139,6 +138,7 @@ class TestPITSearch(unittest.TestCase):
         exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2)
         exp_ops_dsc = exp_ops_conv_1_dsc + exp_ops_conv_0_dsc + exp_ops_conv_2_dsc + exp_size_fc
 
+        # try changing the cost specification on the fly
         pit_net.cost_specification = params
         self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
         pit_net.cost_specification = ops
@@ -160,10 +160,9 @@ class TestPITSearch(unittest.TestCase):
 
         # switch to continuous evaluation
         pit_net.discrete_cost = False
-        pit_net.cost_specification = params
-        self.assertEqual(pit_net.cost, exp_size_cnt, "Wrong continuous net size")
-        pit_net.cost_specification = ops
-        self.assertEqual(pit_net.cost, exp_ops_cnt, "Wrong continuous net ops")
+        pit_net.cost_specification = {'params': params, 'ops': ops}
+        self.assertEqual(pit_net.get_cost('params'), exp_size_cnt, "Wrong continuous net size")
+        self.assertEqual(pit_net.get_cost('ops'), exp_ops_cnt, "Wrong continuous net ops")
 
         # Lastly, force a dilation=2 in conv2, this means that the actual kernel
         # will become K=3 to maintain same receptive-field
@@ -177,9 +176,8 @@ class TestPITSearch(unittest.TestCase):
 
         # switch back to discrete evaluation, and this time we do ops before params, just in case
         pit_net.discrete_cost = True
-        self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
-        pit_net.cost_specification = params
-        self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
+        self.assertEqual(pit_net.get_cost('ops'), exp_ops_dsc, "Wrong discrete net ops")
+        self.assertEqual(pit_net.get_cost('params'), exp_size_dsc, "Wrong discrete net size")
 
         # lastly, try these conditions in the continuous case
         exp_size_conv_2_cnt = torch.sum(alpha_mask) * 20 * \
@@ -192,7 +190,7 @@ class TestPITSearch(unittest.TestCase):
         exp_ops_cnt = exp_ops_conv_1_cnt + exp_ops_conv_0_cnt + exp_ops_conv_2_cnt + exp_size_fc
 
         pit_net.discrete_cost = False
-        self.assertEqual(pit_net.cost, exp_size_cnt, "Wrong continuous net size")
+        self.assertEqual(pit_net.get_cost('params'), exp_size_cnt, "Wrong continuous net size")
         pit_net.cost_specification = ops
         # voluntary repetition
         pit_net.cost_specification = ops
@@ -205,7 +203,8 @@ class TestPITSearch(unittest.TestCase):
 
         # Check the number of params and ops for the whole net
         input_shape = net.input_shape
-        pit_net = PIT(net, input_shape=input_shape, cost=params, discrete_cost=True)
+        pit_net = PIT(net, input_shape=input_shape,
+                      cost={'params': params, 'ops': ops}, discrete_cost=True)
         # conv0 and conv1 have Cin=3, Cout=10, K=(3,3)
         # conv2 has Cin=10, Cout=20, K=(5,5)
         # the final FC has 980 input features and 2 output features
@@ -218,9 +217,8 @@ class TestPITSearch(unittest.TestCase):
         exp_ops_conv_2 = exp_size_conv_2 * (input_shape[1] // 2) * (input_shape[1] // 2)
         exp_ops_net = 2 * exp_ops_conv_01 + exp_ops_conv_2 + exp_size_fc
 
-        self.assertEqual(pit_net.cost, exp_size_net, "Wrong initial net size")
-        pit_net.cost_specification = ops
-        self.assertEqual(pit_net.cost, exp_ops_net, "Wrong initial net ops")
+        self.assertEqual(pit_net.get_cost('params'), exp_size_net, "Wrong initial net size")
+        self.assertEqual(pit_net.get_cost('ops'), exp_ops_net, "Wrong initial net ops")
 
         input_shape = net.input_shape
         # Now let us some of the output channels
@@ -242,6 +240,7 @@ class TestPITSearch(unittest.TestCase):
         exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2) * (input_shape[1] // 2)
         exp_ops_dsc = 2 * exp_ops_conv_01_dsc + exp_ops_conv_2_dsc + exp_size_fc
 
+        # change cost specification on the fly
         pit_net.cost_specification = params
         self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
         pit_net.cost_specification = ops
@@ -277,8 +276,8 @@ class TestPITSearch(unittest.TestCase):
         # switch back to discrete evaluation, and this time we do ops before params, just in case
         pit_net.discrete_cost = True
         self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
-        pit_net.cost_specification = params
-        self.assertEqual(pit_net.cost, exp_size_dsc, "Wrong discrete net size")
+        pit_net.cost_specification = {'params': params, 'ops': ops}
+        self.assertEqual(pit_net.get_cost('params'), exp_size_dsc, "Wrong discrete net size")
 
         # lastly, try these conditions in the continuous case
         exp_size_conv_2_cnt = torch.sum(alpha_mask) * torch.sum(alpha_mask2) * 5 * 5
@@ -289,7 +288,7 @@ class TestPITSearch(unittest.TestCase):
         exp_ops_cnt = 2 * exp_ops_conv_01_cnt + exp_ops_conv_2_cnt + exp_size_fc_cnt
 
         pit_net.discrete_cost = False
-        self.assertEqual(pit_net.cost, exp_size_cnt, "Wrong continuous net size")
+        self.assertEqual(pit_net.get_cost('params'), exp_size_cnt, "Wrong continuous net size")
         pit_net.cost_specification = ops
         # voluntary repetition
         pit_net.cost_specification = ops
@@ -334,7 +333,7 @@ class TestPITSearch(unittest.TestCase):
         for _ in range(n_steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_cost(0)
+            loss = pit_net.get_cost()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -496,7 +495,7 @@ class TestPITSearch(unittest.TestCase):
         for i in range(steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
-            loss = pit_net.get_cost(0)
+            loss = pit_net.get_cost()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -555,7 +554,7 @@ class TestPITSearch(unittest.TestCase):
             target = torch.ones((batch_size,), dtype=torch.long)
             output = pit_net(input)
             task_loss = criterion(output, target)
-            nas_loss = lambda_param * pit_net.get_cost(0)
+            nas_loss = lambda_param * pit_net.get_cost()
             total_loss = task_loss + nas_loss
             optimizer.zero_grad()
             total_loss.backward()
@@ -581,7 +580,7 @@ class TestPITSearch(unittest.TestCase):
             target = torch.sum(input, dim=2).reshape((batch_size, -1))
             output = pit_net(input)
             task_loss = criterion(output, target)
-            total_loss = task_loss + lambda_param*pit_net.get_cost(0)
+            total_loss = task_loss + lambda_param*pit_net.cost
             optimizer.zero_grad()
             total_loss.backward()
             optimizer.step()
