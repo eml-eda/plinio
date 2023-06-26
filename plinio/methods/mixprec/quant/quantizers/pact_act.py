@@ -315,7 +315,7 @@ class PACT_Act_Signed_STE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, num_bits, clip_val_sup, clip_val_inf, dequantize):
         ctx.save_for_backward(input, clip_val_sup, clip_val_inf)
-        scale_factor = (2**num_bits - 1) / (clip_val_sup.data[0] - clip_val_inf.data[0])
+        scale_factor = (2**num_bits - 1) / (clip_val_sup.data[0] - clip_val_inf.data[0] + 1e-3)
         output = torch.clamp(input, clip_val_inf.data[0], clip_val_sup.data[0])
         output = torch.floor(scale_factor * output)
         if dequantize:
