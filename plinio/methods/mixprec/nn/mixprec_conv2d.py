@@ -387,7 +387,8 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         """
         with torch.no_grad():
             idx = int(torch.argmax(self.input_quantizer.alpha_prec))
-            return self.a_precisions[idx]
+            # return self.a_precisions[idx]
+            return self.input_quantizer.precisions[idx]
 
     @property
     def selected_out_a_precision(self) -> Union[int, str]:
