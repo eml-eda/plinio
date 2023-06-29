@@ -117,7 +117,8 @@ class MixPrec(DNAS):
             hard_softmax: bool = False,
             disable_sampling: bool = False,
             disable_shared_quantizers: bool = False,
-            qinfo_input_quantizer: Dict = DEFAULT_QINFO_INPUT_QUANTIZER):
+            qinfo_input_quantizer: Dict = DEFAULT_QINFO_INPUT_QUANTIZER,
+            input_activation_precisions: Tuple[int, ...] = None):
         super(MixPrec, self).__init__(regularizer, exclude_names, exclude_types)
         self._input_shape = input_shape
         self.seed, self._target_layers = convert(
@@ -132,7 +133,8 @@ class MixPrec(DNAS):
             input_quantization,
             exclude_names,
             exclude_types,
-            disable_shared_quantizers)
+            disable_shared_quantizers,
+            input_activation_precisions)
         self.activation_precisions = activation_precisions
         self.weight_precisions = weight_precisions
         self.w_mixprec_type = w_mixprec_type

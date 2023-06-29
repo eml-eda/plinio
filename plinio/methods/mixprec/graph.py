@@ -75,7 +75,8 @@ def convert(model: nn.Module,
             input_quantization: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
-            disable_shared_quantizers: bool = False
+            disable_shared_quantizers: bool = False,
+            input_activation_precisions: Tuple[int, ...] = None
             ) -> Tuple[nn.Module, List]:
     """Converts a nn.Module, to/from "NAS-able" MixPrec format
 
@@ -141,7 +142,9 @@ def convert(model: nn.Module,
                                    disable_shared_quantizers)
     if conversion_type in ('autoimport', 'import'):
         if input_quantization:
-            add_input_quantizer(mod, activation_precisions, qinfo_input_quantizer)
+            if input_activation_precisions == None:
+                input_activation_precisions = activation_precisions
+            add_input_quantizer(mod, input_activation_precisions, qinfo_input_quantizer)
         add_features_calculator(mod, [mixprec_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
