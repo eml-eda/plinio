@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-from plinio.methods.pit_supernet import PITSuperNetModule
+from plinio.methods.supernet import SuperNetModule
 
 
-class DSCnnPITSN(torch.nn.Module):
+class DSCnnSN(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -24,7 +24,7 @@ class DSCnnPITSN(torch.nn.Module):
         self.pointwise1 = nn.Conv2d(
             in_channels=64, out_channels=64, kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint1 = PITSuperNetModule([
+        self.depthpoint1 = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(64, 64, 3, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),
@@ -60,7 +60,7 @@ class DSCnnPITSN(torch.nn.Module):
         self.pointwise2 = nn.Conv2d(
             in_channels=64, out_channels=64, kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint2 = PITSuperNetModule([
+        self.depthpoint2 = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(64, 64, 3, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),
@@ -96,7 +96,7 @@ class DSCnnPITSN(torch.nn.Module):
         self.pointwise3 = nn.Conv2d(
             in_channels=64, out_channels=64, kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint3 = PITSuperNetModule([
+        self.depthpoint3 = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(64, 64, 3, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),
@@ -132,7 +132,7 @@ class DSCnnPITSN(torch.nn.Module):
         self.pointwise4 = nn.Conv2d(
             in_channels=64, out_channels=64, kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint4 = PITSuperNetModule([
+        self.depthpoint4 = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(64, 64, 3, padding='same'),
                 nn.BatchNorm2d(64, momentum=0.99),

@@ -16,9 +16,13 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Any, List
+from typing import Any, List, Tuple
+import torch.nn as nn
 import torch.fx as fx
 import networkx as nx
+
+# type alias for brevity
+NamedLeafModules = List[Tuple[str, fx.Node, nn.Module]]
 
 
 def fx_to_nx_graph(fx_graph: fx.Graph) -> nx.DiGraph:

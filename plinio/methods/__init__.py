@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 from .dnas_base import DNAS
 from .pit import PIT
-from .pit_supernet import PITSuperNet
+from .supernet import SuperNet
 from .mixprec import MixPrec
 
-__all__ = ['DNAS', 'PIT', 'PITSuperNet', 'MixPrec']
+__all__ = ['DNAS', 'PIT', 'SuperNet', 'MixPrec']

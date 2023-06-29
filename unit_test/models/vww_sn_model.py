@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from plinio.methods.pit_supernet import PITSuperNetModule
+from plinio.methods.supernet import SuperNetModule
 
 
 class ConvBlock(torch.nn.Module):
@@ -22,7 +22,7 @@ class ConvBlock(torch.nn.Module):
         return self.relu(self.bn(x))
 
 
-class MobileNetPITSN(torch.nn.Module):
+class MobileNetSN(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -44,7 +44,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise2 = ConvBlock(in_channels=8, out_channels=16,
                                     kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint2 = PITSuperNetModule([
+        self.depthpoint2 = SuperNetModule([
             ConvBlock(in_channels=8, out_channels=16, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=8, out_channels=16, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -62,7 +62,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise3 = ConvBlock(in_channels=16, out_channels=32,
                                     kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint3 = PITSuperNetModule([
+        self.depthpoint3 = SuperNetModule([
             ConvBlock(in_channels=16, out_channels=32, kernel_size=3, padding=1, stride=2),
             ConvBlock(in_channels=16, out_channels=32, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
@@ -81,7 +81,7 @@ class MobileNetPITSN(torch.nn.Module):
                                     kernel_size=1, stride=1, padding=0)
         '''
 
-        self.depthpoint4 = PITSuperNetModule([
+        self.depthpoint4 = SuperNetModule([
             ConvBlock(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=32, out_channels=32, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -99,7 +99,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise5 = ConvBlock(in_channels=32, out_channels=64,
                                     kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint5 = PITSuperNetModule([
+        self.depthpoint5 = SuperNetModule([
             ConvBlock(in_channels=32, out_channels=64, kernel_size=3, padding=1, stride=2),
             ConvBlock(in_channels=32, out_channels=64, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
@@ -117,7 +117,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise6 = ConvBlock(in_channels=64, out_channels=64,
                                     kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint6 = PITSuperNetModule([
+        self.depthpoint6 = SuperNetModule([
             ConvBlock(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=64, out_channels=64, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -135,7 +135,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise7 = ConvBlock(in_channels=64, out_channels=128,
                                     kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint7 = PITSuperNetModule([
+        self.depthpoint7 = SuperNetModule([
             ConvBlock(in_channels=64, out_channels=128, kernel_size=3, padding=1, stride=2),
             ConvBlock(in_channels=64, out_channels=128, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
@@ -153,7 +153,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise8 = ConvBlock(in_channels=128, out_channels=128,
                                     kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint8 = PITSuperNetModule([
+        self.depthpoint8 = SuperNetModule([
             ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -171,7 +171,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise9 = ConvBlock(in_channels=128, out_channels=128,
                                     kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint9 = PITSuperNetModule([
+        self.depthpoint9 = SuperNetModule([
             ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -189,7 +189,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise10 = ConvBlock(in_channels=128, out_channels=128,
                                      kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint10 = PITSuperNetModule([
+        self.depthpoint10 = SuperNetModule([
             ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -207,7 +207,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise11 = ConvBlock(in_channels=128, out_channels=128,
                                      kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint11 = PITSuperNetModule([
+        self.depthpoint11 = SuperNetModule([
             ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -225,7 +225,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise12 = ConvBlock(in_channels=128, out_channels=128,
                                      kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint12 = PITSuperNetModule([
+        self.depthpoint12 = SuperNetModule([
             ConvBlock(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=128, out_channels=128, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(
@@ -243,7 +243,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise13 = ConvBlock(in_channels=128, out_channels=256,
                                      kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint13 = PITSuperNetModule([
+        self.depthpoint13 = SuperNetModule([
             ConvBlock(in_channels=128, out_channels=256, kernel_size=3, padding=1, stride=2),
             ConvBlock(in_channels=128, out_channels=256, kernel_size=5, padding=2, stride=2),
             nn.Sequential(
@@ -261,7 +261,7 @@ class MobileNetPITSN(torch.nn.Module):
         self.pointwise14 = ConvBlock(in_channels=256, out_channels=256,
                                      kernel_size=1, stride=1, padding=0)
         '''
-        self.depthpoint14 = PITSuperNetModule([
+        self.depthpoint14 = SuperNetModule([
             ConvBlock(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding='same'),
             ConvBlock(in_channels=256, out_channels=256, kernel_size=5, stride=1, padding='same'),
             nn.Sequential(

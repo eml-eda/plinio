@@ -1,133 +1,105 @@
-from typing import Tuple, Iterable, List, Type, cast, Optional
+from typing import Any, Tuple, cast
 import torch
 import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from plinio.graph.annotation import add_node_properties, add_features_calculator, \
-        associate_input_features
-from plinio.graph.inspection import is_layer, is_inherited_layer, get_graph_inputs, \
-        all_output_nodes
-from plinio.graph.features_calculation import SoftMaxFeaturesCalculator
-from .nn import PITSuperNetCombiner, PITSuperNetModule
-from plinio.methods.pit import graph as pit_graph
-from plinio.methods.pit.nn import PITModule
+from .nn import SuperNetCombiner
+from plinio.graph.utils import NamedLeafModules, fx_to_nx_graph
+from plinio.graph.inspection import is_layer, get_graph_inputs, named_leaf_modules, \
+        uniquify_leaf_modules
+from plinio.graph.annotation import clean_up_propagated_shapes
 
 
-class PITSuperNetTracer(fx.Tracer):
+class SuperNetTracer(fx.Tracer):
     def __init__(self) -> None:
         super().__init__()  # type: ignore
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-        if isinstance(m, PITSuperNetCombiner):
+        if isinstance(m, SuperNetCombiner):
             return True
-        if isinstance(m, PITModule):
-            return True
+        # if isinstance(m, PITModule):
+            # return True
         else:
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
 
 
-def convert(model: nn.Module, input_shape: Tuple[int, ...], conversion_type: str,
-            exclude_names: Iterable[str] = (),
-            exclude_types: Iterable[Type[nn.Module]] = ()
-            ) -> Tuple[nn.Module, List, List]:
+def convert(model: nn.Module, input_example: Any, conversion_type: str,
+            ) -> Tuple[nn.Module, NamedLeafModules, NamedLeafModules]:
     """Converts a nn.Module, to/from "NAS-able" PIT and SuperNet format
 
     :param model: the input nn.Module
     :type model: nn.Module
-    :param input_shape: the shape of an input tensor, without batch size, required for symbolic
-    tracing
-    :type input_shape: Tuple[int, ...]
+    :param input_example: an input with the same shape and type of the seed's input, used
+    for symbolic tracing (default: None)
+    :type input_example: Any
     :param conversion_type: a string specifying the type of conversion. Supported types:
-    ('import', 'autoimport', 'export')
+    ('import', 'export')
     :type conversion_type: str
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
-    :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that should be ignored by the NAS
-    :type exclude_types: Iterable[Type[nn.Module]], optional
-    :raises ValueError: for unsupported conversion types
-    :return: the converted model, and the list of target layers for the NAS (only for imports)
-    :rtype: Tuple[nn.Module, List]
+    :return: the converted model, and two lists of all (or all unique) leaf modules for
+    the NAS
+    :rtype: Tuple[nn.Module, NamedLeafModule, NamedLeafModules]
     """
 
-    if conversion_type not in ('import', 'autoimport', 'export'):
+    if conversion_type not in ('import', 'export'):
         raise ValueError("Unsupported conversion type {}".format(conversion_type))
 
-    tracer = PITSuperNetTracer()
+    tracer = SuperNetTracer()
     graph = tracer.trace(model.eval())
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
-    batch_example = torch.stack([torch.rand(input_shape)] * 1, 0)
-    device = next(model.parameters()).device
-    ShapeProp(mod).propagate(batch_example.to(device))
-    add_node_properties(mod)
-    set_combiner_properties(mod, add=['shared_input_features', 'features_propagating'])
-    # first convert Conv/FC layers to/from PIT versions first
-    pit_graph.convert_layers(mod, conversion_type, exclude_names, exclude_types)
-    if conversion_type in ('autoimport', 'import'):
-        # then, for import, perform additional graph passes needed mostly for PIT
-        pit_graph.fuse_pit_modules(mod)
-        add_features_calculator(mod, [pit_graph.pit_features_calc, combiner_features_calc])
-        set_combiner_properties(mod, add=['features_defining'], remove=['features_propagating'])
-        associate_input_features(mod)
-        pit_graph.register_input_features(mod)
-        # lastly, import SuperNet selection layers
-        sn_combiners = import_sn_combiners(mod)
-        pit_modules = find_other_pit_modules(mod)
+    if len(get_graph_inputs(mod.graph)) > 1:
+        ShapeProp(mod).propagate(*input_example)
     else:
+        ShapeProp(mod).propagate(input_example)
+    clean_up_propagated_shapes(mod)
+    if conversion_type == 'import':
+        link_combiners_to_branches(mod)
+    if conversion_type == 'export':
         export_graph(mod)
-        sn_combiners = []
-        pit_modules = []
 
     mod.graph.lint()
     mod.recompile()
-    return mod, sn_combiners, pit_modules
+    nlf = named_leaf_modules(mod)
+    ulf = uniquify_leaf_modules(nlf)
+    return mod, nlf, ulf
 
 
-def find_other_pit_modules(mod: fx.GraphModule) -> List[PITModule]:
-    """Finds layers optimized by PIT but not included in SuperNet branches
+def link_combiners_to_branches(mod: fx.GraphModule):
+    """Associates the various SuperNet branches to their combiner"""
+    # TODO: relies on the attribute names sn_combiner and sn_branches. Not nice, but didn't find
+    # a better solution that remains flexible.
 
-    :param mod: a torch.fx.GraphModule.
-    :type mod: fx.GraphModule
-    :return: the list of PIT Modules not included in SuperNet branches that will be optimized by the
-    NAS
-    :rtype: List[PITModule]
-    """
-    pit_modules = []
-    for n in mod.graph.nodes:
-        if '.sn_input_layers' not in str(n.target):
-            if is_inherited_layer(n, mod, (PITModule,)):
-                sub_mod = mod.get_submodule(str(n.target))
-                pit_modules.append(sub_mod)
-    return pit_modules
+    # First finds all modules included in SuperNet branches
+    sn_modules = {}
+    g = fx_to_nx_graph(mod.graph)
+    for n in g.nodes:
+        path = str(n.target).split('.')
+        # TODO: only considers call_module for now. Cost of call_method/call_function
+        # will be ignored
+        if 'sn_branches' in str(n.target) and n.op == 'call_module':
+            sub_mod = mod.get_submodule(n.target)
+            # skip "untyped" modules generated by fx during tracing
+            if type(sub_mod) != nn.Module:
+                parent_name = '.'.join(path[:path.index('sn_branches')])
+                if parent_name not in sn_modules:
+                    sn_modules[parent_name] = {}
+                branch_id = int(path[path.index('sn_branches')+1])
+                if branch_id not in sn_modules[parent_name]:
+                    sn_modules[parent_name][branch_id] = []
+                sn_modules[parent_name][branch_id].append((str(n.target), n, sub_mod))
 
-
-def import_sn_combiners(mod: fx.GraphModule) -> List[Tuple[str, PITSuperNetCombiner]]:
-    """Finds and prepares "Combiner" layers used to select SuperNet branches during the search phase
-
-    :param mod: a torch.fx.GraphModule with tensor shapes annotations.
-    :type mod: fx.GraphModule
-    :return: the list of "Combiner" layers that will be optimized by the NAS
-    :rtype: List[Tuple[str, PITSuperNetCombiner]]
-    """
-    target_layers = []
-    for n in mod.graph.nodes:
-        if is_layer(n, mod, (PITSuperNetCombiner,)):
-            # parent_name = n.target.removesuffix('.sn_combiner')
-            parent_name = n.target.replace('.sn_combiner', '')
-            sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(str(n.target)))
-            parent_mod = cast(PITSuperNetModule, mod.get_submodule(parent_name))
-            # TODO: fix this mess
-            prev = n.all_input_nodes[0]
-            while '.sn_input_layers' in prev.target:
-                prev = prev.all_input_nodes[0]
-            input_shape = prev.meta['tensor_meta'].shape
-            sub_mod.compute_layers_sizes()
-            sub_mod.compute_layers_macs(input_shape)
-            sub_mod.update_input_layers(parent_mod.sn_input_layers)
-            sub_mod.train_selection = True
-            target_layers.append((str(n.target), sub_mod))
-    return target_layers
+    # Then passes them to the corresponding combiners
+    for lname in sn_modules.keys():
+        comb_lname = lname + ".sn_combiner"
+        sub_mod = cast(SuperNetCombiner, mod.get_submodule(comb_lname))
+        for i in range(sub_mod.n_branches):
+            nlf = sn_modules[lname][i]
+            ulf = uniquify_leaf_modules(nlf)
+            # only pass the uniquified version, because if the whole SuperNetModule is invoked
+            # multiple times in a forward pass, and the cost specification is not "shared",
+            # then the combiner's get_cost method is already called multiple times.
+            sub_mod.set_sn_branch(i, ulf)
 
 
 def export_graph(mod: fx.GraphModule):
@@ -136,11 +108,13 @@ def export_graph(mod: fx.GraphModule):
     :param mod: a torch.fx.GraphModule of a SuperNet
     :type mod: fx.GraphModule
     """
+    # TODO: relies on the attribute name sn_branches. Not nice, but didn't find
+    # a better solution that remains flexible.
     for n in mod.graph.nodes:
-        if 'sn_combiner' in str(n.target):
-            sub_mod = cast(PITSuperNetCombiner, mod.get_submodule(n.target))
+        if is_layer(n, mod, (SuperNetCombiner,)):
+            sub_mod = cast(SuperNetCombiner, mod.get_submodule(n.target))
             best_idx = sub_mod.best_layer_index()
-            best_branch_name = 'sn_input_layers.' + str(best_idx)
+            best_branch_name = 'sn_branches.' + str(best_idx)
             to_erase = []
             for ni in n.all_input_nodes:
                 if best_branch_name in str(ni.target):
@@ -154,49 +128,3 @@ def export_graph(mod: fx.GraphModule):
                 mod.graph.erase_node(ni)
     mod.graph.eliminate_dead_code()
     mod.delete_all_unused_submodules()
-
-
-def set_combiner_properties(
-        mod: fx.GraphModule,
-        add: List[str] = [],
-        remove: List[str] = []):
-    """Searches for the combiner nodes in the graph and sets their properties
-
-    :param mod: module
-    :type mod: fx.GraphModule
-    """
-    g = mod.graph
-    queue = get_graph_inputs(g)
-    visited = []
-    while queue:
-        n = queue.pop(0)
-        if n in visited:
-            continue
-
-        if is_layer(n, mod, (PITSuperNetCombiner,)):
-            for p in add:
-                n.meta[p] = True
-            for p in remove:
-                n.meta[p] = False
-
-        for succ in all_output_nodes(n):
-            queue.append(succ)
-        visited.append(n)
-
-
-def combiner_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[SoftMaxFeaturesCalculator]:
-    """Sets the feature calculator for a PITSuperNetCombiner node
-
-    :param n: node
-    :type n: fx.Node
-    :param mod: the parent module
-    :type mod: fx.GraphModule
-    :return: optional feature calculator object for the combiner node
-    :rtype: SoftMaxFeaturesCalculator
-    """
-    if is_layer(n, mod, (PITSuperNetCombiner,)):
-        sub_mod = mod.get_submodule(str(n.target))
-        prev_features = [_.meta['features_calculator'] for _ in n.all_input_nodes]
-        return SoftMaxFeaturesCalculator(sub_mod, 'alpha', prev_features)
-    else:
-        return None

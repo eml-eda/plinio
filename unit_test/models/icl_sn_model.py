@@ -1,7 +1,7 @@
 from typing import cast
 import torch
 import torch.nn as nn
-from plinio.methods.pit_supernet import PITSuperNetModule
+from plinio.methods.supernet import SuperNetModule
 
 
 class ConvBlock(torch.nn.Module):
@@ -10,7 +10,7 @@ class ConvBlock(torch.nn.Module):
         # self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=stride,
         #                         padding=padding, bias=False)
 
-        self.conv1 = PITSuperNetModule([
+        self.conv1 = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, 3, padding=padding, stride=stride),
                 nn.BatchNorm2d(out_channels),
@@ -49,7 +49,7 @@ class ConvBlock(torch.nn.Module):
         return x
 
 
-class ResNet8PITSN(torch.nn.Module):
+class ResNet8SN(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -67,7 +67,7 @@ class ResNet8PITSN(torch.nn.Module):
                                     kernel_size=3, stride=1, padding=1)
 
         # self.conv1 = nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1)
-        self.conv1 = PITSuperNetModule([
+        self.conv1 = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(16, 16, 3, padding='same'),
                 nn.BatchNorm2d(16),
@@ -101,7 +101,7 @@ class ResNet8PITSN(torch.nn.Module):
                                     kernel_size=3, stride=2, padding=1)
 
         # self.conv2y = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2y = PITSuperNetModule([
+        self.conv2y = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(32, 32, 3, padding='same'),
                 nn.BatchNorm2d(32)
@@ -138,7 +138,7 @@ class ResNet8PITSN(torch.nn.Module):
                                     kernel_size=3, stride=2, padding=1)
 
         # self.conv3y = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3y = PITSuperNetModule([
+        self.conv3y = SuperNetModule([
             nn.Sequential(
                 nn.Conv2d(64, 64, 3, padding='same'),
                 nn.BatchNorm2d(64)

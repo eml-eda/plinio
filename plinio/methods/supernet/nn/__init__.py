@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .module import PITSuperNetModule
-from .combiner import PITSuperNetCombiner
+from .module import SuperNetModule
+from .combiner import SuperNetCombiner
 
-__all__ = ['PITSuperNetModule', 'PITSuperNetCombiner']
+__all__ = ['SuperNetModule', 'SuperNetCombiner']

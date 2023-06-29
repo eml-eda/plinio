@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .pit_supernet import PITSuperNet
-from .nn.module import PITSuperNetModule
+from .supernet import SuperNet
+from .nn.module import SuperNetModule
 
-__all__ = ['PITSuperNet', 'PITSuperNetModule']
+__all__ = ['SuperNet', 'SuperNetModule']

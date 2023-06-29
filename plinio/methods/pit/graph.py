@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Any
+from typing import cast, Iterable, Type, Tuple, Optional, Dict, Any
 
 import networkx as nx
 import torch
@@ -34,10 +34,10 @@ from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
     associate_input_features, clean_up_propagated_shapes
 from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
-    get_graph_inputs
+    get_graph_inputs, named_leaf_modules, uniquify_leaf_modules
 from plinio.graph.transformation import fuse_consecutive_layers
 from plinio.graph.features_calculation import ModAttrFeaturesCalculator
-from plinio.graph.utils import fx_to_nx_graph
+from plinio.graph.utils import fx_to_nx_graph, NamedLeafModules
 
 # add new supported layers here:
 pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {
@@ -63,13 +63,13 @@ class PITTracer(fx.Tracer):
 def convert(model: nn.Module, input_example: Any, conversion_type: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
-            ) -> Tuple[nn.Module, List[Tuple[str, fx.Node, nn.Module]]]:
+            ) -> Tuple[nn.Module, NamedLeafModules, NamedLeafModules]:
     """Converts a nn.Module, to/from "NAS-able" PIT format
 
     :param model: the input nn.Module
     :type model: nn.Module
-    :param input_example: an input example, it has same type of the expected
-    `model`'s input, required for symbolic tracing
+    :param input_example: an input with the same shape and type of the seed's input, used
+    for symbolic tracing (default: None)
     :type input_example: Any
     :param conversion_type: a string specifying the type of conversion. Supported types:
     ('import', 'autoimport', 'export')
@@ -79,8 +79,9 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     :raises ValueError: for unsupported conversion types
-    :return: the converted model, and the list of all leaf modules for the NAS (only for imports)
-    :rtype: Tuple[nn.Module, List[Tuple[str, fx.Node, nn.Module]]]
+    :return: the converted model, and two lists of all (or all unique) leaf modules for
+    the NAS
+    :rtype: Tuple[nn.Module, NamedLeafModule, NamedLeafModules]
     """
 
     if conversion_type not in ('import', 'autoimport', 'export'):
@@ -106,7 +107,8 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
     mod.graph.lint()
     mod.recompile()
     nlf = named_leaf_modules(mod)
-    return mod, nlf
+    ulf = uniquify_leaf_modules(nlf)
+    return mod, nlf, ulf
 
 
 def convert_layers(mod: fx.GraphModule,
@@ -144,17 +146,6 @@ def convert_layers(mod: fx.GraphModule,
             queue.append(pred)
         visited.append(n)
     return
-
-
-def named_leaf_modules(mod: fx.GraphModule) -> List[Tuple[str, fx.Node, nn.Module]]:
-    """Returns a least of leaf modules in the graph, used for cost computation by the NAS"""
-    res = []
-    g = fx_to_nx_graph(mod.graph)
-    # TODO: only considers call_module for now. Cost of call_method/call_function will be ignored
-    for n in g.nodes:
-        if n.op == 'call_module':
-            res.append((str(n.target), n, mod.get_submodule(str(n.target))))
-    return res
 
 
 def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesMasker]:

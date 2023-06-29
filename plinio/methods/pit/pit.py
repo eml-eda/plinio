@@ -16,15 +16,13 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Any, Callable, List, Union, Tuple, Type, Iterable, Dict, cast, Iterator, Optional
-from warnings import warn
+from typing import Any, Union, Tuple, Type, Iterable, Dict, cast, Iterator, Optional
 
 import torch
 import torch.nn as nn
-import torch.fx as fx
 
 from plinio.methods.dnas_base import DNAS
-from plinio.cost import CostFn, CostSpec, PatternSpec, params
+from plinio.cost import CostFn, CostSpec, params
 from plinio.graph.inspection import shapes_dict
 from .graph import convert, pit_layer_map
 from .nn.module import PITModule
@@ -35,14 +33,14 @@ class PIT(DNAS):
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
-    :param input_example: an input example, it has same type of the expected
-    `model`'s input, used for symbolic tracing (default: None)
+    :param cost: the cost models(s) used by the NAS, defaults to the number of params.
+    :type cost: Union[CostSpec, Dict[str, CostSpec]]
+    :param input_example: an input with the same shape and type of the seed's input, used
+    for symbolic tracing (default: None)
     :type input_example: Optional[Any]
     :param input_shape: the shape of an input tensor, without batch size, used as an
     alternative to input_example to generate a random input for symbolic tracing (default: None)
     :type input_shape: Optional[Tuple[int, ...]]
-    :param cost: the cost models(s) used by the NAS, defaults to the number of params.
-    :type cost: Union[CostSpec, Dict[str, CostSpec]]
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
@@ -51,7 +49,7 @@ class PIT(DNAS):
     :type discrete_cost: bool, optional
     :param full_cost: True is the cost model should be applied to the entire network, rather
     than just to the NAS-able layers, defaults to False
-    :type discrete_sampling: bool, optional
+    :type full_cost: bool, optional
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
@@ -75,9 +73,9 @@ class PIT(DNAS):
     def __init__(
             self,
             model: nn.Module,
+            cost: Union[CostSpec, Dict[str, CostSpec]] = params,
             input_example: Optional[Any] = None,
             input_shape: Optional[Tuple[int, ...]] = None,
-            cost: Union[CostSpec, Dict[str, CostSpec]] = params,
             autoconvert_layers: bool = True,
             discrete_cost: bool = False,
             full_cost: bool = False,
@@ -86,23 +84,18 @@ class PIT(DNAS):
             train_features: bool = True,
             train_rf: bool = True,
             train_dilation: bool = True):
-        super(PIT, self).__init__(cost, exclude_names, exclude_types)
-        self._device = next(model.parameters()).device
-        self._input_example = self._resolve_input_example(input_example, input_shape)
-        # self._input_shape = input_shape
-        self.seed, self._leaf_modules = convert(
+        super(PIT, self).__init__(model, cost, input_example, input_shape)
+        self.exclude_names = exclude_names
+        self.exclude_types = tuple(exclude_types)
+        self.seed, self._leaf_modules, self._unique_leaf_modules = convert(
             model,
             self._input_example,
             'autoimport' if autoconvert_layers else 'import',
             exclude_names,
             exclude_types
         )
-        # Get unique leaf modules, needed to correctly compute cost metrics that should not
-        # be counted twice when a layer is used twice in a single fwd pass
-        # (e.g. true for params, false for ops)
-        self._unique_leaf_modules = self._uniquify_leaf_modules()
         self._cost_fn_map = self._create_cost_fn_map()
-        # after conversion to make sure they are applied to all layers
+        # these are set after conversion to make sure they are applied to all layers
         self.train_features = train_features
         self.train_rf = train_rf
         self.train_dilation = train_dilation
@@ -118,10 +111,6 @@ class PIT(DNAS):
         return self.seed.forward(*args)
 
     @property
-    def cost(self) -> torch.Tensor:
-        return self.get_cost(None)
-
-    @property
     def cost_specification(self) -> Union[CostSpec, Dict[str, CostSpec]]:
         return self._cost_specification
 
@@ -129,32 +118,6 @@ class PIT(DNAS):
     def cost_specification(self, cs: Union[CostSpec, Dict[str, CostSpec]]):
         self._cost_specification = cs
         self._cost_fn_map = self._create_cost_fn_map()
-
-    # use method instead of property in case of multiple costs
-    def get_cost(self, name: Optional[str] = None) -> torch.Tensor:
-        if name is None:
-            assert isinstance(self._cost_specification, CostSpec), \
-                "Multiple model cost metrics provided, you must use .get_cost('cost_name')"
-            cost_spec = self._cost_specification
-            cost_fn_map = self._cost_fn_map
-        else:
-            assert isinstance(self._cost_specification, dict), \
-                "The provided cost specification is not a dictionary."
-            cost_spec = self._cost_specification[name]
-            cost_fn_map = self._cost_fn_map[name]
-        cost_fn_map = cast(Dict[str, CostFn], cost_fn_map)
-        cost = torch.tensor(0, dtype=torch.float32)
-        target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
-        for lname, node, layer in target_list:
-            if isinstance(layer, PITModule):
-                v = layer.get_modified_vars()
-                v.update(shapes_dict(node))
-                cost = cost + cost_fn_map[lname](v)
-            elif self.full_cost:
-                v = vars(layer)
-                v.update(shapes_dict(node))
-                cost = cost + cost_fn_map[lname](v)
-        return cost
 
     @property
     def discrete_cost(self) -> bool:
@@ -248,7 +211,7 @@ class PIT(DNAS):
                 if isinstance(layer, PITModule) and hasattr(layer, 'following_bn_args'):
                     layer.following_bn_args = None  # type: ignore
 
-        mod, _ = convert(self.seed, self._input_example, 'export')
+        mod, _, _ = convert(self.seed, self._input_example, 'export')
 
         return mod
 
@@ -308,17 +271,47 @@ class PIT(DNAS):
             if name not in exclude:
                 yield name, param
 
-    def _uniquify_leaf_modules(self) -> List[Tuple[str, fx.Node, nn.Module]]:
-        names = set()
-        unique_modules = []
-        for name, node, layer in self._leaf_modules:
-            if name not in names:
-                names.add(name)
-                unique_modules.append((name, node, layer))
-        return unique_modules
+    def get_cost(self, name: Optional[str] = None) -> torch.Tensor:
+        """Returns the value of the model cost metric named "name".
+        Only allowed alternative in case of multiple cost metrics.
 
-    # TODO: could this be made general for all DNAS?
+        :raises NotImplementedError: on the base DNAS class
+        :rtype: torch.Tensor
+        """
+        if name is None:
+            assert isinstance(self._cost_specification, CostSpec), \
+                "Multiple model cost metrics provided, you must use .get_cost('cost_name')"
+            cost_spec = self._cost_specification
+            cost_fn_map = self._cost_fn_map
+        else:
+            assert isinstance(self._cost_specification, dict), \
+                "The provided cost specification is not a dictionary."
+            cost_spec = self._cost_specification[name]
+            cost_fn_map = self._cost_fn_map[name]
+        cost_spec = cast(CostSpec, cost_spec)
+        cost_fn_map = cast(Dict[str, CostFn], cost_fn_map)
+        return self._get_single_cost(cost_spec, cost_fn_map)
+
+    def _get_single_cost(self, cost_spec: CostSpec,
+                         cost_fn_map: Dict[str, CostFn]) -> torch.Tensor:
+        """Private method to compute a single cost value"""
+        cost = torch.tensor(0, dtype=torch.float32)
+        target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
+        for lname, node, layer in target_list:
+            if isinstance(layer, PITModule):
+                v = layer.get_modified_vars()
+                v.update(shapes_dict(node))
+                cost = cost + cost_fn_map[lname](v)
+            elif self.full_cost:
+                # TODO: this part is constant and can be pre-computed for efficiency
+                # Should be re-computed when changing cost spec or value of full_cost
+                v = vars(layer)
+                v.update(shapes_dict(node))
+                cost = cost + cost_fn_map[lname](v)
+        return cost
+
     def _create_cost_fn_map(self) -> Union[Dict[str, CostFn], Dict[str, Dict[str, CostFn]]]:
+        """Private method to define a map from layers to cost value(s)"""
         if isinstance(self._cost_specification, dict):
             cost_fn_maps = {}
             for n, c in self._cost_specification.items():
@@ -327,9 +320,10 @@ class PIT(DNAS):
             cost_fn_maps = self._single_cost_fn_map(self._cost_specification)
         return cost_fn_maps
 
-    def _single_cost_fn_map(self, c: CostSpec) -> Dict[str, Callable[[PatternSpec], torch.Tensor]]:
+    def _single_cost_fn_map(self, c: CostSpec) -> Dict[str, CostFn]:
+        """PIT-specific creator of {layertype, cost_fn} maps based on a CostSpec."""
         cost_fn_map = {}
-        for name, layer in self.seed.named_modules():
+        for lname, _, layer in self._unique_leaf_modules:
             if isinstance(layer, PITModule):
                 # get original layer type from PITModule type
                 # TODO: make this more readable
@@ -338,29 +332,8 @@ class PIT(DNAS):
                 # t = layer.__class__.__bases__[0]
             else:
                 t = type(layer)
-            cost_fn_map[name] = c[(t, vars(layer))]
+            cost_fn_map[lname] = c[(t, vars(layer))]
         return cost_fn_map
-
-    def _resolve_input_example(self, example, shape):
-        """Document here"""
-        if example is None and shape is None:
-            msg = 'One of `input_example` and `input_shape` must be different than None'
-            raise ValueError(msg)
-        if example is not None and shape is not None:
-            msg = ('Warning: you specified both `input_example` and `input_shape`.'
-                   'The first will be considered for shape propagation')
-            warn(msg)
-        if example is not None:
-            return example
-        if shape is not None:
-            try:
-                # create a "fake" minibatch of 1 input for shape prop
-                example = torch.stack([torch.rand(shape)] * 1, 0).to(self._device)
-                return example
-            except TypeError:
-                msg = ('If the provided `input_shape` is not a simple tuple '
-                       'the user should pass instead an `input_example`.')
-                raise TypeError(msg)
 
     def __str__(self):
         """Prints the architecture found by the NAS to screen

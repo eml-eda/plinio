@@ -1,47 +1,46 @@
-from typing import Iterable
+from typing import Any, Dict, Iterable, Iterator, Tuple
 import torch
 import torch.nn as nn
-from .combiner import PITSuperNetCombiner
+from .combiner import SuperNetCombiner
 
 
-class PITSuperNetModule(nn.Module):
+class SuperNetModule(nn.Module):
     """A nn.Module containing some different layer alternatives.
-    One of these layers will be selected by the PITSuperNet NAS tool for the current layer.
-    This module is for the most part just a placeholder and its logic is contained inside
-    the PITSuperNetCombiner of which instance is defined in the constructor.
+    One of these layers will be selected by the SuperNet NAS tool for the current layer.
 
-    :param input_layers: iterable of possible alternative layers to be selected
-    :type input_layers: Iterable[nn.Module]
+    :param supernet_branches: iterable of possible alternative layers to be selected
+    :type supernet_branches: Iterable[nn.Module]
+    :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SofrMax
+    :type gumbel_softmax: bool
+    :param hard_softmax: use hard Gumbel SoftMax sampling (only applies when gumbel_softmax = True)
+    :type hard_softmax: bool
     """
     def __init__(self,
-                 input_layers: Iterable[nn.Module],
+                 supernet_branches: Iterable[nn.Module],
                  gumbel_softmax: bool = False,
                  hard_softmax: bool = False):
-        super(PITSuperNetModule, self).__init__()
-        self.sn_input_layers = nn.ModuleList(list(input_layers))
-        self.sn_combiner = PITSuperNetCombiner(self.sn_input_layers, gumbel_softmax, hard_softmax)
+        super(SuperNetModule, self).__init__()
+        self.sn_branches = nn.ModuleList(list(supernet_branches))
+        self.sn_combiner = SuperNetCombiner(len(self.sn_branches), gumbel_softmax, hard_softmax)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """Forward function for the PITSuperNetModule that returns a weighted
+        """Forward function for the SuperNetModule that returns a weighted
         sum of all the outputs of the different input layers.
-        It computes all possible layer outputs and passes the list to the sn_combiner
-        which computes the weighted sum.
 
         :param input: the input tensor
         :type input: torch.Tensor
         :return: the output tensor (weighted sum of all layers output)
         :rtype: torch.Tensor
         """
-        layers_outputs = [layer(input) for layer in self.sn_input_layers]
-        return self.sn_combiner(layers_outputs)
+        return self.sn_combiner([branch(input) for branch in self.sn_branches])
 
     def __getitem__(self, pos: int) -> nn.Module:
         """Get the layer at position pos in the list of all the possible
-        layers for the PITSuperNetModule
+        layers for the SuperNetModule
 
         :param pos: position of the required module in the list input_layers
         :type pos: int
         :return: module at postion pos in the list input_layers
         :rtype: nn.Module
         """
-        return self.sn_input_layers[pos]
+        return self.sn_branches[pos]

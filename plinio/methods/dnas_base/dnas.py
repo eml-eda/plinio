@@ -18,10 +18,11 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Any, Dict, Iterable,  Iterator, List, Tuple, Type, Union
+from typing import Any, Dict, Iterator, Optional, Tuple, Union
 from plinio.cost import CostSpec
 import torch
 import torch.nn as nn
+from warnings import warn
 
 
 class DNAS(nn.Module):
@@ -31,24 +32,24 @@ class DNAS(nn.Module):
     :type model: nn.Module
     :param cost: the cost model(s) used by the NAS
     :type cost: Union[CostSpec, List[CostSpec]]
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
-    defaults to ()
-    :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that shuould be ignored by the NAS,
-    defaults to ()
-    :type exclude_types: Iterable[Type[nn.Module]], optional
-    :raises ValueError: when called with an unsupported regularizer
+    :param input_example: an input with the same shape and type of the seed's input, used
+    for symbolic tracing (default: None)
+    :type input_example: Optional[Any]
+    :param input_shape: the shape of an input tensor, without batch size, used as an
+    alternative to input_example to generate a random input for symbolic tracing (default: None)
+    :type input_shape: Optional[Tuple[int, ...]]
     """
     @abstractmethod
     def __init__(
             self,
+            model: nn.Module,
             cost: Union[CostSpec, Dict[str, CostSpec]],
-            exclude_names: Iterable[str] = (),
-            exclude_types: Iterable[Type[nn.Module]] = ()):
+            input_example: Optional[Any] = None,
+            input_shape: Optional[Tuple[int, ...]] = None):
         super(DNAS, self).__init__()
+        self._device = next(model.parameters()).device
         self._cost_specification = cost
-        self.exclude_names = exclude_names
-        self.exclude_types = tuple(exclude_types)
+        self._input_example = self._resolve_input_example(input_example, input_shape)
 
     @abstractmethod
     def forward(self, *args: Any) -> torch.Tensor:
@@ -65,9 +66,8 @@ class DNAS(nn.Module):
         return self._cost_specification
 
     @cost_specification.setter
-    def cost_specification(self, _: Union[CostSpec, List[CostSpec]]):
-        raise NotImplementedError(
-                "Cannot set the cost specification(s) on the base DNAS class")
+    def cost_specification(self, cs: Union[CostSpec, Dict[str, CostSpec]]):
+        self._cost_specification = cs
 
     @property
     @abstractmethod
@@ -78,14 +78,14 @@ class DNAS(nn.Module):
         :return: a scalar tensor with the cost value
         :rtype: torch.Tensor
         """
-        raise NotImplementedError
+        return self.get_cost(None)
 
-    # use method instead of property in case of multiple costs
-    def get_cost(self, name: str) -> torch.Tensor:
-        """Returns the value of the model cost metric named "name"
+    @abstractmethod
+    def get_cost(self, name: Optional[str] = None) -> torch.Tensor:
+        """Returns the value of the model cost metric named "name".
+        Only allowed alternative in case of multiple cost metrics.
 
         :raises NotImplementedError: on the base DNAS class
-        :return: a scalar tensor with the cost value
         :rtype: torch.Tensor
         """
         raise NotImplementedError
@@ -142,3 +142,24 @@ class DNAS(nn.Module):
         """
         for name, param in self.named_net_parameters(recurse=recurse):
             yield param
+
+    def _resolve_input_example(self, example, shape):
+        """Selects between using input_example and input_shape, with sanity checks"""
+        if example is None and shape is None:
+            msg = 'One of `input_example` and `input_shape` must be different from None'
+            raise ValueError(msg)
+        if example is not None and shape is not None:
+            msg = ('Warning: you specified both `input_example` and `input_shape`.'
+                   'The first will be considered for shape propagation')
+            warn(msg)
+        if example is not None:
+            return example
+        if shape is not None:
+            try:
+                # create a "fake" minibatch of 1 input for shape prop
+                example = torch.stack([torch.rand(shape)] * 1, 0)
+                return example
+            except TypeError:
+                msg = ('If the provided `input_shape` is not a simple tuple '
+                       'the user should pass instead an `input_example`.')
+                raise TypeError(msg)
