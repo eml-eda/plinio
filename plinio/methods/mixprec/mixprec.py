@@ -154,14 +154,15 @@ class MixPrec(DNAS):
         # adjust the weights to compensate the eventual zero bit precision. The initialized
         # weight, copied from the warmup model, is increased so that at the first forward
         # pass its quantized value is more similar to the actual float weight value.
-        with torch.no_grad():
-            for layer in self._target_layers:
-                theta_alpha_rescaling = torch.zeros(1)
-                for i, precision in enumerate(layer.mixprec_w_quantizer.precisions):
-                    if precision != 0:
-                        theta_alpha_rescaling += layer.mixprec_w_quantizer.theta_alpha[i][0]
+        if self.w_mixprec_type == MixPrecType.PER_CHANNEL:
+            with torch.no_grad():
+                for layer in self._target_layers:
+                    theta_alpha_rescaling = torch.zeros(1)
+                    for i, precision in enumerate(layer.mixprec_w_quantizer.precisions):
+                        if precision != 0:
+                            theta_alpha_rescaling += layer.mixprec_w_quantizer.theta_alpha[i][0]
 
-                layer.weight.data = layer.weight.data / theta_alpha_rescaling
+                    layer.weight.data = layer.weight.data / theta_alpha_rescaling
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model.
