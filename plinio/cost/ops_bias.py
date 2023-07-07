@@ -21,46 +21,54 @@ from .pattern import Conv1dGeneric, Conv2dGeneric, LinearGeneric, \
         Conv1dDW, Conv2dDW
 
 
-def _params_conv1d_generic(spec):
+def _ops_conv1d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    cost = cin * cout * k
+    out_shape = spec['output_shape']
+    cost = cout * (cin * k + 1)
+    cost = cost * out_shape[2]
     return cost
 
 
-def _params_conv2d_generic(spec):
+def _ops_conv2d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    cost = cin * cout * k[0] * k[1]
+    out_shape = spec['output_shape']
+    cost = cout * (cin * k[0] * k[1] + 1)
+    cost = cost * out_shape[2] * out_shape[3]
     return cost
 
 
-def _params_conv1d_dw(spec):
+def _ops_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    cost = cin * k
+    out_shape = spec['output_shape']
+    cost = cin * (k + 1)
+    cost = cost * out_shape[2]
     return cost
 
 
-def _params_conv2d_dw(spec):
+def _ops_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    cost = cin * k[0] * k[1]
+    out_shape = spec['output_shape']
+    cost = cin * (k[0] * k[1] + 1)
+    cost = cost * out_shape[2] * out_shape[3]
     return cost
 
 
-def _params_linear(spec):
+def _ops_linear_generic(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    cost = cin * cout
+    cost = cout * (cin + 1)
     return cost
 
 
-params = CostSpec(shared=True, default_behavior='zero')
-params[Conv1dGeneric] = _params_conv1d_generic
-params[Conv2dGeneric] = _params_conv2d_generic
-params[Conv1dDW] = _params_conv1d_dw
-params[Conv2dDW] = _params_conv2d_dw
-params[LinearGeneric] = _params_linear
+ops = CostSpec(shared=True, default_behavior='zero')
+ops[Conv1dGeneric] = _ops_conv1d_generic
+ops[Conv2dGeneric] = _ops_conv2d_generic
+ops[Conv1dDW] = _ops_conv1d_dw
+ops[Conv2dDW] = _ops_conv2d_dw
+ops[LinearGeneric] = _ops_linear_generic

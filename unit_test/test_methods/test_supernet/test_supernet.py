@@ -49,12 +49,16 @@ class TestSuperNet(unittest.TestCase):
     def test_standard_pitsn_module_get_size(self):
         """Test correctness of get_size() function
         """
+        batch_size = 32
         ch_in = 32
         in_width = 64
         in_height = 64
         model = StandardSNModule()
         sn_model = SuperNet(model, input_shape=(ch_in, in_width, in_height))
-        self.assertEqual(sn_model.get_cost(), 13312)
+        dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
+        _ = sn_model(dummy_inp)
+        cost = sn_model.get_cost()
+        self.assertEqual(cost, 13312)
 
     def test_standard_pitsn_module_get_macs(self):
         """Test correctness of get_macs() function
@@ -64,7 +68,8 @@ class TestSuperNet(unittest.TestCase):
         in_height = 64
         model = StandardSNModule()
         sn_model = SuperNet(model, cost=ops, input_shape=(ch_in, in_width, in_height))
-        self.assertEqual(sn_model.get_cost(), 54525952)
+        cost = sn_model.get_cost()
+        self.assertEqual(cost, 54525952)
 
     def test_kws_pitsn_target_modules(self):
         """Test that the number of SNModules found is correct

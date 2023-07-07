@@ -36,6 +36,7 @@ class SuperNet(DNAS):
         self.seed, self._leaf_modules, self._unique_leaf_modules = convert(
             model, self._input_example, 'import')
         self._cost_fn_map = self._create_cost_fn_map()
+        self.train_selection = True
         self.full_cost = full_cost
 
     def forward(self, *args: Any) -> torch.Tensor:
@@ -54,6 +55,17 @@ class SuperNet(DNAS):
     def cost_specification(self, cs: Union[CostSpec, Dict[str, CostSpec]]):
         self._cost_specification = cs
         self._cost_fn_map = self._create_cost_fn_map()
+
+    @property
+    def train_selection(self):
+        return self._train_selection
+
+    @train_selection.setter
+    def train_selection(self, value: bool):
+        for _, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, SuperNetCombiner):
+                layer.train_selection = value
+        self._train_selection = value
 
     def get_total_icv(self, eps: float = 1e-3) -> torch.Tensor:
         """Computes the total inverse coefficient of variation of the SuperNet architectural

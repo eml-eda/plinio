@@ -25,7 +25,7 @@ def _params_conv1d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    cost = cin * cout * k
+    cost = cout * (cin * k + 1)
     return cost
 
 
@@ -33,34 +33,34 @@ def _params_conv2d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    cost = cin * cout * k[0] * k[1]
+    cost = cout * (cin * k[0] * k[1] + 1)
     return cost
 
 
 def _params_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    cost = cin * k
+    cost = cin * (k + 1)
     return cost
 
 
 def _params_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    cost = cin * k[0] * k[1]
+    cost = cin * (k[0] * k[1] + 1)
     return cost
 
 
 def _params_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    cost = cin * cout
+    cost = cout * (cin + 1)
     return cost
 
 
-params = CostSpec(shared=True, default_behavior='zero')
-params[Conv1dGeneric] = _params_conv1d_generic
-params[Conv2dGeneric] = _params_conv2d_generic
-params[Conv1dDW] = _params_conv1d_dw
-params[Conv2dDW] = _params_conv2d_dw
-params[LinearGeneric] = _params_linear
+params_bias = CostSpec(shared=True, default_behavior='zero')
+params_bias[Conv1dGeneric] = _params_conv1d_generic
+params_bias[Conv2dGeneric] = _params_conv2d_generic
+params_bias[Conv1dDW] = _params_conv1d_dw
+params_bias[Conv2dDW] = _params_conv2d_dw
+params_bias[LinearGeneric] = _params_linear
