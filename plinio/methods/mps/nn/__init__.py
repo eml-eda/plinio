@@ -17,16 +17,15 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Type, Dict
+from .module import MPSModule
+from .identity import MPSIdentity
+from .relu import MPSReLU
+from .linear import MPSLinear
+from .conv2d import MPSConv2d
+from .qtz import MPSType
+from .add import MPSAdd
 
-import torch.nn as nn
-
-import plinio.methods.mixprec.quant.nn as qnn
-import plinio.methods.mixprec.quant.backends.dory.nn as dory_nn
-
-# add new supported layers here:
-dory_layer_map: Dict[Type[nn.Module], Type[dory_nn.DORYModule]] = {
-    qnn.Quant_Conv2d: dory_nn.DORYConv2d,
-    qnn.Quant_Linear: dory_nn.DORYLinear,
-    # qnn.Quant_Identity: dory_nn.DORYIdentity,
-}
+__all__ = [
+    'MPSModule', 'MPSIdentity', 'MPSReLU',
+    'MPSLinear', 'MPSConv2d', 'MPSType', 'MPSAdd',
+]

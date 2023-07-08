@@ -69,7 +69,7 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
     :param model: the input nn.Module
     :type model: nn.Module
     :param input_example: an input with the same shape and type of the seed's input, used
-    for symbolic tracing (default: None)
+    for symbolic tracing
     :type input_example: Any
     :param conversion_type: a string specifying the type of conversion. Supported types:
     ('import', 'autoimport', 'export')

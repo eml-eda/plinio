@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class STEArgmax(torch.autograd.Function):
-    """A torch autograd function defining the argmax used in MixPrec"""
+    """A torch autograd function defining the argmax used in MPS"""
 
     @staticmethod
     def forward(ctx: Any, *args: Any, **kwargs: Any) -> Any:

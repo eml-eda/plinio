@@ -17,28 +17,29 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator
+from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator, Union, Optional
 import torch
 import torch.nn as nn
 
 from plinio.methods.dnas_base import DNAS
 from .graph import convert
-from .nn.mixprec_module import MixPrecModule
-from .nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel
+from .nn.module import MPSModule
+from .nn.qtz import MPSType, MPSQtzLayer, MPSQtzChannel
+from plinio.cost import CostSpec, CostFn, bit_params
 
-from plinio.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight, Quantizer_Bias
+from .quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
 DEFAULT_QINFO = {
     'a_quantizer': {
-        'quantizer': PACT_Act,
+        'quantizer': PACTAct,
         'kwargs': {},
     },
     'w_quantizer': {
-        'quantizer': MinMax_Weight,
+        'quantizer': MinMaxWeight,
         'kwargs': {},
     },
     'b_quantizer': {
-        'quantizer': Quantizer_Bias,
+        'quantizer': QuantizerBias,
         'kwargs': {
             'num_bits': 32,
         },
@@ -48,7 +49,7 @@ DEFAULT_QINFO = {
 
 DEFAULT_QINFO_INPUT_QUANTIZER = {
     'a_quantizer': {
-        'quantizer': PACT_Act,
+        'quantizer': PACTAct,
         'kwargs': {
             'init_clip_val': 1
         },
@@ -56,7 +57,7 @@ DEFAULT_QINFO_INPUT_QUANTIZER = {
 }
 
 
-class MixPrec(DNAS):
+class MPS(DNAS):
     """A class that wraps a nn.Module with DNAS-enabled Mixed Precision assigment
 
     :param model: the inner nn.Module instance optimized by the NAS
@@ -64,15 +65,15 @@ class MixPrec(DNAS):
     :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
     :type input_shape: Tuple[int, ...]
-    :param activation_precisions: the possible activations' precisions assigment to be explored
+    :param a_precisions: the possible activations' precisions assigment to be explored
     by the NAS
-    :type activation_precisions: Iterable[int]
-    :param weight_precisions: the possible weights' precisions assigment to be explored
+    :type a_precisions: Iterable[int]
+    :param w_precisions: the possible weights' precisions assigment to be explored
     by the NAS
-    :type weight_precisions: Iterable[int]
-    :param w_mixprec_type: the mixed precision strategy to be used for weigth
+    :type w_precisions: Iterable[int]
+    :param w_search_type: the mixed precision strategy to be used for weigth
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
-    :type w_mixprec_type: MixPrecType
+    :type w_search_type: MPSType
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the num_bits precision
     :type qinfo: Dict
@@ -102,53 +103,42 @@ class MixPrec(DNAS):
     def __init__(
             self,
             model: nn.Module,
-            input_shape: Tuple[int, ...],
-            activation_precisions: Tuple[int, ...] = (2, 4, 8),
-            weight_precisions: Tuple[int, ...] = (2, 4, 8),
-            w_mixprec_type: MixPrecType = MixPrecType.PER_LAYER,
+            cost: Union[CostSpec, Dict[str, CostSpec]] = bit_params,
+            input_example: Optional[Any] = None,
+            input_shape: Optional[Tuple[int, ...]] = None,
+            a_precisions: Tuple[int, ...] = (2, 4, 8),
+            w_precisions: Tuple[int, ...] = (2, 4, 8),
+            w_search_type: MPSType = MPSType.PER_LAYER,
             qinfo: Dict = DEFAULT_QINFO,
+            qinfo_input_quantizer: Optional[Dict] = DEFAULT_QINFO_INPUT_QUANTIZER,
             temperature: float = 1.,
-            regularizer: str = 'size',
             autoconvert_layers: bool = True,
-            input_quantization: bool = True,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             gumbel_softmax: bool = False,
             hard_softmax: bool = False,
             disable_sampling: bool = False,
-            disable_shared_quantizers: bool = False,
-            qinfo_input_quantizer: Dict = DEFAULT_QINFO_INPUT_QUANTIZER):
-        super(MixPrec, self).__init__(regularizer, exclude_names, exclude_types)
-        self._input_shape = input_shape
+            disable_shared_quantizers: bool = False):
+        super(MPS, self).__init__(model, cost, input_example, input_shape)
         self.seed, self._target_layers = convert(
             model,
-            input_shape,
-            activation_precisions,
-            weight_precisions,
-            w_mixprec_type,
+            self._input_example,
+            'autoimport' if autoconvert_layers else 'import',
+            a_precisions,
+            w_precisions,
+            w_search_type,
             qinfo,
             qinfo_input_quantizer,
-            'autoimport' if autoconvert_layers else 'import',
-            input_quantization,
             exclude_names,
             exclude_types,
             disable_shared_quantizers)
-        self.activation_precisions = activation_precisions
-        self.weight_precisions = weight_precisions
-        self.w_mixprec_type = w_mixprec_type
+        self.activation_precisions = a_precisions
+        self.weight_precisions = w_precisions
+        self.w_search_type = w_search_type
         self.qinfo = qinfo
         self.qinfo_input_quantizer = qinfo_input_quantizer
-        self.input_quantization = input_quantization
         self.disable_shared_quantizers = disable_shared_quantizers
-        self.initial_temperature = temperature  # initial, not current temperature
-        self._regularizer = regularizer
-        # save the parameters of the softmax
-        self.gumbel_softmax = gumbel_softmax
-        self.hard_softmax = hard_softmax
-        self.disable_sampling = disable_sampling
-        # update the temperature and softmax parameters at initialization
-        self.update_softmax_temperature(self.initial_temperature)
-        self.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
+        self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model.
@@ -182,8 +172,8 @@ class MixPrec(DNAS):
         """Binarize the architecture coefficients by means of the argmax operator
         """
         for layer in self._target_layers:
-            for quantizer in [layer.mixprec_w_quantizer, layer.mixprec_a_quantizer]:
-                if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+            for quantizer in [layer.w_quantizer, layer.a_quantizer]:
+                if isinstance(quantizer, (MPSQtzLayer, MPSQtzChannel)):
                     alpha_prec = quantizer.alpha_prec
                     max_index = alpha_prec.argmax(dim=0)
                     argmaxed_alpha = torch.zeros(alpha_prec.shape, device=alpha_prec.device)
@@ -202,8 +192,8 @@ class MixPrec(DNAS):
         Useful for fine-tuning the model without changing its architecture
         """
         for layer in self._target_layers:
-            for quantizer in [layer.mixprec_w_quantizer, layer.mixprec_a_quantizer]:
-                if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+            for quantizer in [layer.w_quantizer, layer.a_quantizer]:
+                if isinstance(quantizer, (MPSQtzLayer, MPSQtzChannel)):
                     quantizer.alpha_prec.requires_grad = False
 
     # N.B., this follows EdMIPS formulation -> layer_macs*mix_wbit*mix_abit
@@ -250,6 +240,32 @@ class MixPrec(DNAS):
             ploss = ploss + layer.get_pruning_loss()
         return ploss
 
+    def update_softmax_options(
+            self,
+            temperature: Optional[float] = None,
+            hard: Optional[bool] = None,
+            gumbel: Optional[bool] = None,
+            disable_sampling: Optional[bool] = None):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param temperature: SoftMax temperature
+        :type temperature: Optional[float]
+        :param hard: Hard vs Soft sampling
+        :type hard: Optional[bool]
+        :param gumbel: Gumbel-softmax vs standard softmax
+        :type gumbel: Optional[bool]
+        :param disable_sampling: disable the sampling of the architectural coefficients in the forward pass
+        :type disable_sampling: Optional[bool]
+        """
+        for _, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, MPSModule):
+                if temperature is not None:
+                    layer.softmax_temperature = temperature
+                if hard is not None:
+                    layer.hard_softmax = hard
+
+
     def arch_export(self):
         """Export the architecture found by the NAS as a `quant.nn` module
 
@@ -264,7 +280,7 @@ class MixPrec(DNAS):
                          self._input_shape,
                          self.activation_precisions,
                          self.weight_precisions,
-                         self.w_mixprec_type,
+                         self.w_search_type,
                          self.qinfo,
                          self.qinfo_input_quantizer,
                          'export',
@@ -283,7 +299,7 @@ class MixPrec(DNAS):
         arch = {}
         for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
-                layer = cast(MixPrecModule, layer)
+                layer = cast(MPSModule, layer)
                 arch[name] = layer.summary()
                 arch[name]['type'] = layer.__class__.__name__
         return arch
@@ -298,10 +314,10 @@ class MixPrec(DNAS):
         for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
                 prec_dict = {}
-                if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.alpha_prec.detach()
-                if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.alpha_prec.detach()
+                if isinstance(layer.a_quantizer, (MPSQtzLayer, MPSQtzChannel)):
+                    prec_dict['a_precision'] = layer.a_quantizer.alpha_prec.detach()
+                if isinstance(layer.w_quantizer, (MPSQtzLayer, MPSQtzChannel)):
+                    prec_dict['w_precision'] = layer.w_quantizer.alpha_prec.detach()
 
                 arch[name] = prec_dict
                 arch[name]['type'] = layer.__class__.__name__
@@ -317,10 +333,10 @@ class MixPrec(DNAS):
         for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
                 prec_dict = {}
-                if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.theta_alpha.detach()
-                if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.theta_alpha.detach()
+                if isinstance(layer.a_quantizer, (MPSQtzLayer, MPSQtzChannel)):
+                    prec_dict['a_precision'] = layer.a_quantizer.theta_alpha.detach()
+                if isinstance(layer.w_quantizer, (MPSQtzLayer, MPSQtzChannel)):
+                    prec_dict['w_precision'] = layer.w_quantizer.theta_alpha.detach()
 
                 arch[name] = prec_dict
                 arch[name]['type'] = layer.__class__.__name__
@@ -341,7 +357,7 @@ class MixPrec(DNAS):
         included = set()
         for lname, layer in self.named_modules():
             if layer in self._target_layers:
-                layer = cast(MixPrecModule, layer)
+                layer = cast(MPSModule, layer)
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname
@@ -368,38 +384,65 @@ class MixPrec(DNAS):
             if name not in exclude:
                 yield name, param
 
-    def update_softmax_temperature(self, value):
-        """Update softmax temperature of all submodules
+    def get_cost(self, name: Optional[str] = None) -> torch.Tensor:
+        """Returns the value of the model cost metric named "name".
+        Only allowed alternative in case of multiple cost metrics.
 
-        :param value: value
-        :type value: float
+        :raises NotImplementedError: on the base DNAS class
+        :rtype: torch.Tensor
         """
-        for module in self._target_layers:
-            module.set_temperatures(value)
+        # TODO: Identical to PIT. Factor-out to DNAS?
+        if name is None:
+            assert isinstance(self._cost_specification, CostSpec), \
+                "Multiple model cost metrics provided, you must use .get_cost('cost_name')"
+            cost_spec = self._cost_specification
+            cost_fn_map = self._cost_fn_map
+        else:
+            assert isinstance(self._cost_specification, dict), \
+                "The provided cost specification is not a dictionary."
+            cost_spec = self._cost_specification[name]
+            cost_fn_map = self._cost_fn_map[name]
+        cost_spec = cast(CostSpec, cost_spec)
+        cost_fn_map = cast(Dict[str, CostFn], cost_fn_map)
+        return self._get_single_cost(cost_spec, cost_fn_map)
 
-    def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
-        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
-        and the sampling disabling of the architectural coefficients in the quantizers
+    def _get_single_cost(self, cost_spec: CostSpec,
+                         cost_fn_map: Dict[str, CostFn]) -> torch.Tensor:
+        """Private method to compute a single cost value"""
+        # TODO: relies on the attribute name sn_branches. Not nice, but didn't find
+        # a better solution that remains flexible.
+        cost = torch.tensor(0, dtype=torch.float32)
+        target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
+        for lname, node, layer in target_list:
+            if isinstance(layer, MPSModule):
+                cost = cost + layer.get_cost(cost_spec, cost_fn_map)
+            elif 'sn_branches' not in str(node.target) and self.full_cost:
+                # TODO: this is constant and can be pre-computed for efficiency
+                v = vars(layer)
+                v.update(shapes_dict(node))
+                cost = cost + cost_fn_map[lname](v)
+        return cost
 
-        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
-        :type gumbel_softmax: bool
-        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
-        (param gumbel_softmax must be equal to True)
-        :type gumbel_softmax: bool
-        :param disable_sampling: whether to disable the sampling of the architectural
-        coefficients in the forward pass
-        :type disable_sampling: bool
-        """
-        for module in self._target_layers:
-            module.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
+    def _create_cost_fn_map(self) -> Union[Dict[str, CostFn], Dict[str, Dict[str, CostFn]]]:
+        """Private method to define a map from layers to cost value(s)"""
+        # TODO: identical to PIT. Factor-out to DNAS?
+        if isinstance(self._cost_specification, dict):
+            cost_fn_maps = {}
+            for n, c in self._cost_specification.items():
+                cost_fn_maps[n] = self._single_cost_fn_map(c)
+        else:
+            cost_fn_maps = self._single_cost_fn_map(self._cost_specification)
+        return cost_fn_maps
 
-    def get_softmax_options(self):
-        """Retrieve the initial softmax options.
-
-        :return: Gumbel-softmax flag, hard-softmax, sampling disabled
-        :rtype: bool, bool, bool
-        """
-        return self.gumbel_softmax, self.hard_softmax, self.disable_sampling
+    def _single_cost_fn_map(self, c: CostSpec) -> Dict[str, CostFn]:
+        """MPS-specific creator of {layertype, cost_fn} maps based on a CostSpec."""
+        # simply computes cost of all layers that are not Combiners
+        cost_fn_map = {}
+        for lname, _, layer in self._unique_leaf_modules:
+            if not isinstance(layer, MPSModule):
+                t = type(layer)
+                cost_fn_map[lname] = c[(t, vars(layer))]
+        return cost_fn_map
 
     def __str__(self):
         """Prints the precision-assignent found by the NAS to screen
@@ -410,6 +453,3 @@ class MixPrec(DNAS):
         """
         arch = self.arch_summary()
         return str(arch)
-
-    def get_cost(self):
-        raise NotImplementedError()

@@ -24,7 +24,7 @@ import torch.nn as nn
 from .quantizer import Quantizer
 
 
-class PACT_Act(nn.Module, Quantizer):
+class PACTAct(nn.Module, Quantizer):
     """A nn.Module implementing the PACT (PArametrized Clipping Activation)
     quantization strategy for activations.
     More details can be found at: https://openreview.net/forum?id=By5ugjyCb
@@ -43,7 +43,7 @@ class PACT_Act(nn.Module, Quantizer):
                  cout: None = None,
                  init_clip_val: float = 6.,
                  dequantize: bool = True):
-        super(PACT_Act, self).__init__()
+        super(PACTAct, self).__init__()
         self._num_bits = num_bits
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]), requires_grad=True)
         self._dequantize = dequantize

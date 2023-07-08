@@ -17,15 +17,6 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .mixprec_module import MixPrecModule
-from .mixprec_identity import MixPrec_Identity
-from .mixprec_relu import MixPrec_ReLU
-from .mixprec_linear import MixPrec_Linear
-from .mixprec_conv2d import MixPrec_Conv2d
-from .mixprec_qtz import MixPrecType
-from .mixprec_add import MixPrec_Add
+from .mps import MPS
 
-__all__ = [
-    'MixPrecModule', 'MixPrec_Identity', 'MixPrec_ReLU',
-    'MixPrec_Linear', 'MixPrec_Conv2d', 'MixPrecType', 'MixPrec_Add',
-]
+__all__ = ['MPS']

@@ -19,130 +19,126 @@
 
 import copy
 import operator
-from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Callable
+from typing import cast, List, Iterable, Type, Tuple, Optional, Dict, Callable, Any
 import networkx as nx
 import torch
 import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from plinio.methods.mixprec.quant.quantizers import PACT_Act_Signed
-from plinio.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, MixPrec_Identity, \
-    MixPrecModule, MixPrec_Add
+from plinio.methods.mps.nn import MPSLinear, MPSConv2d, MPSIdentity, \
+    MPSModule, MPSAdd
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
     associate_input_features, add_single_node_properties
 from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
     get_graph_inputs, is_function
 from plinio.graph.transformation import fuse_consecutive_layers
-from plinio.methods.mixprec.nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, \
-    MixPrec_Qtz_Channel
-from plinio.methods.mixprec.quant.quantizers import Quantizer
 from plinio.graph.features_calculation import ModAttrFeaturesCalculator
-from plinio.graph.utils import fx_to_nx_graph
+from plinio.graph.utils import fx_to_nx_graph, NamedLeafModules
+from .nn.qtz import MPSType, MPSQtzLayer, MPSQtzChannel, MPSQtzLayerBias, MPSQtzChannelBias
+from .quant.quantizers import Quantizer
 
 # add new supported layers here:
-mixprec_layer_map: Dict[Type[nn.Module], Type[MixPrecModule]] = {
-    nn.Conv2d: MixPrec_Conv2d,
-    nn.Linear: MixPrec_Linear,
+mps_layer_map: Dict[Type[nn.Module], Type[MPSModule]] = {
+    nn.Conv2d: MPSConv2d,
+    nn.Linear: MPSLinear,
 }
 
 # add new supported functions here:
-mixprec_func_map: Dict[Callable, Type[MixPrecModule]] = {
-    operator.add: MixPrec_Add,
-    torch.add: MixPrec_Add,
+mps_func_map: Dict[Callable, Type[MPSModule]] = {
+    operator.add: MPSAdd,
+    torch.add: MPSAdd,
 }
 
 
-class MixPrecTracer(fx.Tracer):
+class MPSTracer(fx.Tracer):
     def __init__(self) -> None:
         super().__init__()  # type: ignore
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-        if isinstance(m, MixPrecModule):
+        if isinstance(m, MPSModule):
             return True
         else:
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
 
 
 def convert(model: nn.Module,
-            input_shape: Tuple[int, ...],
-            activation_precisions: Tuple[int, ...],
-            weight_precisions: Tuple[int, ...],
-            w_mixprec_type: MixPrecType,
-            qinfo: Dict,
-            qinfo_input_quantizer: Dict,
+            input_example: Any,
             conversion_type: str,
-            input_quantization: bool = True,
+            a_precisions: Tuple[int, ...],
+            w_precisions: Tuple[int, ...],
+            w_search_type: MPSType,
+            qinfo: Dict,
+            qinfo_input_quantizer: Optional[Dict] = None,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
             disable_shared_quantizers: bool = False
-            ) -> Tuple[nn.Module, List]:
-    """Converts a nn.Module, to/from "NAS-able" MixPrec format
+            ) -> Tuple[nn.Module, NamedLeafModules, NamedLeafModules]:
+    """Converts a nn.Module, to/from "NAS-able" format for the mixed-precision search method
 
     :param model: the input nn.Module
     :type model: nn.Module
-    :param input_shape: the shape of an input tensor, without batch size, required for symbolic
-    tracing
-    :type input_shape: Tuple[int, ...]
-    :param activation_precisions: the possible activations' precisions assigment to be explored
-    by the NAS
-    :type activation_precisions: Iterable[int]
-    :param weight_precisions: the possible weights' precisions assigment to be explored
-    by the NAS
-    :type weight_precisions: Iterable[int]
-    :param w_mixprec_type: the mixed precision strategy to be used for weigth
-    i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
-    :type w_mixprec_type: MixPrecType
-    :param qinfo: dict containing desired quantizers for act, weight and bias
-    and their arguments excluding the num_bits precision
-    :type qinfo: Dict
+    :param input_example: an input with the same shape and type of the seed's input, used
+    for symbolic tracing
+    :type input_example: Any
     :param conversion_type: a string specifying the type of conversion. Supported types:
     ('import', 'autoimport', 'export')
     :type conversion_type: str
-    :param input_quantization: whether the input of the network needs
-    to be quantized or not (default: True)
-    :type input_quantization: bool
+    :param a_precisions: the possible activations' precisions assigment to be explored
+    by the NAS
+    :type a_precisions: Iterable[int]
+    :param w_precisions: the possible weights' precisions assigment to be explored
+    by the NAS
+    :type w_precisions: Iterable[int]
+    :param w_search_type: the mixed precision strategy to be used for weigth
+    i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
+    :type w_search_type: MPSType
+    :param qinfo: dict containing desired quantizers for act, weight and bias
+    and their arguments excluding the num_bits precision
+    :type qinfo: Dict
+    :param qinfo_input_quantizer: desired quantizer for the input of the network. If set to None,
+    the input is not quantized (default: None)
+    :type qinfo_input_quantizer: Optional[dict]
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
-    sharing. It can be useful if precision '0' is in the searhc options.
+    sharing. It can be useful if precision '0' is in not in the search options.
     :type disable_shared_quantizers: bool
     :raises ValueError: for unsupported conversion types
-    :return: the converted model, and the list of target layers for the NAS (only for imports)
-    :rtype: Tuple[nn.Module, List]
+    :return: the converted model, and two lists of all (or all unique) leaf modules for
+    the NAS
+    :rtype: Tuple[nn.Module, NamedLeafModule, NamedLeafModules]
     """
     if conversion_type not in ('import', 'autoimport', 'export'):
         raise ValueError("Unsupported conversion type {}".format(conversion_type))
 
     # Symbolic Tracing
-    tracer = MixPrecTracer()
+    tracer = MPSTracer()
     graph = tracer.trace(model.eval())
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
-
-    # Shape Prop
-    # create a "fake" minibatch of 1 input for shape prop
-    batch_example = torch.stack([torch.rand(input_shape)] * 1, 0)
-    device = next(model.parameters()).device
-    ShapeProp(mod).propagate(batch_example.to(device))
+    if len(get_graph_inputs(mod.graph)) > 1:
+        ShapeProp(mod).propagate(*input_example)
+    else:
+        ShapeProp(mod).propagate(input_example)
     add_node_properties(mod)
     if conversion_type in ('autoimport', 'import'):
-        fuse_mixprec_modules(mod)
+        fuse_mps_modules(mod)
     target_layers = convert_layers(mod,
-                                   activation_precisions,
-                                   weight_precisions,
-                                   w_mixprec_type,
-                                   qinfo,
                                    conversion_type,
+                                   a_precisions,
+                                   w_precisions,
+                                   w_search_type,
+                                   qinfo,
                                    exclude_names,
                                    exclude_types,
                                    disable_shared_quantizers)
     if conversion_type in ('autoimport', 'import'):
-        if input_quantization:
-            add_input_quantizer(mod, activation_precisions, qinfo_input_quantizer)
-        add_features_calculator(mod, [mixprec_features_calc])
+        if qinfo_input_quantizer is not None:
+            add_input_quantizer(mod, a_precisions, qinfo_input_quantizer)
+        add_features_calculator(mod, [mps_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
         register_input_quantizers(mod)
@@ -152,54 +148,49 @@ def convert(model: nn.Module,
 
 
 def convert_layers(mod: fx.GraphModule,
+                   conversion_type: str,
                    activation_precisions: Tuple[int, ...],
                    weight_precisions: Tuple[int, ...],
-                   w_mixprec_type: MixPrecType,
+                   w_search_type: MPSType,
                    qinfo: Dict,
-                   conversion_type: str,
                    exclude_names: Iterable[str],
                    exclude_types: Iterable[Type[nn.Module]],
                    disable_shared_quantizers: bool
-                   ) -> List[nn.Module]:
-    """Replaces target layers with their NAS-able version, or vice versa, while also
-    recording the list of NAS-able layers for speeding up later regularization loss
-    computations. Layer conversion is implemented as a reverse BFS on the model graph.
+                   ):
+    """Replaces target layers with their NAS-able version, or vice versa. Layer conversion
+    is implemented as a reverse BFS on the model graph.
 
     :param mod: a torch.fx.GraphModule with tensor shapes annotations. Those are needed to
     determine the macs reg loss.
     :type mod: fx.GraphModule
+    :param conversion_type: a string specifying the type of conversion
+    :type conversion_type: str
     :param activation_precisions: the possible activations' precisions assigment to be explored
     by the NAS
     :type activation_precisions: Iterable[int]
     :param weight_precisions: the possible weights' precisions assigment to be explored
     by the NAS
     :type weight_precisions: Iterable[int]
-    :param w_mixprec_type: the mixed precision strategy to be used for weigth
+    :param w_search_type: the mixed precision strategy to be used for weigth
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
-    :type w_mixprec_type: MixPrecType
+    :type w_search_type: MPSType
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the num_bits precision
     :type qinfo: Dict
-    :param conversion_type: a string specifying the type of conversion
-    :type conversion_type: str
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
-    sharing. It can be useful if precision '0' is in the searhc options.
+    sharing. It can be useful if precision '0' is not in the search options.
     :type disable_shared_quantizers: bool
-    :return: the list of target layers that will be optimized by the NAS
-    :rtype: List[nn.Module]
     """
     g = mod.graph
     queue = get_graph_outputs(g)
     # Dictionary of shared quantizers. Used only in 'autoimport' mode.
     sq_dict = build_shared_quantizers_map(mod,
                                           activation_precisions, weight_precisions,
-                                          w_mixprec_type, qinfo, disable_shared_quantizers)
-    # the list of target layers is only used in 'import' and 'autoimport' modes. Empty for export
-    target_layers = []
+                                          w_search_type, qinfo, disable_shared_quantizers)
     visited = []
     while queue:
         n = queue.pop(0)
@@ -207,26 +198,24 @@ def convert_layers(mod: fx.GraphModule,
             continue
         if conversion_type == 'autoimport':
             autoimport_node(n, mod, activation_precisions, weight_precisions,
-                            w_mixprec_type, qinfo, sq_dict, exclude_names, exclude_types)
-        if conversion_type in ('import', 'autoimport'):
-            add_to_targets(n, mod, target_layers, exclude_names, exclude_types)
+                            w_search_type, qinfo, sq_dict, exclude_names, exclude_types)
         if conversion_type == 'export':
             export_node(n, mod, exclude_names, exclude_types)
         for pred in n.all_input_nodes:
             queue.append(pred)
         visited.append(n)
-    return target_layers
+    return
 
 
 def build_shared_quantizers_map(mod: fx.GraphModule,
                                 activation_precisions: Tuple[int, ...],
                                 weight_precisions: Tuple[int, ...],
-                                w_mixprec_type: MixPrecType,
+                                w_search_type: MPSType,
                                 qinfo: Dict,
                                 disable_shared_quantizers: bool) -> Dict[
                                     fx.Node,
                                     Tuple[Quantizer, Quantizer]]:
-    """Create a map from fx.Node instances to instances of Quantizer to be used by MixPrec
+    """Create a map from fx.Node instances to instances of Quantizer to be used by the NAS
     to optimize precision selection for both activations and weights of that node.
     Handles the sharing of quantizers among multiple nodes.
 
@@ -238,9 +227,9 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
     :param weight_precisions: the possible weights' precisions assigment to be explored
     by the NAS
     :type weight_precisions: Tuple[int]
-    :param w_mixprec_type: the mixed precision strategy to be used for weigth
+    :param w_search_type: the mixed precision strategy to be used for weigth
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
-    :type w_mixprec_type: MixPrecType
+    :type w_search_type: MPSType
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the num_bits precision
     :type qinfo: Dict
@@ -267,7 +256,7 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
     for c in nx.weakly_connected_components(sharing_graph):
         sq_a = None
         sq_w = None
-        # This ensure to work at every iteration with a 'fresh' dict
+        # This ensures to work at every iteration with a 'fresh' dict
         curr_qinfo = copy.deepcopy(qinfo)
         for n in c:
             # identify a node which can give us the number of features with 100% certainty
@@ -279,73 +268,62 @@ def build_shared_quantizers_map(mod: fx.GraphModule,
                 a_quantizer_kwargs = curr_qinfo['a_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
                 a_quantizer_kwargs['cout'] = cout
-                sq_a = MixPrec_Qtz_Layer(activation_precisions,
-                                         a_quantizer,
-                                         a_quantizer_kwargs)
+                sq_a = MPSQtzLayer(activation_precisions,
+                                   a_quantizer,
+                                   a_quantizer_kwargs)
                 # Build weight shared quantizer
                 w_quantizer = curr_qinfo['w_quantizer']['quantizer']
                 w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
                 w_quantizer_kwargs['cout'] = cout
-                if w_mixprec_type == MixPrecType.PER_LAYER:
-                    sq_w = MixPrec_Qtz_Layer(weight_precisions,
-                                             w_quantizer,
-                                             w_quantizer_kwargs)
-                elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-                    sq_w = MixPrec_Qtz_Channel(weight_precisions,
-                                               cout,
-                                               w_quantizer,
-                                               w_quantizer_kwargs)
-            # if n in get_graph_outputs(mod.graph) or n in get_graph_inputs(mod.graph):
+                if w_search_type == MPSType.PER_LAYER:
+                    sq_w = MPSQtzLayer(weight_precisions,
+                                       w_quantizer,
+                                       w_quantizer_kwargs)
+                elif w_search_type == MPSType.PER_CHANNEL:
+                    sq_w = MPSQtzChannel(weight_precisions,
+                                         cout,
+                                         w_quantizer,
+                                         w_quantizer_kwargs)
             if n in get_graph_outputs(mod.graph):
                 # distinguish the case in which the number of features must "frozen"
                 # i.e., the case of input-connected or output-connected components,
                 # this may overwrite a previously set "sq_w"
                 # In this case we simply remove the precision '0' from `weight_precisions`
                 # if present and if mixprec search is PER_CHANNEL
-                if w_mixprec_type == MixPrecType.PER_CHANNEL:
+                if w_search_type == MPSType.PER_CHANNEL:
                     new_weight_precisions = tuple(p for p in weight_precisions if p != 0)
-                    # new_weight_precisions = weight_precisions  # uncomment to have 0 in last fc
                     w_quantizer = curr_qinfo['w_quantizer']['quantizer']
                     w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
                     cout = n.meta['tensor_meta'].shape[1]
                     w_quantizer_kwargs['cout'] = cout
-                    sq_w = MixPrec_Qtz_Channel(new_weight_precisions,
-                                               cout,
-                                               w_quantizer,
-                                               w_quantizer_kwargs)
+                    sq_w = MPSQtzChannel(new_weight_precisions,
+                                         cout,
+                                         w_quantizer,
+                                         w_quantizer_kwargs)
                     # If `c` contains an output node the output quantizer is forced to be
                     # an identity op
                     sq_a = nn.Identity()  # Output is not quantized
-                # continue
         for n in c:
-            # If `c` contains an output node the output quantizer is forced to be
-            # an identity op
-            # if n in get_graph_outputs(mod.graph):
-            # if any([n in get_graph_outputs(mod.graph) for n in c]):
-            #     sq_a = nn.Identity()  # Output is not quantized
-
             # if the flag 'disable_shared_quantizers' is set to True, then we can keep one quantizer
             # per connected component, which is the one defined in the previous for loop. Otherwise,
             # we are not forced to have the same weights quantizer between the various nodes.
             # Thus, we can instantiate a new weights quantizer per node, which will overwrite the
             # one previously set in "sq_w".
-            # This can become useful if precision '0' is not included in the search options.
-            # if (0 not in weight_precisions):
             if disable_shared_quantizers:
                 w_quantizer = qinfo['w_quantizer']['quantizer']
                 w_quantizer_kwargs = qinfo['w_quantizer']['kwargs']
                 cout = n.meta['tensor_meta'].shape[1]
                 w_quantizer_kwargs['cout'] = cout
-                if w_mixprec_type == MixPrecType.PER_LAYER:
-                    sq_w = MixPrec_Qtz_Layer(weight_precisions,
-                                             w_quantizer,
-                                             w_quantizer_kwargs)
-                elif w_mixprec_type == MixPrecType.PER_CHANNEL:
-                    sq_w = MixPrec_Qtz_Channel(weight_precisions,
-                                               cout,
-                                               w_quantizer,
-                                               w_quantizer_kwargs)
+                if w_search_type == MPSType.PER_LAYER:
+                    sq_w = MPSQtzLayer(weight_precisions,
+                                       w_quantizer,
+                                       w_quantizer_kwargs)
+                elif w_search_type == MPSType.PER_CHANNEL:
+                    sq_w = MPSQtzChannel(weight_precisions,
+                                         cout,
+                                         w_quantizer,
+                                         w_quantizer_kwargs)
 
             sq_dict[n] = (sq_a, sq_w)
     return sq_dict
@@ -380,17 +358,14 @@ def autoimport_node(n: fx.Node,
                     mod: fx.GraphModule,
                     activation_precisions: Tuple[int, ...],
                     weight_precisions: Tuple[int, ...],
-                    w_mixprec_type: MixPrecType,
+                    w_search_type: MPSType,
                     qinfo: Dict,
                     sq_dict: Dict[fx.Node, Tuple[Quantizer, Quantizer]],
                     exclude_names: Iterable[str],
                     exclude_types: Iterable[Type[nn.Module]]
-                    ) -> Optional[Quantizer]:
+                    ):
     """Rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a standard
     nn.Module with its corresponding NAS-able version.
-
-    Also determines if the currently processed node requires that its predecessor share a common
-    features mask.
 
     :param n: the node to be rewritten
     :type n: fx.Node
@@ -402,45 +377,58 @@ def autoimport_node(n: fx.Node,
     :param weight_precisions: the possible weights' precisions assigment to be explored
     by the NAS
     :type weight_precisions: Tuple[int, ...]
-    :param w_mixprec_type: the mixed precision strategy to be used for weigth
+    :param w_search_type: the mixed precision strategy to be used for weigth
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
-    :type w_mixprec_type: MixPrecType
+    :type w_search_type: MPSType
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the num_bits precision
     :type qinfo: Dict
-    :param sm_dict: a map (node -> quantizer_a, quantizer_w)
-    :type sm_dict: Dict[fx.Node, Tuple[Quantizer, Quantizer]]
+    :param sq_dict: a map (node -> quantizer_a, quantizer_w)
+    :type sq_dict: Dict[fx.Node, Tuple[Quantizer, Quantizer]]
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
-    :return: the updated shared_quantizer
-    :rtype: Optional[Quantizer]
     """
-    if is_layer(n, mod, tuple(mixprec_layer_map.keys())) and \
+    if is_layer(n, mod, tuple(mps_layer_map.keys())) and \
        not exclude(n, mod, exclude_names, exclude_types):
-        module_type = mixprec_layer_map[type(mod.get_submodule(str(n.target)))]
-    elif is_function(n, tuple(mixprec_func_map.keys())):
-        module_type = mixprec_func_map[cast(Callable, n.target)]
+        module_type = mps_layer_map[type(mod.get_submodule(str(n.target)))]
+    elif is_function(n, tuple(mps_func_map.keys())):
+        module_type = mps_func_map[cast(Callable, n.target)]
     else:
         return
-    # TODO: Define some utility quantization function to do all this stuff
-    # Unpack qinfo
+
+    a_quantizer, w_quantizer = sq_dict[n]
+
+    # create bias quantizer (which is never shared)
     b_quantizer = qinfo['b_quantizer']['quantizer']
     b_quantizer_kwargs = qinfo['b_quantizer']['kwargs']
-    # Add output channel info to wuantizer kwargs
     cout = n.meta['tensor_meta'].shape[1]
     b_quantizer_kwargs['cout'] = cout
+    if w_search_type == MPSType.PER_LAYER:
+        w_quantizer = cast(MPSQtzLayer, w_quantizer)
+        b_quantizer = MPSQtzLayerBias(b_quantizer,
+                                      cout,
+                                      w_quantizer,
+                                      b_quantizer_kwargs)
+    elif w_search_type == MPSType.PER_CHANNEL:
+        w_quantizer = cast(MPSQtzChannel, w_quantizer)
+        b_quantizer = MPSQtzChannelBias(b_quantizer,
+                                        cout,
+                                        w_quantizer,
+                                        b_quantizer_kwargs)
+    else:
+        msg = f'Supported mixed-precision types: {list(MPSType)}'
+        raise ValueError(msg)
     # Convert
+    a_quantizer = cast(MPSQtzLayer, a_quantizer)
     module_type.autoimport(n,
                            mod,
-                           w_mixprec_type,
-                           activation_precisions,
-                           weight_precisions,
-                           b_quantizer,
-                           sq_dict[n],
-                           b_quantizer_kwargs)
+                           a_quantizer,
+                           w_quantizer,
+                           b_quantizer)
+    return
 
 
 def export_node(n: fx.Node, mod: fx.GraphModule,
@@ -459,10 +447,10 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if is_inherited_layer(n, mod, (MixPrecModule,)):
+    if is_inherited_layer(n, mod, (MPSModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
-        layer = cast(MixPrecModule, mod.get_submodule(str(n.target)))
+        layer = cast(MPSModule, mod.get_submodule(str(n.target)))
         layer.export(n, mod)
 
 
@@ -491,10 +479,10 @@ def add_input_quantizer(mod: fx.GraphModule,
         a_quantizer_kwargs['cout'] = cout
         # a_quantizer_kwargs['init_clip_val'] = 1.
         # TODO: give more flexibility upon the choice of the input quantizer
-        q_a = MixPrec_Qtz_Layer(activation_precisions,
-                                a_quantizer,
-                                a_quantizer_kwargs)
-        inp_qtz = MixPrec_Identity(activation_precisions, q_a)
+        q_a = MPSQtzLayer(activation_precisions,
+                          a_quantizer,
+                          a_quantizer_kwargs)
+        inp_qtz = MPSIdentity(activation_precisions, q_a)
         # Add quantizer to graph
         mod.add_submodule('input_quantizer', inp_qtz)
         with mod.graph.inserting_after(n):
@@ -509,53 +497,6 @@ def add_input_quantizer(mod: fx.GraphModule,
         # Force the new node to be features_defining in order to be recognized
         # as predecessor when performin the `register_input_quantizers` step
         new_node.meta['features_defining'] = True
-
-
-# def add_input_quantizer(mod: fx.GraphModule,
-#                         activation_precisions: Tuple[int, ...],
-#                         qinfo: Dict):
-#     """Add input quantizer at the network input.
-# #
-#     :param mod: the parent module, where the new node has to be optionally inserted
-#     :type mod: fx.GraphModule
-#     :param activation_precisions: the possible activations' precisions assigment to be explored
-#     by the NAS
-#     :type activation_precisions: Tuple[int, ...]
-#     :param qinfo: dict containing desired quantizers for act, weight and bias
-#     and their arguments excluding the num_bits precision
-#     :type qinfo: Dict
-#     """
-#     g = mod.graph
-#     queue = get_graph_inputs(g)
-#     while queue:
-#         n = queue.pop(0)
-#         # Create quantizer
-#         # a_quantizer = qinfo['a_quantizer']['quantizer']
-#         a_quantizer = PACT_Act_Signed
-#         # a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
-#         a_quantizer_kwargs = {}
-#         cout = n.meta['tensor_meta'].shape[1]
-#         a_quantizer_kwargs['cout'] = cout
-#         # a_quantizer_kwargs['init_clip_val'] = 1.
-#         # TODO: give more flexibility upon the choice of the input quantizer
-#         q_a = MixPrec_Qtz_Layer(activation_precisions,
-#                                 a_quantizer,
-#                                 a_quantizer_kwargs)
-#         inp_qtz = MixPrec_Identity(activation_precisions, q_a)
-#         # Add quantizer to graph
-#         mod.add_submodule('input_quantizer', inp_qtz)
-#         with mod.graph.inserting_after(n):
-#             new_node = mod.graph.call_module(
-#                 'input_quantizer',
-#                 args=(n,)
-#             )
-#             n.replace_all_uses_with(new_node)
-#             new_node.replace_input_with(new_node, n)
-#         # Add new node properties
-#         add_single_node_properties(new_node, mod)
-#         # Force the new node to be features_defining in order to be recognized
-#         # as predecessor when performin the `register_input_quantizers` step
-#         new_node.meta['features_defining'] = True
 
 
 def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Module],
@@ -578,7 +519,7 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
-    if is_inherited_layer(n, mod, (MixPrecModule,)):
+    if is_inherited_layer(n, mod, (MPSModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
         # only conv and FC, exclude BN
@@ -587,7 +528,7 @@ def add_to_targets(n: fx.Node, mod: fx.GraphModule, target_layers: List[nn.Modul
         target_layers.append(mod.get_submodule(str(n.target)))
     # TODO: is the following part of code needed?
     # TODO: Find better way to add modules that in original graph was functions (e.g., add)
-    # if is_function(n, tuple(mixprec_func_map.keys())):
+    # if is_function(n, tuple(mps_func_map.keys())):
     #     name = str(n) + '_' + str(n.all_input_nodes) + '_quant'
     #     target_layers.append(mod.get_submodule(name))
 
@@ -599,17 +540,10 @@ def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
     """
     # TODO: this is almost a duplicate of PIT. Resolve.
     assert (isinstance(lin, nn.Conv2d) or isinstance(lin, nn.Linear))
-    # or isinstance(lin, MixPrec_Conv1d))
     assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
     if not bn.track_running_stats:
         raise AttributeError("BatchNorm folding requires track_running_stats = True")
     with torch.no_grad():
-        # mixprec_a_quantizerconv.following_bn_args = {
-        #     'eps': bn.eps,
-        #     'momentum': bn.momentum,
-        #     'affine': bn.affine,
-        #     'track_running_stats': bn.track_running_stats,
-        # }
         conv_w = lin.weight
         conv_b = lin.bias
         bn_rm = cast(torch.Tensor, bn.running_mean)
@@ -632,43 +566,43 @@ def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
             lin.bias.copy_(conv_b)
 
 
-def fuse_mixprec_modules(mod: fx.GraphModule):
-    """Fuse sequences of layers as required by MixPrec. Namely: Conv-BN and Linear-BN
+def fuse_mps_modules(mod: fx.GraphModule):
+    """Fuse sequences of layers as required by MPS. Namely: Conv-BN and Linear-BN
     :param mod: the parent module
     :type mod: fx.GraphModule
     """
-    # fuse_consecutive_layers(mod, MixPrec_Conv1d, nn.BatchNorm1d, fuse_bn_inplace)
+    # TODO: add Conv1d
     fuse_consecutive_layers(mod, nn.Conv2d, nn.BatchNorm2d, fuse_bn_inplace)
     fuse_consecutive_layers(mod, nn.Linear, nn.BatchNorm1d, fuse_bn_inplace)
 
 
 def register_input_features(mod: fx.GraphModule):
     for n in mod.graph.nodes:
-        if is_inherited_layer(n, mod, (MixPrecModule,)):
+        if is_inherited_layer(n, mod, (MPSModule,)):
             # Set input features calculator
-            sub_mod = cast(MixPrecModule, mod.get_submodule(str(n.target)))
+            sub_mod = cast(MPSModule, mod.get_submodule(str(n.target)))
             fc = n.meta['input_features_set_by'].meta['features_calculator']
             sub_mod.input_features_calculator = fc
 
 
 def register_input_quantizers(mod: fx.GraphModule):
     for n in mod.graph.nodes:
-        if is_inherited_layer(n, mod, (MixPrecModule,)):
-            sub_mod = cast(MixPrecModule, mod.get_submodule(str(n.target)))
+        if is_inherited_layer(n, mod, (MPSModule,)):
+            sub_mod = cast(MPSModule, mod.get_submodule(str(n.target)))
             # Set pointer to proper input act quantizer for bias quantizer
             # this should be done only for convolutional layers
             prev_n = n.meta['input_features_set_by']
             if prev_n.op == 'placeholder':
                 continue
-            while not is_inherited_layer(prev_n, mod, (MixPrecModule,)):
+            while not is_inherited_layer(prev_n, mod, (MPSModule,)):
                 prev_n = prev_n.meta['input_features_set_by']
             prev_submod = mod.get_submodule(str(prev_n.target))
             sub_mod.update_input_quantizer(
-                cast(MixPrec_Qtz_Layer, prev_submod.mixprec_a_quantizer))
+                cast(MPSQtzLayer, prev_submod.a_quantizer))
 
 
-def mixprec_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:
-    """Sets the feature calculator for a MixPrec Module
+def mps_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:
+    """Sets the feature calculator for a MPS Module
 
     :param n: node
     :type n: fx.Node
@@ -677,7 +611,7 @@ def mixprec_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFe
     :return: optional feature calculator object for PIT node
     :rtype: ModAttrFeaturesCalculator
     """
-    if is_inherited_layer(n, mod, (MixPrecModule,)):
+    if is_inherited_layer(n, mod, (MPSModule,)):
         # For PIT NAS-able layers, the "active" output features are stored in the
         # out_features_eff attribute, and the binary mask is in features_mask
         sub_mod = mod.get_submodule(str(n.target))

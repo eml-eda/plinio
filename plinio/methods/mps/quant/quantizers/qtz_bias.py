@@ -28,7 +28,7 @@ from .quantizer import Quantizer
 #       then both scale-factors will be available.
 #       Need to understand how to manage this operation whether one of
 #       weights and activations is not quantized.
-class Quantizer_Bias(nn.Module, Quantizer):
+class QuantizerBias(nn.Module, Quantizer):
     """A nn.Module implementing bias quantization.
 
     :param num_bits: quantization precision
@@ -42,7 +42,7 @@ class Quantizer_Bias(nn.Module, Quantizer):
                  num_bits: int,
                  cout: int,
                  dequantize: bool = True):
-        super(Quantizer_Bias, self).__init__()
+        super(QuantizerBias, self).__init__()
         self._num_bits = num_bits
         self._dequantize = dequantize
         # self.register_buffer('s_b', torch.Tensor(cout))

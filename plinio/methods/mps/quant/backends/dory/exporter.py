@@ -28,7 +28,7 @@ from typing import Optional, cast, Union, NamedTuple, List
 import torch
 import torch.nn as nn
 
-from plinio.methods.mixprec.quant.backends.base import remove_inp_quantizer, remove_relu, get_map
+from plinio.methods.mps.quant.backends.base import remove_inp_quantizer, remove_relu, get_map
 from .annotator import DORYAnnotator
 
 

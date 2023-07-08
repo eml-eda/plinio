@@ -18,20 +18,19 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Dict, Any, Optional, Iterator, Tuple, Type
+from typing import Dict, Any, Iterator, Tuple, Union
 import torch.fx as fx
 import torch.nn as nn
-from ..quant.quantizers import Quantizer
-from .mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer
+from .qtz import MPSQtzLayer, MPSQtzChannel, MPSQtzLayerBias, MPSQtzChannelBias
 from plinio.graph.features_calculation import FeaturesCalculator
 
 
-class MixPrecModule:
-    """An abstract class representing the interface that all MixPrec layers should implement
+class MPSModule:
+    """An abstract class representing the interface that all MPS layers should implement
     """
     @abstractmethod
     def __init__(self):
-        raise NotImplementedError("Calling init on base abstract MixPrecModule class")
+        raise NotImplementedError("Calling init on base abstract MPSModule class")
 
     @property
     @abstractmethod
@@ -43,7 +42,7 @@ class MixPrecModule:
         this layer.
         :rtype: FeaturesCalculator
         """
-        raise NotImplementedError("Trying to get input features on abstract MixPrecModule class")
+        raise NotImplementedError("Trying to get input features on abstract MPSModule class")
 
     @input_features_calculator.setter
     @abstractmethod
@@ -55,61 +54,37 @@ class MixPrecModule:
         for this layer
         :type calc: FeaturesCalculator
         """
-        raise NotImplementedError("Trying to set input features on abstract MixPrecModule class")
-
-    @abstractmethod
-    def update_input_quantizer(self, qtz: MixPrec_Qtz_Layer):
-        """Set the `MixPrec_Qtz_Layer` for input activations calculation
-
-        :param qtz: the `MixPrec_Qtz_Layer` instance that computes mixprec quantized
-        versions of the input activations
-        :type qtz: MixPrec_Qtz_Layer
-        """
-        raise NotImplementedError("Trying to set input quantizer on abstract MixPrecModule class")
+        raise NotImplementedError("Trying to set input features on abstract MPSModule class")
 
     @staticmethod
     @abstractmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   w_mixprec_type: MixPrecType,
-                   a_precisions: Tuple[int, ...],
-                   w_precisions: Tuple[int, ...],
-                   b_quantizer: Type[Quantizer],
-                   aw_q: Tuple[Quantizer, Quantizer],
-                   b_quantizer_kwargs: Dict = {}
-                   ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a MixPrecModule layer, starting from the fx.Node
+                   a_mps_quantizer: MPSQtzLayer,
+                   w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel],
+                   b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias],
+                   ):
+        """Create a new fx.Node relative to a MPSModule layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
 
-        Also returns a quantizer in case it needs to be shared with other layers
-
-        :param n: a fx.Node corresponding to a nn.ReLU layer, with shape annotations
+        :param n: a fx.Node corresponding to the module to be converted
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param w_mixprec_type: the mixed precision strategy to be used for weigth
-        i.e., `PER_CHANNEL` or `PER_LAYER`.
-        :type w_mixprec_type: MixPrecType
-        :param a_precisions: The precisions to be explored for activations
-        :type a_precisions: Tuple[int, ...]
-        :param w_precisions: The precisions to be explored for weights
-        :type w_precisions: Tuple[int, ...]
-        :param b_quantizer: The quantizer to be used for biases
-        :type b_quantizer: Type[Quantizer]
-        :param aw_q: A tuple containing respecitvely activation and weight quantizers
-        :type aw_q: Tuple[Quantizer, Quantizer]
-        :param b_quantizer_kwargs: bias quantizer kwargs, if no kwargs are passed default is used
-        :type b_quantizer_kwargs: Dict
+        :param a_mps_quantizer: The MPS quantizer to be used for activations
+        :type a_mps_quantizer: MPSQtzLayer
+        :param w_mps_quantizer: The MPS quantizer to be used for weights (if present)
+        :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
+        :param b_mps_quantizer: The MPS quantizer to be used for biases (if present)
+        :type b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias]
         :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared quantizer
-        :rtype: Optional[Quantizer]
         """
         raise NotImplementedError("Trying to import layer using the base abstract class")
 
     @staticmethod
     @abstractmethod
     def export(n: fx.Node, mod: fx.GraphModule):
-        """Replaces a fx.Node corresponding to a MixPrecModule, with a standard nn.Module layer
+        """Replaces a fx.Node corresponding to a MPSModule, with a standard nn.Module layer
         within a fx.GraphModule
 
         :param n: the node to be rewritten
@@ -126,7 +101,7 @@ class MixPrecModule:
         :return: a dictionary containing the optimized layer hyperparameter values
         :rtype: Dict[str, Any]
         """
-        raise NotImplementedError("Calling summary on base abstract MixPrecModule class")
+        raise NotImplementedError("Calling summary on base abstract MPSModule class")
 
     @abstractmethod
     def named_nas_parameters(
@@ -137,21 +112,42 @@ class MixPrecModule:
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
         :param recurse: kept for uniformity with pytorch API,
-        but MixPrecModule never have sub-layers TODO: check if true
+        but MPSModule never have sub-layers TODO: check if true
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract MixPrecModule class")
+        raise NotImplementedError("Calling arch_parameters on base abstract MPSModule class")
 
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the architectural parameters of this layer
 
         :param recurse: kept for uniformity with pytorch API,
-        but MixPrecModule never have sub-layers TODO: check if true
+        but MPSModule never have sub-layers TODO: check if true
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
         for name, param in self.named_nas_parameters(recurse=recurse):
             yield param
+
+    @property
+    @abstractmethod
+    def input_quantizer(self) -> MPSQtzLayer:
+        """Returns the `MPSQtzLayer` for input activations calculation
+
+        :return: the `MPSQtzLayer` instance that computes mixprec quantized
+        versions of the input activations
+        :rtype: MPSQtzLayer
+        """
+        raise NotImplementedError("Trying to get input_quantizer on base abstract MPSModule class")
+
+    @input_quantizer.setter
+    def input_quantizer(self, qtz: MPSQtzLayer):
+        """Set the `MPSQtzLayer` for input activations calculation
+
+        :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
+        versions of the input activations
+        :type qtz: MPSQtzLayer
+        """
+        raise NotImplementedError("Trying to set input_quantizer on base abstract MPSModule class")

@@ -1,4 +1,4 @@
-# *----------------------------------------------------------------------------*
+# *-----MPSModule
 # * Copyright (C) 2022 Politecnico di Torino, Italy                            *
 # * SPDX-License-Identifier: Apache-2.0                                        *
 # *                                                                            *
@@ -23,15 +23,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ..quant.quantizers import Quantizer
-from .argmaxer import STEArgmax
+from .ste_argmax import STEArgmax
 
 
-class MixPrecType(Enum):
+class MPSType(Enum):
     PER_CHANNEL = auto()
     PER_LAYER = auto()
 
 
-class MixPrec_Qtz_Channel(nn.Module):
+class MPSQtzChannel(nn.Module):
     """A nn.Module implementing a generic mixed-precision quantization searchable
     operation of each channel of tensor provided as input.
     This module includes trainable NAS parameters.
@@ -60,7 +60,7 @@ class MixPrec_Qtz_Channel(nn.Module):
                  gumbel_softmax: bool = False,
                  hard_softmax: bool = False,
                  disable_sampling: bool = False):
-        super(MixPrec_Qtz_Channel, self).__init__()
+        super(MPSQtzChannel, self).__init__()
         if len(precisions) != len(set(precisions)):
             raise ValueError("Precisions cannot be repeated")
         self.precisions = precisions
@@ -203,7 +203,7 @@ class MixPrec_Qtz_Channel(nn.Module):
         return eff_prec
 
 
-class MixPrec_Qtz_Layer(nn.Module):
+class MPSQtzLayer(nn.Module):
     """A nn.Module implementing a generic mixed-precision quantization searchable
     operation of the tensor provided as input.
     This module includes trainable NAS parameters.
@@ -229,7 +229,7 @@ class MixPrec_Qtz_Layer(nn.Module):
                  gumbel_softmax: bool = False,
                  hard_softmax: bool = False,
                  disable_sampling: bool = False):
-        super(MixPrec_Qtz_Layer, self).__init__()
+        super(MPSQtzLayer, self).__init__()
         if len(precisions) != len(set(precisions)):
             raise ValueError("Precisions cannot be repeated")
         self.precisions = precisions
@@ -289,14 +289,15 @@ class MixPrec_Qtz_Layer(nn.Module):
         """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
         and the sampling disabling of the architectural coefficients in the quantizers
 
-        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
-        :type gumbel_softmax: bool
-        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
-        (param gumbel_softmax must be equal to True)
-        :type gumbel_softmax: bool
-        :param disable_sampling: whether to disable the sampling of the architectural
-        coefficients in the forward pass
-        :type disable_sampling: bool
+        :param temperature: SoftMax temperature
+        :type temperature: Optional[float]
+        :param hard: Hard vs Soft sampling
+        :type hard: Optional[bool]
+        :param gumbel: Gumbel-softmax vs standard softmax
+        :type gumbel: Optional[bool]
+        :param disable_sampling: disable the sampling of the architectural coefficients in the
+        forward pass
+        :type disable_sampling: Optional[bool]
         """
         self.hard_softmax = hard_softmax
         if disable_sampling:
@@ -340,39 +341,38 @@ class MixPrec_Qtz_Layer(nn.Module):
         return eff_prec
 
 
-class MixPrec_Qtz_Layer_Bias(nn.Module):
+class MPSQtzLayerBias(nn.Module):
     """A nn.Module implementing mixed-precision quantization searchable
     operation of the bias vector provided as input.
     This module includes trainable NAS parameters which are shared with the
-    `mixprec_w_quantizer` in order to select the proper corresponding quantizer.
+    `w_mps_quantizer` in order to select the proper corresponding quantizer.
 
     :param quantizer: bias quantizer
     :type quantizer: Quantizer
     :param cout: number of output channels
     :type cout: int
-    :param mixprec_w_quantizer: mixprec weight quantizer, it is used to gather info
+    :param w_mps_quantizer: mixprec weight quantizer, it is used to gather info
     about weight scale factor
-    :type mixprec_w_quantizer: MixPrec_Qtz_Layer
+    :type w_mps_quantizer: MixPrec_Qtz_Layer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
-    :param mixprec_a_quantizer: mixprec activation quantizer, it is used to gather info
+    :param a_mps_quantizer: mixprec activation quantizer, it is used to gather info
     about act scale factor. Optional argument, is used only if the user defines
     the network placing MixPrec modules manually.
-    :type mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer]
+    :type a_mps_quantizer: Optional[MixPrec_Qtz_Layer]
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
-                 cout: int,
-                 mixprec_w_quantizer: MixPrec_Qtz_Layer,
+                 w_mps_quantizer: MPSQtzLayer,
                  quantizer_kwargs: Dict = {},
-                 mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer] =
-                 cast(MixPrec_Qtz_Layer, nn.Identity())):
-        super(MixPrec_Qtz_Layer_Bias, self).__init__()
+                 a_mps_quantizer: Optional[MPSQtzLayer] =
+                 cast(MPSQtzLayer, nn.Identity())):
+        super(MPSQtzLayerBias, self).__init__()
         self.quantizer = quantizer
         self.cout = cout
         # This will be eventually overwritten later when we process the model graph
-        self.mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
-        self.mixprec_w_quantizer = mixprec_w_quantizer
+        self.a_mps_quantizer = cast(MPSQtzLayer, a_mps_quantizer)
+        self.w_mps_quantizer = w_mps_quantizer
         self.quantizer_kwargs = quantizer_kwargs
 
         # Build bias quantizer
@@ -402,8 +402,8 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_a = torch.tensor(0, dtype=torch.float32)
-        sm_alpha = self.mixprec_a_quantizer.theta_alpha
-        for i, qtz in enumerate(self.mixprec_a_quantizer.mix_qtz):
+        sm_alpha = self.a_mps_quantizer.theta_alpha
+        for i, qtz in enumerate(self.a_mps_quantizer.mix_qtz):
             s_a = s_a + (sm_alpha[i] * qtz.s_a)
         return s_a
 
@@ -414,13 +414,13 @@ class MixPrec_Qtz_Layer_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_w = torch.tensor(0, dtype=torch.float32)
-        sm_alpha = self.mixprec_w_quantizer.theta_alpha
-        for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
+        sm_alpha = self.w_mps_quantizer.theta_alpha
+        for i, qtz in enumerate(self.w_mps_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w
 
 
-class MixPrec_Qtz_Channel_Bias(nn.Module):
+class MPSQtzChannelBias(nn.Module):
     """A nn.Module implementing mixed-precision quantization searchable
     operation of each channel of bias vector provided as input.
     This module includes trainable NAS parameters.
@@ -429,29 +429,29 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
     :type quantizer: Quantizer
     :param cout: number of output channels
     :type cout: int
-    :param mixprec_w_quantizer: mixprec weight quantizer, it is used to gather info
+    :param w_mps_quantizer: mixprec weight quantizer, it is used to gather info
     about weight scale factor
-    :type mixprec_w_quantizer: MixPrec_Qtz_Channel
+    :type w_mps_quantizer: MixPrec_Qtz_Channel
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
-    :param mixprec_a_quantizer: mixprec activation quantizer, it is used to gather info
+    :param a_mps_quantizer: mixprec activation quantizer, it is used to gather info
     about act scale factor. Optional argument, is used only if the user defines
     the network placing MixPrec modules manually.
-    :type mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer]
+    :type a_mps_quantizer: Optional[MixPrec_Qtz_Layer]
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
                  cout: int,
-                 mixprec_w_quantizer: MixPrec_Qtz_Channel,
+                 w_mps_quantizer: MPSQtzChannel,
                  quantizer_kwargs: Dict = {},
-                 mixprec_a_quantizer: Optional[MixPrec_Qtz_Layer] =
-                 cast(MixPrec_Qtz_Layer, nn.Identity())):
-        super(MixPrec_Qtz_Channel_Bias, self).__init__()
+                 a_mps_quantizer: Optional[MPSQtzLayer] =
+                 cast(MPSQtzLayer, nn.Identity())):
+        super(MPSQtzChannelBias, self).__init__()
         self.quantizer = quantizer
         self.cout = cout
         # This will be overwritten later when we process the model graph
-        self.mixprec_a_quantizer = cast(MixPrec_Qtz_Layer, mixprec_a_quantizer)
-        self.mixprec_w_quantizer = mixprec_w_quantizer
+        self.a_mps_quantizer = cast(MPSQtzLayer, a_mps_quantizer)
+        self.w_mps_quantizer = w_mps_quantizer
         self.quantizer_kwargs = quantizer_kwargs
 
         # Build bias quantizer
@@ -481,8 +481,8 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_a = torch.tensor(0, dtype=torch.float32)
-        sm_alpha = self.mixprec_a_quantizer.theta_alpha
-        for i, qtz in enumerate(self.mixprec_a_quantizer.mix_qtz):
+        sm_alpha = self.a_mps_quantizer.theta_alpha
+        for i, qtz in enumerate(self.a_mps_quantizer.mix_qtz):
             s_a = s_a + (sm_alpha[i] * qtz.s_a)
         return s_a
 
@@ -493,7 +493,7 @@ class MixPrec_Qtz_Channel_Bias(nn.Module):
         :rtype: torch.Tensor
         """
         s_w = torch.tensor(0, dtype=torch.float32)
-        sm_alpha = self.mixprec_w_quantizer.theta_alpha
-        for i, qtz in enumerate(self.mixprec_w_quantizer.mix_qtz):
+        sm_alpha = self.w_mps_quantizer.theta_alpha
+        for i, qtz in enumerate(self.w_mps_quantizer.mix_qtz):
             s_w = s_w + (sm_alpha[i] * qtz.s_w)
         return s_w

@@ -24,7 +24,7 @@ import torch.nn as nn
 from .quantizer import Quantizer
 
 
-class MinMax_Weight(nn.Module, Quantizer):
+class MinMaxWeight(nn.Module, Quantizer):
     """A nn.Module implementing a min-max quantization strategy for weights.
 
     :param num_bits: quantization precision
@@ -41,7 +41,7 @@ class MinMax_Weight(nn.Module, Quantizer):
                  cout: int,
                  symmetric: bool = True,
                  dequantize: bool = True):
-        super(MinMax_Weight, self).__init__()
+        super(MinMaxWeight, self).__init__()
         self._num_bits = num_bits
         if symmetric:
             self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE

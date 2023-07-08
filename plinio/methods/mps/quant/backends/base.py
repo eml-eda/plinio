@@ -27,9 +27,8 @@ import torch.nn.functional as F
 from torch.fx.experimental.optimization import replace_node_module
 
 from plinio.graph.inspection import is_function, is_layer
-from plinio.methods.mixprec.quant.quantizers import Quantizer
-# from plinio.methods.mixprec.quant.nn import QuantModule
-import plinio.methods.mixprec.quant.nn as qnn
+from plinio.methods.mps.quant.quantizers import Quantizer
+import plinio.methods.mps.quant.nn as qnn
 
 
 class Backend(Enum):
