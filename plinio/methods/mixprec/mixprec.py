@@ -154,7 +154,7 @@ class MixPrec(DNAS):
         # adjust the weights to compensate the eventual zero bit precision. The initialized
         # weight, copied from the warmup model, is increased so that at the first forward
         # pass its quantized value is more similar to the actual float weight value.
-        if (self.w_mixprec_type == MixPrecType.PER_CHANNEL) and (self.hard_softmax):
+        if (self.w_mixprec_type == MixPrecType.PER_CHANNEL) and not (self.hard_softmax):
             with torch.no_grad():
                 for layer in self._target_layers:
                     theta_alpha_rescaling = torch.zeros(1)
