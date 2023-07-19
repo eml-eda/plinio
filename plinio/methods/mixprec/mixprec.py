@@ -25,6 +25,7 @@ from plinio.methods.dnas_base import DNAS
 from .graph import convert
 from .nn.mixprec_module import MixPrecModule
 from .nn.mixprec_qtz import MixPrecType, MixPrec_Qtz_Layer, MixPrec_Qtz_Channel
+from .nn.mixprec_identity import MixPrec_Identity
 
 from plinio.methods.mixprec.quant.quantizers import PACT_Act, MinMax_Weight, Quantizer_Bias
 
@@ -157,12 +158,13 @@ class MixPrec(DNAS):
         if (self.w_mixprec_type == MixPrecType.PER_CHANNEL) and not (self.hard_softmax):
             with torch.no_grad():
                 for layer in self._target_layers:
-                    theta_alpha_rescaling = torch.zeros(1)
-                    for i, precision in enumerate(layer.mixprec_w_quantizer.precisions):
-                        if precision != 0:
-                            theta_alpha_rescaling += layer.mixprec_w_quantizer.theta_alpha[i][0]
+                    if not isinstance(layer, MixPrec_Identity):
+                        theta_alpha_rescaling = torch.zeros(1)
+                        for i, precision in enumerate(layer.mixprec_w_quantizer.precisions):
+                            if precision != 0:
+                                theta_alpha_rescaling += layer.mixprec_w_quantizer.theta_alpha[i][0]
 
-                    layer.weight.data = layer.weight.data / theta_alpha_rescaling
+                        layer.weight.data = layer.weight.data / theta_alpha_rescaling
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model.
@@ -313,14 +315,17 @@ class MixPrec(DNAS):
         arch = {}
         for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
-                prec_dict = {}
-                if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.alpha_prec.detach()
-                if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.alpha_prec.detach()
+                if not isinstance(layer, MixPrec_Identity):
+                    prec_dict = {}
+                    if isinstance(layer.mixprec_a_quantizer,
+                                  (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                        prec_dict['a_precision'] = layer.mixprec_a_quantizer.alpha_prec.detach()
+                    if isinstance(layer.mixprec_w_quantizer,
+                                  (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                        prec_dict['w_precision'] = layer.mixprec_w_quantizer.alpha_prec.detach()
 
-                arch[name] = prec_dict
-                arch[name]['type'] = layer.__class__.__name__
+                    arch[name] = prec_dict
+                    arch[name]['type'] = layer.__class__.__name__
         return arch
 
     def theta_alpha_summary(self) -> Dict[str, Dict[str, Any]]:
@@ -332,14 +337,17 @@ class MixPrec(DNAS):
         arch = {}
         for name, layer in self.seed.named_modules():
             if layer in self._target_layers:
-                prec_dict = {}
-                if isinstance(layer.mixprec_a_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['a_precision'] = layer.mixprec_a_quantizer.theta_alpha.detach()
-                if isinstance(layer.mixprec_w_quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    prec_dict['w_precision'] = layer.mixprec_w_quantizer.theta_alpha.detach()
+                if not isinstance(layer, MixPrec_Identity):
+                    prec_dict = {}
+                    if isinstance(layer.mixprec_a_quantizer,
+                                  (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                        prec_dict['a_precision'] = layer.mixprec_a_quantizer.theta_alpha.detach()
+                    if isinstance(layer.mixprec_w_quantizer,
+                                  (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                        prec_dict['w_precision'] = layer.mixprec_w_quantizer.theta_alpha.detach()
 
-                arch[name] = prec_dict
-                arch[name]['type'] = layer.__class__.__name__
+                    arch[name] = prec_dict
+                    arch[name]['type'] = layer.__class__.__name__
         return arch
 
     def named_nas_parameters(

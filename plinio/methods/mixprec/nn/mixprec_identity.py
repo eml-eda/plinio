@@ -229,3 +229,19 @@ class MixPrec_Identity(nn.Identity, MixPrecModule):
         """
         calc.register(self)
         self._input_features_calculator = calc
+
+    def get_size(self) -> torch.Tensor:
+        """Computes the effective number of weights for the layer
+
+        :return: the effective memory occupation of weights
+        :rtype: torch.Tensor
+        """
+        return torch.zeros(1, device=self.mixprec_a_quantizer.alpha_prec.device)
+
+    def get_macs_layer(self) -> torch.Tensor:
+        """Method that computes the MACs operations for the layer
+
+        :return: the number of MACs
+        :rtype: torch.Tensor
+        """
+        return torch.zeros(1, device=self.mixprec_a_quantizer.alpha_prec.device)
