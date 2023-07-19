@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from plinio.methods.mixprec.quant.quantizers import PACT_Act_Signed
+# from plinio.methods.mixprec.quant.quantizers import PACT_Act_Signed
 from plinio.methods.mixprec.nn import MixPrec_Linear, MixPrec_Conv2d, MixPrec_Identity, \
     MixPrecModule, MixPrec_Add
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
@@ -145,6 +145,9 @@ def convert(model: nn.Module,
             if input_activation_precisions == None:
                 input_activation_precisions = activation_precisions
             add_input_quantizer(mod, input_activation_precisions, qinfo_input_quantizer)
+            add_to_targets([
+                node for node in list(mod.graph.nodes) if node.name == "input_quantizer"][0],
+                mod, target_layers, exclude_names, exclude_types)
         add_features_calculator(mod, [mixprec_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
