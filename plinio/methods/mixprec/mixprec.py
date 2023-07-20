@@ -218,11 +218,15 @@ class MixPrec(DNAS):
         Useful for fine-tuning the model without changing its architecture
         """
         for layer in self._target_layers:
-            for quantizer in [layer.mixprec_w_quantizer,
-                              layer.mixprec_a_quantizer,
-                              layer.input_quantizer]:
-                if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
-                    quantizer.alpha_prec.requires_grad = False
+            if not isinstance(layer, MixPrec_Identity):
+                for quantizer in [layer.mixprec_w_quantizer,
+                                  layer.mixprec_a_quantizer]:
+                    if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                        quantizer.alpha_prec.requires_grad = False
+            else:
+                for quantizer in [layer.mixprec_a_quantizer]:
+                    if isinstance(quantizer, (MixPrec_Qtz_Layer, MixPrec_Qtz_Channel)):
+                        quantizer.alpha_prec.requires_grad = False
 
     # N.B., this follows EdMIPS formulation -> layer_macs*mix_wbit*mix_abit
     # TODO: include formulation with cycles
