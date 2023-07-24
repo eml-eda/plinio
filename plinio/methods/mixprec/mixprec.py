@@ -391,9 +391,9 @@ class MixPrec(DNAS):
         :return: an iterator over the inner network parameters
         :rtype: Iterator[nn.Parameter]
         """
-        exclude = set(_[0] for _ in self.named_nas_parameters())
+        exclude = set(id(_[1]) for _ in self.named_nas_parameters())
         for name, param in self.named_parameters():
-            if name not in exclude:
+            if id(param) not in exclude:
                 yield name, param
 
     def update_softmax_temperature(self, value):
