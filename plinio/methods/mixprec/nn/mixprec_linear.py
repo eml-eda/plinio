@@ -478,7 +478,7 @@ class MixPrec_Linear(nn.Linear, MixPrecModule):
         """
         eff_w_prec = self.mixprec_w_quantizer.effective_precision
         cout = self.out_features_eff
-        cin = self.input_features_calculator.features
+        cin = self.input_features_calculator.features.detach()
         cost = cin * cout * eff_w_prec
         return cost
 
