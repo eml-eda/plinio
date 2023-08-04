@@ -502,7 +502,10 @@ class MixPrec_Conv2d(nn.Conv2d, MixPrecModule):
         """
         eff_w_prec = self.mixprec_w_quantizer.effective_precision
         cout = self.out_features_eff
-        cin = self.input_features_calculator.features.detach()
+        if isinstance(self.input_features_calculator.features, torch.Tensor):
+            cin = self.input_features_calculator.features.detach()
+        else:
+            cin = self.input_features_calculator.features
         cost = cin * cout * self.kernel_size[0] * self.kernel_size[1]
         if self.groups > 1:
             cost = cost / (cout + 1e-4)
