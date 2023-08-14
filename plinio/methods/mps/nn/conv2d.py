@@ -236,7 +236,9 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                 v['w_format'] = int
                 # downscale the input_channels times the probability of using that
                 # input precision
-                v['in_channels'] = (self.input_features_calculator.features *
+                # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
+                # To be double-checked
+                v['in_channels'] = (self.input_features_calculator.features.detach() *
                                     self.in_a_mps_quantizer.theta_alpha[i])
                 # same with weights precision and output channels, but distinguish the two types
                 # of quantizer

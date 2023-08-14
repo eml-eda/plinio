@@ -141,7 +141,9 @@ class MPSAdd(nn.Module, MPSModule):
             v['in_format'] = int
             # downscale the input_channels times the probability of using that
             # input precision
-            v['in_channels'] = (self.input_features_calculator.features *
+            # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
+            # To be double-checked
+            v['in_channels'] = (self.input_features_calculator.features.detach() *
                                 self.in_a_mps_quantizer.theta_alpha[i])
             # TODO: verify that it's correct that i'm using _eff here, and not for conv.
             v['out_channels'] = self.out_features_eff

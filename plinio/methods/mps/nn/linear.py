@@ -17,7 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Iterator, Tuple, Type, cast, Union, List
+from typing import Dict, Any, Iterator, Tuple, cast, Union, List
 import torch
 import torch.fx as fx
 import torch.nn as nn
@@ -223,7 +223,9 @@ class MPSLinear(nn.Linear, MPSModule):
                 v['w_format'] = int
                 # downscale the input_channels times the probability of using that
                 # input precision
-                v['in_channels'] = (self.input_features_calculator.features *
+                # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
+                # To be double-checked
+                v['in_channels'] = (self.input_features_calculator.features.detach() *
                                     self.in_a_mps_quantizer.theta_alpha[i])
                 # same with weights precision and output channels, but distinguish the two types
                 # of quantizer

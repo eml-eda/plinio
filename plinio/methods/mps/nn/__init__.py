@@ -19,13 +19,11 @@
 
 from .module import MPSModule
 from .identity import MPSIdentity
-from .relu import MPSReLU
 from .linear import MPSLinear
 from .conv2d import MPSConv2d
 from .qtz import MPSType
 from .add import MPSAdd
 
 __all__ = [
-    'MPSModule', 'MPSIdentity', 'MPSReLU',
-    'MPSLinear', 'MPSConv2d', 'MPSType', 'MPSAdd',
+    'MPSModule', 'MPSIdentity', 'MPSLinear', 'MPSConv2d', 'MPSType', 'MPSAdd',
 ]
