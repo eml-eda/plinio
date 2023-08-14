@@ -222,8 +222,8 @@ class MPSIdentity(nn.Identity, MPSModule):
         """
         return self._in_a_mps_quantizer
 
-    @in_a_mps_quantizer.setter
-    def in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
+    # @in_a_mps_quantizer.setter
+    def set_in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized

@@ -261,7 +261,6 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
                                           w_quantizer_kwargs)
                 elif w_search_type == MPSType.PER_CHANNEL:
                     sq_w = MPSPerChannelQtz(weight_precisions,
-                                            cout,
                                             w_quantizer,
                                             w_quantizer_kwargs)
             if n in get_graph_outputs(mod.graph):
@@ -277,7 +276,6 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
                     cout = n.meta['tensor_meta'].shape[1]
                     w_quantizer_kwargs['cout'] = cout
                     sq_w = MPSPerChannelQtz(new_weight_precisions,
-                                            cout,
                                             w_quantizer,
                                             w_quantizer_kwargs)
                     # If `c` contains an output node the output quantizer is forced to be
@@ -300,7 +298,6 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
                                           w_quantizer_kwargs)
                 elif w_search_type == MPSType.PER_CHANNEL:
                     sq_w = MPSPerChannelQtz(weight_precisions,
-                                            cout,
                                             w_quantizer,
                                             w_quantizer_kwargs)
 
@@ -376,7 +373,7 @@ def autoimport_node(n: fx.Node,
     b_quantizer_kwargs['cout'] = cout
     b_mps_quantizer = MPSBiasQtz(b_quantizer,
                                  w_mps_quantizer,
-                                 b_quantizer_kwargs)
+                                 quantizer_kwargs=b_quantizer_kwargs)
     module_type.autoimport(n,
                            mod,
                            out_a_mps_quantizer,
@@ -431,8 +428,6 @@ def add_input_quantizer(mod: fx.GraphModule,
         a_quantizer_kwargs = qinfo['a_quantizer']['kwargs']
         cout = n.meta['tensor_meta'].shape[1]
         a_quantizer_kwargs['cout'] = cout
-        # TODO: give more flexibility on the choice of the input quantizer,
-        # allowing it to be different w.r.t. the internal activation quantizer
         q_a = MPSPerLayerQtz(activation_precisions,
                              a_quantizer,
                              a_quantizer_kwargs)
@@ -515,7 +510,9 @@ def register_in_a_mps_quantizers(mod: fx.GraphModule):
             while not is_inherited_layer(prev_n, mod, (MPSModule,)):
                 prev_n = prev_n.meta['input_features_set_by']
             prev_submod = mod.get_submodule(str(prev_n.target))
-            sub_mod.in_a_mps_quantizer = cast(MPSPerLayerQtz, prev_submod.out_a_mps_quantizer)
+            # sub_mod.in_a_mps_quantizer = cast(MPSPerLayerQtz, prev_submod.out_a_mps_quantizer)
+            # TODO: restore setter
+            sub_mod.set_in_a_mps_quantizer(cast(MPSPerLayerQtz, prev_submod.out_a_mps_quantizer))
 
 
 def mps_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:

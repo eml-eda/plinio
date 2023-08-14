@@ -31,7 +31,8 @@ def _ops_bit_conv1d_generic(spec):
     in_bits = spec['in_bits']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    cost = cout * (cin * k + 1) * w_bits * in_bits * out_shape[2]
+    # cost = cout * (cin * k + 1) * w_bits * in_bits * out_shape[2]
+    cost = cout * (cin * k) * w_bits * in_bits * out_shape[2]
     return cost
 
 
@@ -45,7 +46,8 @@ def _ops_bit_conv2d_generic(spec):
     in_bits = spec['in_bits']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    cost = cout * (cin * k[0] * k[1] + 1) * w_bits * in_bits * out_shape[2] * out_shape[3]
+    # cost = cout * (cin * k[0] * k[1] + 1) * w_bits * in_bits * out_shape[2] * out_shape[3]
+    cost = cout * (cin * k[0] * k[1]) * w_bits * in_bits * out_shape[2] * out_shape[3]
     return cost
 
 
@@ -58,7 +60,8 @@ def _ops_bit_conv1d_dw(spec):
     in_bits = spec['in_bits']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    cost = cin * (k + 1) * w_bits * in_bits * out_shape[2]
+    # cost = cin * (k + 1) * w_bits * in_bits * out_shape[2]
+    cost = cin * (k) * w_bits * in_bits * out_shape[2]
     return cost
 
 
@@ -71,7 +74,8 @@ def _ops_bit_conv2d_dw(spec):
     in_bits = spec['in_bits']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    cost = cin * (k[0] * k[1] + 1) * w_bits * in_bits * out_shape[2] * out_shape[3]
+    # cost = cin * (k[0] * k[1] + 1) * w_bits * in_bits * out_shape[2] * out_shape[3]
+    cost = cin * (k[0] * k[1]) * w_bits * in_bits * out_shape[2] * out_shape[3]
     return cost
 
 
@@ -83,7 +87,8 @@ def _ops_bit_linear(spec):
     in_bits = spec['in_bits']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    cost = cout * (cin + 1) * w_bits * in_bits
+    # cost = cout * (cin + 1) * w_bits * in_bits
+    cost = cout * (cin) * w_bits * in_bits
     return cost
 
 

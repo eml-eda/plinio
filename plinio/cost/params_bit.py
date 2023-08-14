@@ -28,7 +28,8 @@ def _params_bit_conv1d_generic(spec):
     w_bits = spec['w_bits']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    cost = cout * (cin * k + 1) * w_bits
+    # cost = cout * (cin * k + 1) * w_bits
+    cost = cout * (cin * k) * w_bits
     return cost
 
 
@@ -39,7 +40,8 @@ def _params_bit_conv2d_generic(spec):
     w_bits = spec['w_bits']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    cost = cout * (cin * k[0] * k[1] + 1) * w_bits
+    # cost = cout * (cin * k[0] * k[1] + 1) * w_bits
+    cost = cout * (cin * k[0] * k[1]) * w_bits
     return cost
 
 
@@ -49,7 +51,8 @@ def _params_bit_conv1d_dw(spec):
     w_bits = spec['w_bits']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    cost = cin * (k + 1) * w_bits
+    # cost = cin * (k + 1) * w_bits
+    cost = cin * (k) * w_bits
     return cost
 
 
@@ -59,7 +62,8 @@ def _params_bit_conv2d_dw(spec):
     w_bits = spec['w_bits']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    cost = cin * (k[0] * k[1] + 1) * w_bits
+    # cost = cin * (k[0] * k[1] + 1) * w_bits
+    cost = cin * (k[0] * k[1]) * w_bits
     return cost
 
 
@@ -69,7 +73,8 @@ def _params_bit_linear(spec):
     w_bits = spec['w_bits']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    cost = cout * (cin + 1) * w_bits
+    # cost = cout * (cin + 1) * w_bits
+    cost = cout * (cin) * w_bits
     return cost
 
 

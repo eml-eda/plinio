@@ -21,23 +21,21 @@ from typing import cast, Iterable, Tuple, Type
 import unittest
 import torch
 import torch.nn as nn
-from plinio.methods import MixPrec
-from plinio.methods.mixprec.nn import MixPrec_Conv2d, MixPrecModule, MixPrecType, \
-    MixPrec_Linear, MixPrec_Identity
-import plinio.methods.mixprec.quant.nn as qnn
-from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyMultiPath2_2D, \
-    SimpleMixPrecNN, SimpleExportedNN2D, SimpleNN2D_NoBN, SimpleExportedNN2D_NoBias, \
-    SimpleExportedNN2D_ch, SimpleExportedNN2D_NoBias_ch, ToyAdd_2D
+from plinio.methods import MPS
+from plinio.methods.mps.nn import MPSConv2d, MPSModule, MPSType, MPSLinear, MPSIdentity
+import plinio.methods.mps.quant.nn as qnn
+from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyAdd_2D, \
+    SimpleMPSNN, SimpleExportedNN2D, SimpleNN2D_NoBN
 
 
-class TestMixPrecConvert(unittest.TestCase):
-    """Test conversion operations to/from nn.Module from/to MixPrec"""
+class TestMPSConvert(unittest.TestCase):
+    """Test conversion operations to/from nn.Module from/to MPS"""
 
     def test_autoimport_simple_layer(self):
         """Test the conversion of a simple sequential model with layer autoconversion
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=3)
 
@@ -45,41 +43,41 @@ class TestMixPrecConvert(unittest.TestCase):
         """Test the conversion of a simple sequential model with layer autoconversion
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = SimpleNN2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         weight_precisions=(0, 2, 4, 8),
-                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_precisions=(0, 2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=3)
 
     def test_autoimport_lastfc_zero_removal(self):
         """Test the removal of the 0 precision search for the last fc layer"""
         nn_ut = SimpleNN2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         weight_precisions=(0, 2, 4, 8),
-                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_precisions=(0, 2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=3)
-        fc_prec = cast(MixPrec_Linear, new_nn.seed.fc).mixprec_w_quantizer.precisions
+        fc_prec = cast(MPSLinear, new_nn.seed.fc).w_mps_quantizer.precisions
         self.assertTrue(0 not in fc_prec, '0 prec not removed by last fc layer')
 
     def test_autoimport_inp_quant_insertion(self):
         """Test the insertion of the input quantizer"""
         nn_ut = SimpleNN2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         weight_precisions=(0, 2, 4, 8),
-                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_precisions=(0, 2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=3)
         self.assertTrue(hasattr(new_nn.seed, 'input_quantizer'), 'inp quantizer not inserted')
         inp_quantizer = getattr(new_nn.seed, 'input_quantizer')
-        msg = f'inp quantizer is of type {type(inp_quantizer)} instead of MixPrec_Identity'
-        self.assertTrue(isinstance(inp_quantizer, MixPrec_Identity), msg)
+        msg = f'inp quantizer is of type {type(inp_quantizer)} instead of MPSIdentity'
+        self.assertTrue(isinstance(inp_quantizer, MPSIdentity), msg)
 
     def test_autoimport_depthwise_layer(self):
         """Test the conversion of a model with depthwise convolutions (cin=cout=groups)
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = DSCNN()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=14)
 
@@ -87,9 +85,9 @@ class TestMixPrecConvert(unittest.TestCase):
         """Test the conversion of a model with depthwise convolutions (cin=cout=groups)
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = DSCNN()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         weight_precisions=(0, 2, 4, 8),
-                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_precisions=(0, 2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=14)
         # Check that depthwise layer shares quantizers with the previous conv layer
@@ -106,7 +104,7 @@ class TestMixPrecConvert(unittest.TestCase):
         """Test the conversion of a toy model with multiple concat and add operations
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=7)
         shared_quantizer_rules = (
@@ -118,24 +116,13 @@ class TestMixPrecConvert(unittest.TestCase):
         )
         self._check_shared_quantizers(new_nn, shared_quantizer_rules)
 
-        # TODO: cat is not supported
-        # nn_ut = ToyMultiPath2_2D()
-        # new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
-        # self._compare_prepared(nn_ut, new_nn.seed)
-        # self._check_target_layers(new_nn, exp_tgt=6)
-        # shared_quantizer_rules = (
-        #     ('conv0', 'conv1', True),   # inputs to add
-        #     ('conv2', 'conv3', True),  # concat over channels
-        # )
-        # self._check_shared_quantizers(new_nn, shared_quantizer_rules)
-
     def test_autoimport_multipath_channel(self):
         """Test the conversion of a toy model with multiple concat and add operations
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = ToyMultiPath1_2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         weight_precisions=(0, 2, 4, 8),
-                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_precisions=(0, 2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=7)
         shared_quantizer_rules = (
@@ -174,9 +161,9 @@ class TestMixPrecConvert(unittest.TestCase):
         scale-factor.
         PER_CHANNEL weight mixed-precision"""
         nn_ut = ToyMultiPath1_2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         weight_precisions=(0, 2, 4, 8),
-                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_precisions=(0, 2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         self._check_target_layers(new_nn, exp_tgt=7)
         shared_quantizer_rules_a = (
@@ -200,8 +187,8 @@ class TestMixPrecConvert(unittest.TestCase):
         """Test the conversion of a Toy model while excluding conv2d layers
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv2d,))
-        # excluding Conv2D, only the final FC should be converted to MixPrec format
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv2d,))
+        # excluding Conv2D, only the final FC should be converted to MPS format
         self._check_target_layers(new_nn, exp_tgt=1)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
@@ -210,10 +197,10 @@ class TestMixPrecConvert(unittest.TestCase):
         """Test the conversion of a Toy model while excluding conv2d layers
         with PER_CHANNEL weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         weight_precisions=(0, 2, 4, 8),
-                         w_mixprec_type=MixPrecType.PER_CHANNEL, exclude_types=(nn.Conv2d,))
-        # excluding Conv2D, only the final FC should be converted to MixPrec format
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_precisions=(0, 2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL, exclude_types=(nn.Conv2d,))
+        # excluding Conv2D, only the final FC should be converted to MPS format
         self._check_target_layers(new_nn, exp_tgt=1)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
@@ -224,7 +211,7 @@ class TestMixPrecConvert(unittest.TestCase):
     #     with PER_LAYER weight mixed-precision (default)"""
     #     nn_ut = ToyMultiPath1_2D()
     #     excluded = ('conv0', 'conv4')
-    #     new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
+    #     new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
     #     # excluding conv0 and conv4, there are 5 convertible conv2d and linear layers left
     #     self._check_target_layers(new_nn, exp_tgt=5)
     #     self._check_layers_exclusion(new_nn, excluded)
@@ -260,36 +247,36 @@ class TestMixPrecConvert(unittest.TestCase):
     #     self._check_layers_exclusion(new_nn, excluded)
 
     def test_import_simple_layer(self):
-        """Test the conversion of a simple sequential model that already contains a MixPrec layer
+        """Test the conversion of a simple sequential model that already contains a MPS layer
         with PER_LAYER weight mixed-precision (default)"""
-        nn_ut = SimpleMixPrecNN()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
+        nn_ut = SimpleMPSNN()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
         # convert with autoconvert disabled. This is as if we exclude layers except the one already
-        # in MixPrec form
+        # in MPS form
         excluded = ('conv1')
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
 
     def test_import_simple_channel(self):
-        """Test the conversion of a simple sequential model that already contains a MixPrec layer
+        """Test the conversion of a simple sequential model that already contains a MPS layer
         with PER_CHANNEL weight mixed-precision"""
-        nn_ut = SimpleMixPrecNN()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         w_mixprec_type=MixPrecType.PER_CHANNEL)
+        nn_ut = SimpleMPSNN()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
         # convert with autoconvert disabled. This is as if we exclude layers except the one already
-        # in MixPrec form
+        # in MPS form
         excluded = ('conv1')
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
         self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
 
     def test_export_initial_simple_layer(self):
         """Test the export of a simple sequential model, just after import
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         activation_precisions=(8,), weight_precisions=(4, 8))
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     a_precisions=(8,), w_precisions=(4, 8))
         exported_nn = new_nn.arch_export()
         expected_exported_nn = SimpleExportedNN2D()
         self._compare_exported(exported_nn, expected_exported_nn)
@@ -336,8 +323,8 @@ class TestMixPrecConvert(unittest.TestCase):
         with torch.no_grad():
             x = torch.rand((1,) + nn_ut.input_shape).to(device)
             nn_ut(x)
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         activation_precisions=(8,), weight_precisions=(4, 8))
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     a_precisions=(8,), w_precisions=(4, 8))
         new_nn = new_nn.to(device)
         # Dummy inference
         with torch.no_grad():
@@ -399,10 +386,10 @@ class TestMixPrecConvert(unittest.TestCase):
         """Test the export of a simple sequential model with no bn, just after import
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D_NoBN()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-                         activation_precisions=(8,), weight_precisions=(4, 8))
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     a_precisions=(8,), w_precisions=(4, 8))
         exported_nn = new_nn.arch_export()
-        expected_exported_nn = SimpleExportedNN2D_NoBias()
+        expected_exported_nn = SimpleExportedNN2D(bias=False)
         self._compare_exported(exported_nn, expected_exported_nn)
 
     # TODO: Not supported at the moment
@@ -416,6 +403,191 @@ class TestMixPrecConvert(unittest.TestCase):
     #     exported_nn = new_nn.arch_export()
     #     expected_exported_nn = SimpleExportedNN2D_NoBias_ch()
     #     self._compare_exported(exported_nn, expected_exported_nn)
+
+    def test_export_with_qparams(self):
+        """Test the conversion of a simple model after forcing the nas/quant
+        params values in some layers"""
+        nn_ut = SimpleNN2D()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
+
+        conv0 = cast(MPSConv2d, new_nn.seed.conv0)
+        conv0.out_a_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([0.3, 0.8, 0.99], dtype=torch.float))
+        conv0.out_a_mps_quantizer.qtz_funcs[2].clip_val = nn.parameter.Parameter(
+            torch.tensor([5.], dtype=torch.float))
+        conv0.w_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([1.5, 0.2, 1], dtype=torch.float))
+
+        conv1 = cast(MPSConv2d, new_nn.seed.conv1)
+        conv1.out_a_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([0.3, 1.8, 0.99], dtype=torch.float))
+        conv1.out_a_mps_quantizer.qtz_funcs[1].clip_val = nn.parameter.Parameter(
+            torch.tensor([1.], dtype=torch.float))
+        conv1.w_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+            torch.tensor([1.5, 0.2, 1.9], dtype=torch.float))
+
+        exported_nn = new_nn.arch_export()
+        # Dummy fwd to fill scale-factors values
+        dummy_inp = torch.rand((2,) + nn_ut.input_shape)
+        with torch.no_grad():
+            exported_nn(dummy_inp)
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv0':
+                child = cast(qnn.QuantConv2d, child)
+                self.assertEqual(child.out_a_quantizer.num_bits, 8, "Wrong act precision")
+                self.assertEqual(child.out_a_quantizer.clip_val, 5., "Wrong act qtz clip_val")
+                self.assertEqual(child.w_quantizer.num_bits, 2, "Wrong weight precision")
+            if name == 'conv1':
+                child = cast(qnn.QuantConv2d, child)
+                self.assertEqual(child.out_a_quantizer.num_bits, 4, "Wrong act precision")
+                self.assertEqual(child.out_a_quantizer.clip_val, 1.,  # type: ignore
+                                 "Wrong act qtz clip_val")
+                self.assertEqual(child.w_quantizer.num_bits, 8, "Wrong weight precision")
+
+    def test_repeated_precisions(self):
+        """Check that if the weights or the activation precisions used for the model's
+        initialization contain duplicates then an exception is raised"""
+        net = ToyAdd_2D()
+        input_shape = net.input_shape
+
+        prec = (2, 4, 8)
+        repeated_prec = (0, 2, 0, 8, 4, 4)
+
+        # case (1): the mixed-precision scheme for the weigths is PER_CHANNEL
+        with self.assertRaises(ValueError):
+            _ = MPS(net,
+                    input_shape=input_shape,
+                    a_precisions=prec,
+                    w_precisions=repeated_prec,
+                    w_search_type=MPSType.PER_CHANNEL)
+
+        with self.assertRaises(ValueError):
+            MPS(net,
+                input_shape=input_shape,
+                a_precisions=repeated_prec,
+                w_precisions=prec,
+                w_search_type=MPSType.PER_CHANNEL)
+
+        # case (2): the mixed-precision scheme for the weigths is PER_LAYER
+        with self.assertRaises(ValueError):
+            MPS(net,
+                input_shape=input_shape,
+                a_precisions=prec,
+                w_precisions=repeated_prec,
+                w_search_type=MPSType.PER_LAYER)
+
+        with self.assertRaises(ValueError):
+            MPS(net,
+                input_shape=input_shape,
+                a_precisions=repeated_prec,
+                w_precisions=prec,
+                w_search_type=MPSType.PER_LAYER)
+
+    def test_out_features_eff(self):
+        """Check whether out_features_eff returns the correct number of not pruned channels"""
+        net = ToyAdd_2D()
+        input_shape = net.input_shape
+        a_prec = (2, 4, 8)
+        alpha_prec = torch.zeros(4, 10)
+        alpha_prec[torch.tensor([0, 0, 0, 1, 1, 1, 1, 1, 2, 3]),
+                   torch.tensor([3, 5, 9, 0, 1, 2, 7, 8, 6, 4])] = 1
+        x = torch.rand(input_shape).unsqueeze(0)
+        # Use the following alpha_prec matrix to check the sanity of out_features_eff
+        # for one specific layer
+        # [[0., 0., 0., 1., 0., 1., 0., 0., 0., 1.],
+        #  [1., 1., 1., 0., 0., 0., 0., 1., 1., 0.],
+        #  [0., 0., 0., 0., 0., 0., 1., 0., 0., 0.],
+        #  [0., 0., 0., 0., 1., 0., 0., 0., 0., 0.]])
+
+        # case (1): zero_index = 0
+        w_prec = (0, 2, 4, 8)
+        mixprec_net = MPS(net,
+                          input_shape=input_shape,
+                          a_precisions=a_prec,
+                          w_precisions=w_prec,
+                          w_search_type=MPSType.PER_CHANNEL,
+                          hard_softmax=True)
+        for layer in mixprec_net.modules():  # force sampling of 8-bit precision
+            if isinstance(layer, MPSConv2d) or isinstance(layer, MPSLinear):
+                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha_prec.shape)
+                alpha_no_0bit[-1, :] = 1
+                layer.w_mps_quantizer.alpha_prec.data = alpha_no_0bit
+        conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
+        conv1.w_mps_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
+        mixprec_net(x)  # perform a forward pass to update the out_features_eff values
+        self.assertEqual(conv1.out_features_eff.item(), 7)
+
+        # case (2): zero_index = 2
+        w_prec = (2, 4, 0, 8)
+        mixprec_net = MPS(net,
+                          input_shape=input_shape,
+                          a_precisions=a_prec,
+                          w_precisions=w_prec,
+                          w_search_type=MPSType.PER_CHANNEL,
+                          hard_softmax=True)
+        for layer in mixprec_net.modules():
+            if isinstance(layer, MPSConv2d) or isinstance(layer, MPSLinear):
+                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha_prec.shape)
+                alpha_no_0bit[-1, :] = 1
+                layer.w_mps_quantizer.alpha_prec.data = alpha_no_0bit
+        conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
+        conv1.w_mps_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
+        mixprec_net(x)  # perform a forward pass to update the out_features_eff values
+        self.assertEqual(conv1.out_features_eff.item(), 9)
+
+    def test_input_features_calculator(self):
+        """Check whether input_features_calculator returns the correct number of input channels,
+        both in the case where 0-bit precision is allowed and in the case where it is not"""
+        net = SimpleNN2D()
+        input_shape = net.input_shape
+        x = torch.rand(input_shape).unsqueeze(0)
+        a_prec = (2, 4, 8)
+
+        # case (1): no 0-bit precision, i.e. no pruning allowed
+        w_prec = (2, 4, 8)
+        mixprec_net = MPS(net,
+                          input_shape=input_shape,
+                          a_precisions=a_prec,
+                          w_precisions=w_prec,
+                          w_search_type=MPSType.PER_CHANNEL,
+                          hard_softmax=True)
+        mixprec_net(x)
+
+        conv0 = cast(MPSConv2d, mixprec_net.seed.conv0)
+        self.assertEqual(conv0.input_features_calculator.features.item(), input_shape[0])
+
+        conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
+        self.assertEqual(conv1.input_features_calculator.features.item(),
+                         conv0.out_features_eff.item())
+
+        fc = cast(MPSLinear, mixprec_net.seed.fc)
+        self.assertEqual(fc.input_features_calculator.features.item(),
+                         conv1.out_features_eff.item() * 10 * 10)
+
+        # case(2): 0-bit precision with some channels pruned
+        w_prec = (0, 2, 4, 8)
+        mixprec_net = MPS(net,
+                          input_shape=input_shape,
+                          a_precisions=a_prec,
+                          w_precisions=w_prec,
+                          w_search_type=MPSType.PER_CHANNEL,
+                          hard_softmax=True)
+
+        for layer in mixprec_net.modules():  # force sampling of 8-bit precision
+            if isinstance(layer, MPSConv2d) or isinstance(layer, MPSLinear):
+                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha_prec.shape)
+                alpha_no_0bit[-1, :] = 1
+                layer.w_mps_quantizer.alpha_prec.data = alpha_no_0bit
+        # prune one channel of conv1 layer
+        conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
+        conv1.w_mps_quantizer.alpha_prec.data[0, 2] = 1
+        conv1.w_mps_quantizer.alpha_prec.data[-1, 2] = 0
+        mixprec_net(x)
+
+        fc = cast(MPSLinear, mixprec_net.seed.fc)
+        self.assertEqual(fc.input_features_calculator.features.item(),
+                         conv1.out_features_eff.item() * 10 * 10)
 
     def _compare_prepared(self,
                           old_mod: nn.Module, new_mod: nn.Module,
@@ -432,7 +604,7 @@ class TestMixPrecConvert(unittest.TestCase):
                                    exclude_names, exclude_types)
             if isinstance(child, nn.Conv2d):
                 if (base_name + name not in exclude_names) and not isinstance(child, exclude_types):
-                    self.assertTrue(isinstance(new_child, MixPrec_Conv2d),
+                    self.assertTrue(isinstance(new_child, MPSConv2d),
                                     f"Layer {name} not converted")
                     self.assertEqual(child.out_channels, new_child.out_channels,
                                      f"Layer {name} wrong output channels")
@@ -455,98 +627,57 @@ class TestMixPrecConvert(unittest.TestCase):
                     # self.assertTrue(torch.all(child.bias == new_child.bias),
                     #                 f"Layer {name} wrong bias values")
 
-    def test_export_with_qparams(self):
-        """Test the conversion of a simple model after forcing the nas/quant
-        params values in some layers"""
-        nn_ut = SimpleNN2D()
-        new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape)
-
-        conv0 = cast(MixPrec_Conv2d, new_nn.seed.conv0)
-        conv0.mixprec_a_quantizer.alpha_prec = nn.parameter.Parameter(
-            torch.tensor([0.3, 0.8, 0.99], dtype=torch.float))
-        conv0.mixprec_a_quantizer.mix_qtz[2].clip_val = nn.parameter.Parameter(
-            torch.tensor([5.], dtype=torch.float))
-        conv0.mixprec_w_quantizer.alpha_prec = nn.parameter.Parameter(
-            torch.tensor([1.5, 0.2, 1], dtype=torch.float))
-
-        conv1 = cast(MixPrec_Conv2d, new_nn.seed.conv1)
-        conv1.mixprec_a_quantizer.alpha_prec = nn.parameter.Parameter(
-            torch.tensor([0.3, 1.8, 0.99], dtype=torch.float))
-        conv1.mixprec_a_quantizer.mix_qtz[1].clip_val = nn.parameter.Parameter(
-            torch.tensor([1.], dtype=torch.float))
-        conv1.mixprec_w_quantizer.alpha_prec = nn.parameter.Parameter(
-            torch.tensor([1.5, 0.2, 1.9], dtype=torch.float))
-
-        exported_nn = new_nn.arch_export()
-        # Dummy fwd to fill scale-factors values
-        dummy_inp = torch.rand((2,) + nn_ut.input_shape)
-        with torch.no_grad():
-            exported_nn(dummy_inp)
-
-        for name, child in exported_nn.named_children():
-            if name == 'conv0':
-                child = cast(qnn.Quant_Conv2d, child)
-                # mixprec_child = cast(MixPrec_Conv2d, new_nn.seed._modules[name])
-                self.assertEqual(child.a_precision, 8, "Wrong act precision")
-                self.assertEqual(child.out_a_quantizer.clip_val, 5.,  # type: ignore
-                                 "Wrong act qtz clip_val")
-                self.assertEqual(child.w_precision, 2, "Wrong weight precision")
-            if name == 'conv1':
-                child = cast(qnn.Quant_Conv2d, child)
-                # mixprec_child = cast(MixPrec_Conv2d, new_nn.seed._modules[name])
-                self.assertEqual(child.a_precision, 4, "Wrong act precision")
-                self.assertEqual(child.out_a_quantizer.clip_val, 1.,  # type: ignore
-                                 "Wrong act qtz clip_val")
-                self.assertEqual(child.w_precision, 8, "Wrong weight precision")
-
-    def _check_target_layers(self, new_nn: MixPrec, exp_tgt: int):
+    def _check_target_layers(self, new_nn: MPS, exp_tgt: int, unique: bool = False):
         """Check if number of target layers is as expected"""
-        n_tgt = len(new_nn._target_layers)
+        if unique:
+            n_tgt = len([_ for _ in new_nn._unique_leaf_modules if isinstance(_[2], MPSModule)])
+        else:
+            n_tgt = len([_ for _ in new_nn._leaf_modules if isinstance(_[2], MPSModule)])
         self.assertEqual(exp_tgt, n_tgt,
                          "Expected {} target layers, but found {}".format(exp_tgt, n_tgt))
 
     def _check_add_quant_prop(self,
-                              new_nn: MixPrec,
+                              new_nn: MPS,
                               check_rules: Iterable[Tuple[str, str, bool]]):
-        """Check if add quantizers are correctly propaated during an autoimport.
+        """Check if add quantizers are correctly propagated during an autoimport.
 
-        The check_dict contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
+        The check_rules contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
         true or false to specify that 1st_layer and 2nd_layer must/must-not share their maskers
         respectively.
         """
         converted_layer_names = dict(new_nn.seed.named_modules())
         for layer_1, layer_2, shared_flag in check_rules:
-            quantizer_1_a = converted_layer_names[layer_1].mixprec_a_quantizer  # type: ignore
-            quantizer_2_a = converted_layer_names[layer_2].mixprec_a_quantizer  # type: ignore
+            quantizer_1_a = converted_layer_names[layer_1].out_a_mps_quantizer
+            quantizer_2_a = converted_layer_names[layer_2].out_a_mps_quantizer
             if shared_flag:
-                msg = f"Layers {layer_1} and {layer_2} are expected to share "
-                msg_a = msg + "act quantizer, but don't"
-                self.assertEqual(quantizer_1_a, quantizer_2_a, msg_a)
+                msg = f"Layers {layer_1} and {layer_2} are expected to share " + \
+                        "act quantizer, but don't"
+                self.assertEqual(quantizer_1_a, quantizer_2_a, msg)
             else:
-                msg = f"Layers {layer_1} and {layer_2} are expected to have independent "
-                msg_a = msg + "act quantizers"
-                self.assertNotEqual(quantizer_1_a, quantizer_2_a, msg_a)
+                msg = f"Layers {layer_1} and {layer_2} are expected to have independent " + \
+                        "act quantizers"
+                self.assertNotEqual(quantizer_1_a, quantizer_2_a, msg)
 
     def _check_shared_quantizers(self,
-                                 new_nn: MixPrec,
+                                 new_nn: MPS,
                                  check_rules: Iterable[Tuple[str, str, bool]],
                                  act_or_w: str = 'both'):
         """Check if shared quantizers are set correctly during an autoimport.
 
-        The check_dict contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
-        true or false to specify that 1st_layer and 2nd_layer must/must-not share their maskers
-        respectively.
+        The check_rules contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
+        true or false to specify that 1st_layer and 2nd_layer must/must-not share their
+        quantizers respectively.
         """
         converted_layer_names = dict(new_nn.seed.named_modules())
         for layer_1, layer_2, shared_flag in check_rules:
             quantizer_1_a, quantizer_2_a = None, None
             quantizer_1_w, quantizer_2_w = None, None
             if act_or_w == 'act' or act_or_w == 'both':
-                quantizer_1_a = converted_layer_names[layer_1].mixprec_a_quantizer  # type: ignore
-                quantizer_2_a = converted_layer_names[layer_2].mixprec_a_quantizer  # type: ignore
+                quantizer_1_a = converted_layer_names[layer_1].out_a_mps_quantizer
+                quantizer_2_a = converted_layer_names[layer_2].out_a_mps_quantizer
             if act_or_w == 'w' or act_or_w == 'both':
-                quantizer_1_w = converted_layer_names[layer_1].mixprec_w_quantizer  # type: ignore
-                quantizer_2_w = converted_layer_names[layer_2].mixprec_w_quantizer  # type: ignore
+                quantizer_1_w = converted_layer_names[layer_1].w_mps_quantizer
+                quantizer_2_w = converted_layer_names[layer_2].w_mps_quantizer
             if shared_flag:
                 msg = f"Layers {layer_1} and {layer_2} are expected to share "
                 if act_or_w == 'act' or act_or_w == 'both':
@@ -564,44 +695,36 @@ class TestMixPrecConvert(unittest.TestCase):
                     msg_w = msg + "weight quantizers"
                     self.assertNotEqual(quantizer_1_w, quantizer_2_w, msg_w)
 
-    def _check_layers_exclusion(self, new_nn: MixPrec, excluded: Iterable[str]):
+    def _check_layers_exclusion(self, new_nn: MPS, excluded: Iterable[str]):
         """Check that layers in "excluded" have not be converted to PIT form"""
         converted_layer_names = dict(new_nn.seed.named_modules())
         for layer_name in excluded:
             layer = converted_layer_names[layer_name]
             # verify that the layer has not been converted to one of the NAS types
-            self.assertNotIsInstance(type(layer), MixPrecModule,
+            self.assertNotIsInstance(type(layer), MPSModule,
                                      f"Layer {layer_name} should not be converted")
-            # additionally, verify that there is no channel_masker (al PIT layers have it)
-            # this is probably redundant
-            try:
-                layer.__getattr__('out_channel_masker')
-            except Exception:
-                pass
-            else:
-                self.fail("Excluded layer has the output_channel_masker set")
 
     def _compare_exported(self, exported_mod: nn.Module, expected_mod: nn.Module):
-        """Compare two nn.Modules, where one has been imported and exported by MixPrec"""
+        """Compare two nn.Modules, where one has been imported and exported by MPS"""
         for name, child in expected_mod.named_children():
             new_child = cast(nn.Module, exported_mod._modules[name])
             # self._compare_exported(child, new_child)
-            if isinstance(child, qnn.Quant_Conv2d):
+            if isinstance(child, qnn.QuantConv2d):
                 self._check_conv2d(child, new_child)
-            if isinstance(child, qnn.Quant_Linear):
+            if isinstance(child, qnn.QuantLinear):
                 self._check_linear(child, new_child)
-            if isinstance(child, qnn.Quant_List):
-                self.assertIsInstance(new_child, qnn.Quant_List, "Wrong layer type")
-                new_child = cast(qnn.Quant_List, new_child)
+            if isinstance(child, qnn.QuantList):
+                self.assertIsInstance(new_child, qnn.QuantList, "Wrong layer type")
+                new_child = cast(qnn.QuantList, new_child)
                 for layer, new_layer in zip(child, new_child):
-                    if isinstance(layer, qnn.Quant_Conv2d):
+                    if isinstance(layer, qnn.QuantConv2d):
                         self._check_conv2d(layer, new_layer)
-                    if isinstance(layer, qnn.Quant_Linear):
+                    if isinstance(layer, qnn.QuantLinear):
                         self._check_linear(layer, new_layer)
 
     def _check_conv2d(self, child, new_child):
-        """Collection of checks on Quant_Conv2d"""
-        self.assertIsInstance(new_child, qnn.Quant_Conv2d, "Wrong layer type")
+        """Collection of checks on QuantConv2d"""
+        self.assertIsInstance(new_child, qnn.QuantConv2d, "Wrong layer type")
         # Check layer geometry
         self.assertTrue(child.in_channels == new_child.in_channels)
         self.assertTrue(child.out_channels == new_child.out_channels)
@@ -612,169 +735,19 @@ class TestMixPrecConvert(unittest.TestCase):
         self.assertTrue(child.groups == new_child.groups)
         self.assertTrue(child.padding_mode == new_child.padding_mode)
         # Check qtz param
-        self.assertTrue(child.a_precision == new_child.a_precision)
-        self.assertTrue(child.w_precision == new_child.w_precision)
+        self.assertTrue(child.out_a_quantizer.num_bits == new_child.out_a_quantizer.num_bits)
+        self.assertTrue(child.w_quantizer.num_bits == new_child.w_quantizer.num_bits)
 
     def _check_linear(self, child, new_child):
-        """Collection of checks on Quant_Linear"""
-        self.assertIsInstance(new_child, qnn.Quant_Linear, "Wrong layer type")
+        """Collection of checks on QuantLinear"""
+        self.assertIsInstance(new_child, qnn.QuantLinear, "Wrong layer type")
         # Check layer geometry
         self.assertTrue(child.in_features == new_child.in_features)
         self.assertTrue(child.out_features == new_child.out_features)
         # Check qtz param
-        if type(new_child.out_a_quantizer) == nn.Identity:
-            self.assertTrue(new_child.a_precision == 'float')
-        else:
-            self.assertTrue(child.a_precision == new_child.a_precision)
-        self.assertTrue(child.w_precision == new_child.w_precision)
-
-    def test_repeated_precisions(self):
-        """Check that if the weights or the activation precisions used for the model's
-        initialization contain duplicates then an exception is raised"""
-        net = ToyAdd_2D()
-        input_shape = net.input_shape
-
-        prec = (2, 4, 8)
-        repeated_prec = (0, 2, 0, 8, 4, 4)
-
-        # case (1): the mixed-precision scheme for the weigths is PER_CHANNEL
-        with self.assertRaises(ValueError):
-            MixPrec(net,
-                    input_shape=input_shape,
-                    regularizer='macs',
-                    activation_precisions=prec,
-                    weight_precisions=repeated_prec,
-                    w_mixprec_type=MixPrecType.PER_CHANNEL)
-
-        with self.assertRaises(ValueError):
-            MixPrec(net,
-                    input_shape=input_shape,
-                    regularizer='macs',
-                    activation_precisions=repeated_prec,
-                    weight_precisions=prec,
-                    w_mixprec_type=MixPrecType.PER_CHANNEL)
-
-        # case (2): the mixed-precision scheme for the weigths is PER_LAYER
-        with self.assertRaises(ValueError):
-            MixPrec(net,
-                    input_shape=input_shape,
-                    regularizer='macs',
-                    activation_precisions=prec,
-                    weight_precisions=repeated_prec,
-                    w_mixprec_type=MixPrecType.PER_LAYER)
-
-        with self.assertRaises(ValueError):
-            MixPrec(net,
-                    input_shape=input_shape,
-                    regularizer='macs',
-                    activation_precisions=repeated_prec,
-                    weight_precisions=prec,
-                    w_mixprec_type=MixPrecType.PER_LAYER)
-
-    def test_out_features_eff(self):
-        """Check whether out_features_eff returns the correct number of not pruned channels"""
-        net = ToyAdd_2D()
-        input_shape = net.input_shape
-        a_prec = (2, 4, 8)
-        alpha_prec = torch.zeros(4, 10)
-        alpha_prec[torch.tensor([0, 0, 0, 1, 1, 1, 1, 1, 2, 3]),
-                   torch.tensor([3, 5, 9, 0, 1, 2, 7, 8, 6, 4])] = 1
-        x = torch.rand(input_shape).unsqueeze(0)
-        # Use the following alpha_prec matrix to check the sanity of out_features_eff
-        # for one specific layer
-        # [[0., 0., 0., 1., 0., 1., 0., 0., 0., 1.],
-        #  [1., 1., 1., 0., 0., 0., 0., 1., 1., 0.],
-        #  [0., 0., 0., 0., 0., 0., 1., 0., 0., 0.],
-        #  [0., 0., 0., 0., 1., 0., 0., 0., 0., 0.]])
-
-        # case (1): zero_index = 0
-        w_prec = (0, 2, 4, 8)
-        mixprec_net = MixPrec(net,
-                              input_shape=input_shape,
-                              activation_precisions=a_prec,
-                              weight_precisions=w_prec,
-                              w_mixprec_type=MixPrecType.PER_CHANNEL,
-                              hard_softmax=True)
-        for layer in mixprec_net._target_layers:  # force sampling of 8-bit precision
-            if isinstance(layer, MixPrec_Conv2d) or isinstance(layer, MixPrec_Linear):
-                alpha_no_0bit = torch.zeros(layer.mixprec_w_quantizer.alpha_prec.shape)
-                alpha_no_0bit[-1, :] = 1
-                layer.mixprec_w_quantizer.alpha_prec.data = alpha_no_0bit
-        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
-        conv1.mixprec_w_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
-        mixprec_net(x)  # perform a forward pass to update the out_features_eff values
-        self.assertEqual(conv1.out_features_eff.item(), 7)
-
-        # case (2): zero_index = 2
-        w_prec = (2, 4, 0, 8)
-        mixprec_net = MixPrec(net,
-                              input_shape=input_shape,
-                              activation_precisions=a_prec,
-                              weight_precisions=w_prec,
-                              w_mixprec_type=MixPrecType.PER_CHANNEL,
-                              hard_softmax=True)
-        for layer in mixprec_net._target_layers:  # force sampling of 8-bit precision
-            if isinstance(layer, MixPrec_Conv2d) or isinstance(layer, MixPrec_Linear):
-                alpha_no_0bit = torch.zeros(layer.mixprec_w_quantizer.alpha_prec.shape)
-                alpha_no_0bit[-1, :] = 1
-                layer.mixprec_w_quantizer.alpha_prec.data = alpha_no_0bit
-        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
-        conv1.mixprec_w_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
-        mixprec_net(x)  # perform a forward pass to update the out_features_eff values
-        self.assertEqual(conv1.out_features_eff.item(), 9)
-
-    def test_input_features_calculator(self):
-        """Check whether input_features_calculator returns the correct number of input channels,
-        both in the case where 0-bit precision is allowed and in the case where it is not"""
-        net = SimpleNN2D()
-        input_shape = net.input_shape
-        x = torch.rand(input_shape).unsqueeze(0)
-        a_prec = (2, 4, 8)
-
-        # case (1): no 0-bit precision, i.e. no pruning allowed
-        w_prec = (2, 4, 8)
-        mixprec_net = MixPrec(net,
-                              input_shape=input_shape,
-                              activation_precisions=a_prec,
-                              weight_precisions=w_prec,
-                              w_mixprec_type=MixPrecType.PER_CHANNEL,
-                              hard_softmax=True)
-        mixprec_net(x)
-
-        conv0 = cast(MixPrec_Conv2d, mixprec_net.seed.conv0)
-        self.assertEqual(conv0.input_features_calculator.features.item(), input_shape[0])
-
-        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
-        self.assertEqual(conv1.input_features_calculator.features.item(),
-                         conv0.out_features_eff.item())
-
-        fc = cast(MixPrec_Linear, mixprec_net.seed.fc)
-        self.assertEqual(fc.input_features_calculator.features.item(),
-                         conv1.out_features_eff.item() * 10 * 10)
-
-        # case(2): 0-bit precision with some channels pruned
-        w_prec = (0, 2, 4, 8)
-        mixprec_net = MixPrec(net,
-                              input_shape=input_shape,
-                              activation_precisions=a_prec,
-                              weight_precisions=w_prec,
-                              w_mixprec_type=MixPrecType.PER_CHANNEL,
-                              hard_softmax=True)
-
-        for layer in mixprec_net._target_layers:  # force sampling of 8-bit precision
-            if isinstance(layer, MixPrec_Conv2d) or isinstance(layer, MixPrec_Linear):
-                alpha_no_0bit = torch.zeros(layer.mixprec_w_quantizer.alpha_prec.shape)
-                alpha_no_0bit[-1, :] = 1
-                layer.mixprec_w_quantizer.alpha_prec.data = alpha_no_0bit
-        # prune one channel of conv1 layer
-        conv1 = cast(MixPrec_Conv2d, mixprec_net.seed.conv1)
-        conv1.mixprec_w_quantizer.alpha_prec.data[0, 2] = 1
-        conv1.mixprec_w_quantizer.alpha_prec.data[-1, 2] = 0
-        mixprec_net(x)
-
-        fc = cast(MixPrec_Linear, mixprec_net.seed.fc)
-        self.assertEqual(fc.input_features_calculator.features.item(),
-                         conv1.out_features_eff.item() * 10 * 10)
+        if type(new_child.out_a_quantizer) != nn.Identity:
+            self.assertTrue(child.out_a_quantizer.num_bits == new_child.out_a_quantizer.num_bits)
+        self.assertTrue(child.w_quantizer.num_bits == new_child.w_quantizer.num_bits)
 
 
 if __name__ == '__main__':

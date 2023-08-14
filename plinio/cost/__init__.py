@@ -22,7 +22,8 @@ from .params_bias import params_bias
 from .params_bit import params_bit
 from .ops import ops
 from .ops_bias import ops_bias
+from .ops_bit import ops_bit
 
 __all__ = ['CostFn', 'CostSpec', 'PatternSpec',
            'params', 'params_bias', 'params_bit',
-           'ops', 'ops_bias']
+           'ops', 'ops_bias', 'ops_bit']

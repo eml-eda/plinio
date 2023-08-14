@@ -178,8 +178,9 @@ class MPSModule:
         raise NotImplementedError(
                 "Trying to get input activations quantizer on base abstract MPSModule class")
 
-    @in_a_mps_quantizer.setter
-    def in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
+    # @in_a_mps_quantizer.setter
+    @abstractmethod
+    def set_in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized

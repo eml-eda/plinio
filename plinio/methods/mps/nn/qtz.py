@@ -69,7 +69,7 @@ class MPSBaseQtz(nn.Module):
         # create individual quantizers
         self.qtz_funcs = nn.ModuleList()
         for p in precisions:
-            qtz = quantizer(p, **quantizer_kwargs)  # type: ignore
+            qtz = quantizer(p, **quantizer_kwargs)
             qtz = cast(nn.Module, qtz)
             self.qtz_funcs.append(qtz)
         # set the sampling options
@@ -80,8 +80,8 @@ class MPSBaseQtz(nn.Module):
                 disable_sampling=disable_sampling)
         # create and initialize the parameters (placeholder for type-checking,
         # rewritten by sub-classes)
-        self.alpha_prec = torch.empty()
-        self.theta_alpha = torch.empty()
+        self.alpha_prec = torch.tensor(0)
+        self.theta_alpha = torch.tensor(0)
 
     @abstractmethod
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -319,7 +319,7 @@ class MPSPerLayerQtz(MPSBaseQtz):
                                        requires_grad=True)
         max_precision = max(precisions)
         for i, p in enumerate(precisions):
-            self.alpha_prec.data[i, :].fill_(float(p) / max_precision)
+            self.alpha_prec.data[i].fill_(float(p) / max_precision)
         self.theta_alpha = torch.ones((len(precisions),), dtype=torch.float32)
         # initial sampling
         with torch.no_grad():
@@ -377,12 +377,14 @@ class MPSBiasQtz(nn.Module):
     def __init__(self,
                  quantizer: Type[Quantizer],
                  w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
+                 in_a_mps_quantizer: Optional[MPSPerLayerQtz] = None,
                  quantizer_kwargs: Dict = {},
                  ):
         super(MPSBiasQtz, self).__init__()
         self.quantizer = quantizer
         self.quantizer_kwargs = quantizer_kwargs
-        self.in_a_mps_quantizer = None  # set later by the enclosing MPSModule
+        # may be overwritten later by the enclosing MPSModule
+        self.in_a_mps_quantizer = in_a_mps_quantizer
         self.w_mps_quantizer = w_mps_quantizer
         self.qtz_func = quantizer(**quantizer_kwargs)
 
@@ -398,7 +400,6 @@ class MPSBiasQtz(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        self.qtz_func = cast(nn.Module, self.qtz_func)
         y = self.qtz_func(input, self.s_a, self.s_w)
         return y
 

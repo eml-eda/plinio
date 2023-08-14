@@ -49,7 +49,7 @@ class QuantizerBias(Quantizer):
         self.s_b = torch.Tensor(cout)
         self.s_b.fill_(1.)
 
-    def forward(self, input: torch.Tensor, s_a, s_w) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, s_a: torch.Tensor, s_w: torch.Tensor) -> torch.Tensor:
         """The forward function of the bias quantizer.
 
         Compute quantization using the scale-factors of weight and activations
@@ -64,12 +64,7 @@ class QuantizerBias(Quantizer):
         :return: the output fake-quantized bias tensor
         :rtype: torch.Tensor
         """
-        # self.s_b = (s_a * s_w).squeeze()
         self.s_b = s_a * s_w
-
-        # mask = (self.s_b != 0)
-        # scaled_inp = torch.zeros(input.shape, device=input.device)
-        # scaled_inp[mask] = input[mask] / self.s_b[mask]
         scaled_inp = Quantize_Bias_STE.apply(input, self.s_b)
         output = Round_STE.apply(scaled_inp)
 

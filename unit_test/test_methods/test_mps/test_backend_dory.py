@@ -21,16 +21,16 @@ from pathlib import Path
 import unittest
 
 import torch
-from plinio.methods import MixPrec
-from plinio.methods.mixprec.nn import MixPrecType
-from plinio.methods.mixprec.quant.backends import Backend, integerize_arch
-from plinio.methods.mixprec.quant.backends.dory import DORYExporter
+from plinio.methods import MPS
+from plinio.methods.mps.nn import MPSType
+from plinio.methods.mps.quant.backends import Backend, integerize_arch
+from plinio.methods.mps.quant.backends.dory import DORYExporter
 from unit_test.models import ToySequentialFullyConv2d, ToySequentialConv2d, TutorialModel
 
 
-class TestMixPrecConvert(unittest.TestCase):
+class TestMPSConvert(unittest.TestCase):
     """Test conversion operations from nn.Module to nn.DORY passing through
-       nn.MixPrec and nn.Quant.
+       nn.MPS and nn.Quant.
     """
 
     def test_autoimport_fullyconv_layer(self):
@@ -40,12 +40,12 @@ class TestMixPrecConvert(unittest.TestCase):
         nn_ut = ToySequentialFullyConv2d()
 
         # Convert to mixprec searchable model
-        mixprec_nn = MixPrec(nn_ut,
-                             input_shape=nn_ut.input_shape,
-                             activation_precisions=(8,),
-                             weight_precisions=(8,),
-                             w_mixprec_type=MixPrecType.PER_LAYER
-                             )
+        mixprec_nn = MPS(nn_ut,
+                         input_shape=nn_ut.input_shape,
+                         a_precisions=(8,),
+                         w_precisions=(8,),
+                         w_search_type=MPSType.PER_LAYER
+                         )
         # Dummy inference
         dummy_inp = torch.rand((1,) + nn_ut.input_shape)
         with torch.no_grad():
@@ -81,12 +81,12 @@ class TestMixPrecConvert(unittest.TestCase):
         nn_ut = ToySequentialConv2d()
 
         # Convert to mixprec searchable model
-        mixprec_nn = MixPrec(nn_ut,
-                             input_shape=nn_ut.input_shape,
-                             activation_precisions=(8,),
-                             weight_precisions=(8,),
-                             w_mixprec_type=MixPrecType.PER_LAYER
-                             )
+        mixprec_nn = MPS(nn_ut,
+                         input_shape=nn_ut.input_shape,
+                         a_precisions=(8,),
+                         w_precisions=(8,),
+                         w_search_type=MPSType.PER_LAYER
+                         )
         # Dummy inference
         dummy_inp = torch.rand((1,) + nn_ut.input_shape)
         with torch.no_grad():
@@ -123,12 +123,12 @@ class TestMixPrecConvert(unittest.TestCase):
         nn_ut = TutorialModel()
 
         # Convert to mixprec searchable model
-        mixprec_nn = MixPrec(nn_ut,
-                             input_shape=nn_ut.input_shape,
-                             activation_precisions=(8,),
-                             weight_precisions=(8,),
-                             w_mixprec_type=MixPrecType.PER_LAYER
-                             )
+        mixprec_nn = MPS(nn_ut,
+                         input_shape=nn_ut.input_shape,
+                         a_precisions=(8,),
+                         w_precisions=(8,),
+                         w_search_type=MPSType.PER_LAYER
+                         )
         # Dummy inference
         dummy_inp = torch.rand((1,) + nn_ut.input_shape)
         with torch.no_grad():

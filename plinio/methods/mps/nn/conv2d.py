@@ -75,8 +75,6 @@ class MPSConv2d(nn.Conv2d, MPSModule):
             self.b_mps_quantizer = lambda *args: None  # Do Nothing
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
-        # this will be overwritten later when we process the model graph
-        self.in_a_mps_quantizer = cast(MPSPerLayerQtz, nn.Identity())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -432,8 +430,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         return self._in_a_mps_quantizer
 
-    @in_a_mps_quantizer.setter
-    def in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
+    # @in_a_mps_quantizer.setter
+    def set_in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
@@ -441,4 +439,4 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :type qtz: MPSQtzLayer
         """
         self._in_a_mps_quantizer = qtz
-        self.b_mps_quantizer.in_a_mps_quantizer = self._in_a_mps_quantizer
+        self.b_mps_quantizer.in_a_mps_quantizer = qtz
