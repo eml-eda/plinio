@@ -18,31 +18,31 @@
 # *----------------------------------------------------------------------------*
 
 import operator
-from typing import Dict, Any, Optional, Iterator, Tuple, Type, cast, Union
+from typing import Dict, Any, Iterator, Tuple, cast, Union
 import torch
 import torch.fx as fx
 import torch.nn as nn
 from ..quant.quantizers import Quantizer
-from ..quant.nn import Quant_Identity
+from ..quant.nn import QuantIdentity
 from .module import MPSModule
-from .qtz import MPSQtzLayer, MPSQtzChannel, MPSQtzLayerBias, MPSQtzChannelBias
+from .qtz import MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
 from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 
 
 class MPSAdd(nn.Module, MPSModule):
     """A nn.Module implementing a sum layer with mixed-precision search support
 
-    :param a_mps_quantizer: activation MPS quantizer
-    :type a_mps_quantizer: MPSQtzLayer
+    :param out_a_mps_quantizer: activation MPS quantizer
+    :type out_a_mps_quantizer: MPSQtzLayer
     """
     def __init__(self,
-                 a_mps_quantizer: MPSQtzLayer):
+                 out_a_mps_quantizer: MPSPerLayerQtz):
         super(MPSAdd, self).__init__()
-        self.a_mps_quantizer = a_mps_quantizer
+        self.out_a_mps_quantizer = out_a_mps_quantizer
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(1)
         # this will be overwritten later when we process the model graph
-        self.input_quantizer = cast(MPSQtzLayer, nn.Identity())
+        self.in_a_mps_quantizer = cast(MPSPerLayerQtz, nn.Identity())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -55,37 +55,15 @@ class MPSAdd(nn.Module, MPSModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        q_out = self.a_mps_quantizer(input)
+        q_out = self.out_a_mps_quantizer(input)
         return q_out
-
-    def update_softmax_options(
-            self,
-            temperature: Optional[float] = None,
-            hard: Optional[bool] = None,
-            gumbel: Optional[bool] = None,
-            disable_sampling: Optional[bool] = None):
-        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
-        and the sampling disabling of the architectural coefficients in the quantizers
-
-        :param temperature: SoftMax temperature
-        :type temperature: Optional[float]
-        :param hard: Hard vs Soft sampling
-        :type hard: Optional[bool]
-        :param gumbel: Gumbel-softmax vs standard softmax
-        :type gumbel: Optional[bool]
-        :param disable_sampling: disable the sampling of the architectural coefficients in the
-        forward pass
-        :type disable_sampling: Optional[bool]
-        """
-        # TODO::: HEREEEE!!! !MAKE THIS OPTIONAL!!!!!
-        self.a_mps_quantizer.update_softmax_options(temperature, hard, gumbel, disable_sampling)
 
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   a_mps_quantizer: MPSQtzLayer,
-                   w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel],
-                   b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias],
+                   out_a_mps_quantizer: MPSPerLayerQtz,
+                   w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
+                   b_mps_quantizer: MPSBiasQtz,
                    ):
         """Create a new fx.Node relative to a MPSAdd layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
@@ -94,18 +72,18 @@ class MPSAdd(nn.Module, MPSModule):
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param a_mps_quantizer: The MPS quantizer to be used for activations
-        :type a_mps_quantizer: MPSQtzLayer
+        :param out_a_mps_quantizer: The MPS quantizer to be used for activations
+        :type out_a_mps_quantizer: MPSQtzLayer
         :param w_mps_quantizer: The MPS quantizer to be used for weights (ignored for add)
         :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
         :param b_mps_quantizer: The MPS quantizer to be used for biases (ignored for add)
-        :type b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias]
+        :type b_mps_quantizer: MPSBiasQtz
         :raises TypeError: if the input fx.Node is not of the correct type
         """
         if not isinstance(n.target, (type(operator.add), type(torch.add))):
             msg = f"Trying to generate MPSAdd from layer of type {type(n.target)}"
             raise TypeError(msg)
-        new_submodule = MPSAdd(a_mps_quantizer)
+        new_submodule = MPSAdd(out_a_mps_quantizer)
         name = str(n) + '_' + str(n.all_input_nodes) + '_quant'
         mod.add_submodule(name, new_submodule)
         with mod.graph.inserting_after(n):
@@ -133,12 +111,9 @@ class MPSAdd(nn.Module, MPSModule):
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != MPSAdd:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        selected_precision = submodule.selected_precision
-        selected_precision = cast(int, selected_precision)
-        selected_quantizer = submodule.selected_quantizer
-        selected_quantizer = cast(Quantizer, selected_quantizer)
-        new_submodule = Quant_Identity(
-            selected_precision,
+        selected_quantizer = submodule.selected_out_a_quantizer
+        # TODO: DP this is exported as QuantIdentity. Is it correct? Doesn't seem so...
+        new_submodule = QuantIdentity(
             selected_quantizer
         )
         mod.add_submodule(str(n.target), new_submodule)
@@ -150,8 +125,27 @@ class MPSAdd(nn.Module, MPSModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'precision': self.selected_precision,
+            'out_a_precision': self.selected_out_a_precision,
         }
+
+    def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
+        """Method that returns the modified vars(self) dictionary for the instance, for each
+        combination of supported precision, used for cost computation
+
+        :return: an iterator over the modified vars(self) data structures
+        :rtype: Iterator[Dict[str, Any]]
+        """
+        for i, a_prec in enumerate(self.in_a_mps_quantizer.precisions):
+            v = dict(vars(self))
+            v['in_bits'] = a_prec
+            v['in_format'] = int
+            # downscale the input_channels times the probability of using that
+            # input precision
+            v['in_channels'] = (self.input_features_calculator.features *
+                                self.in_a_mps_quantizer.theta_alpha[i])
+            # TODO: verify that it's correct that i'm using _eff here, and not for conv.
+            v['out_channels'] = self.out_features_eff
+            yield v
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -168,12 +162,12 @@ class MPSAdd(nn.Module, MPSModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.a_mps_quantizer.named_parameters(
-                prfx + "mixprec_quantizer", recurse):
+        for name, param in self.out_a_mps_quantizer.named_parameters(
+                prfx + "out_a_mps_quantizer", recurse):
             yield name, param
 
     @property
-    def selected_precision(self) -> int:
+    def selected_out_a_precision(self) -> int:
         """Return the selected precision based on the magnitude of `alpha_prec`
         components
 
@@ -181,11 +175,11 @@ class MPSAdd(nn.Module, MPSModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.a_mps_quantizer.alpha_prec))
-            return self.a_mps_quantizer.precisions[idx]
+            idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+            return int(self.out_a_mps_quantizer.precisions[idx])
 
     @property
-    def selected_quantizer(self) -> Type[Quantizer]:
+    def selected_out_a_quantizer(self) -> Quantizer:
         """Return the selected quantizer based on the magnitude of `alpha_prec`
         components
 
@@ -193,9 +187,9 @@ class MPSAdd(nn.Module, MPSModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.a_mps_quantizer.alpha_prec))
-            qtz = self.a_mps_quantizer.mix_qtz[idx]
-            qtz = cast(Type[Quantizer], qtz)
+            idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+            qtz = self.out_a_mps_quantizer.qtz_funcs[idx]
+            qtz = cast(Quantizer, qtz)
             return qtz
 
     @property
@@ -231,21 +225,21 @@ class MPSAdd(nn.Module, MPSModule):
         self._input_features_calculator = calc
 
     @property
-    def input_quantizer(self) -> MPSQtzLayer:
+    def in_a_mps_quantizer(self) -> MPSPerLayerQtz:
         """Returns the `MPSQtzLayer` for input activations calculation
 
         :return: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :rtype: MPSQtzLayer
         """
-        return self._input_quantizer
+        return self._in_a_mps_quantizer
 
-    @input_quantizer.setter
-    def input_quantizer(self, qtz: MPSQtzLayer):
+    @in_a_mps_quantizer.setter
+    def in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :type qtz: MPSQtzLayer
         """
-        self._input_quantizer = qtz
+        self._in_a_mps_quantizer = qtz

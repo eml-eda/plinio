@@ -18,10 +18,10 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Dict, Any, Iterator, Tuple, Union
+from typing import Dict, Any, Iterator, Tuple, Union, Optional
 import torch.fx as fx
 import torch.nn as nn
-from .qtz import MPSQtzLayer, MPSQtzChannel, MPSQtzLayerBias, MPSQtzChannelBias
+from .qtz import MPSBaseQtz, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
 from plinio.graph.features_calculation import FeaturesCalculator
 
 
@@ -31,6 +31,32 @@ class MPSModule:
     @abstractmethod
     def __init__(self):
         raise NotImplementedError("Calling init on base abstract MPSModule class")
+
+    def update_softmax_options(
+            self,
+            temperature: Optional[float] = None,
+            hard: Optional[bool] = None,
+            gumbel: Optional[bool] = None,
+            disable_sampling: Optional[bool] = None):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param temperature: SoftMax temperature
+        :type temperature: Optional[float]
+        :param hard: Hard vs Soft sampling
+        :type hard: Optional[bool]
+        :param gumbel: Gumbel-softmax vs standard softmax
+        :type gumbel: Optional[bool]
+        :param disable_sampling: disable the sampling of the architectural coefficients in the
+        forward pass
+        :type disable_sampling: Optional[bool]
+        """
+        for k, v in vars(self).items():
+            # skips input quantiers which would affect another layer
+            # skips bias quantizers which do not have softmax options
+            # TODO: make this field-name-independent
+            if k in ['out_a_mps_quantizer', 'w_mps_quantizer'] and isinstance(v, MPSBaseQtz):
+                v.update_softmax_options(temperature, hard, gumbel, disable_sampling)
 
     @property
     @abstractmethod
@@ -60,10 +86,9 @@ class MPSModule:
     @abstractmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   a_mps_quantizer: MPSQtzLayer,
-                   w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel],
-                   b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias],
-                   ):
+                   out_a_mps_quantizer: MPSPerLayerQtz,
+                   w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
+                   b_mps_quantizer: MPSBiasQtz):
         """Create a new fx.Node relative to a MPSModule layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
 
@@ -71,12 +96,12 @@ class MPSModule:
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param a_mps_quantizer: The MPS quantizer to be used for activations
-        :type a_mps_quantizer: MPSQtzLayer
+        :param out_a_mps_quantizer: The MPS quantizer to be used for activations
+        :type out_a_mps_quantizer: MPSQtzLayer
         :param w_mps_quantizer: The MPS quantizer to be used for weights (if present)
         :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
         :param b_mps_quantizer: The MPS quantizer to be used for biases (if present)
-        :type b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias]
+        :type b_mps_quantizer: MPSBiasQtz
         :raises TypeError: if the input fx.Node is not of the correct type
         """
         raise NotImplementedError("Trying to import layer using the base abstract class")
@@ -104,6 +129,16 @@ class MPSModule:
         raise NotImplementedError("Calling summary on base abstract MPSModule class")
 
     @abstractmethod
+    def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
+        """Method that returns the modified vars(self) dictionary for the instance, for each
+        combination of supported precision, used for cost computation
+
+        :return: an iterator over the modified vars(self) data structures
+        :rtype: Iterator[Dict[str, Any]]
+        """
+        raise NotImplementedError("Calling get_modified_vars on base abstract MPSModule class")
+
+    @abstractmethod
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
         """Returns an iterator over the architectural parameters of this layer, yielding
@@ -117,7 +152,7 @@ class MPSModule:
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract MPSModule class")
+        raise NotImplementedError("Calling named_nas_parameters on base abstract MPSModule class")
 
     def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the architectural parameters of this layer
@@ -133,21 +168,23 @@ class MPSModule:
 
     @property
     @abstractmethod
-    def input_quantizer(self) -> MPSQtzLayer:
+    def in_a_mps_quantizer(self) -> MPSPerLayerQtz:
         """Returns the `MPSQtzLayer` for input activations calculation
 
         :return: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :rtype: MPSQtzLayer
         """
-        raise NotImplementedError("Trying to get input_quantizer on base abstract MPSModule class")
+        raise NotImplementedError(
+                "Trying to get input activations quantizer on base abstract MPSModule class")
 
-    @input_quantizer.setter
-    def input_quantizer(self, qtz: MPSQtzLayer):
+    @in_a_mps_quantizer.setter
+    def in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :type qtz: MPSQtzLayer
         """
-        raise NotImplementedError("Trying to set input_quantizer on base abstract MPSModule class")
+        raise NotImplementedError(
+                "Trying to set input activations quantizer on base abstract MPSModule class")

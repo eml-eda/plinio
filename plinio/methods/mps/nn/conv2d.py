@@ -17,14 +17,14 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Iterator, Tuple, Type, cast, Union, List
+from typing import Dict, Any, Iterator, Tuple, cast, Union, List
 import torch
 import torch.fx as fx
 import torch.nn as nn
 from ..quant.quantizers import Quantizer
-from ..quant.nn import Quant_Conv2d, Quant_List
+from ..quant.nn import QuantConv2d, QuantList
 from .module import MPSModule
-from .qtz import MPSType, MPSQtzLayer, MPSQtzChannel, MPSQtzLayerBias, MPSQtzChannelBias
+from .qtz import MPSType, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
 from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 
 
@@ -33,18 +33,18 @@ class MPSConv2d(nn.Conv2d, MPSModule):
 
     :param conv: the inner `nn.Conv2d` layer to be optimized
     :type conv: nn.Conv2d
-    :param a_mps_quantizer: activation MPS quantizer
-    :type a_mps_quantizer: MPSQtzLayer
+    :param out_a_mps_quantizer: activation MPS quantizer
+    :type out_a_mps_quantizer: MPSQtzLayer
     :param w_mps_quantizer: weight MPS quantizer
     :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
     :param b_mps_quantizer: bias MPS quantizer
-    :type b_mps_quantizer: Union[MPSQtzChannelBias, MPSQtzChannelBias]
+    :type b_mps_quantizer: MPSQtzBias
     """
     def __init__(self,
                  conv: nn.Conv2d,
-                 a_mps_quantizer: MPSQtzLayer,
-                 w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel],
-                 b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias]):
+                 out_a_mps_quantizer: MPSPerLayerQtz,
+                 w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
+                 b_mps_quantizer: MPSBiasQtz):
         super(MPSConv2d, self).__init__(
             conv.in_channels,
             conv.out_channels,
@@ -67,7 +67,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                 self.bias.copy_(conv.bias)
             else:
                 self.bias = None
-        self.a_mps_quantizer = a_mps_quantizer
+        self.out_a_mps_quantizer = out_a_mps_quantizer
         self.w_mps_quantizer = w_mps_quantizer
         if self.bias is not None:
             self.b_mps_quantizer = b_mps_quantizer
@@ -76,7 +76,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
         # this will be overwritten later when we process the model graph
-        self.input_quantizer = cast(MPSQtzLayer, nn.Identity())
+        self.in_a_mps_quantizer = cast(MPSPerLayerQtz, nn.Identity())
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -98,34 +98,15 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         # Linear operation
         out = self._conv_forward(input, q_w, q_b)
         # Quantization of output
-        q_out = self.a_mps_quantizer(out)
+        q_out = self.out_a_mps_quantizer(out)
         return q_out
-
-    def update_softmax_options(self, gumbel_softmax, hard_softmax, disable_sampling):
-        # TODO!!! ADD TEMPERATURE
-        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
-        and the sampling disabling of the architectural coefficients in the quantizers
-
-        :param gumbel_softmax: whether to use the Gumbel-softmax instead of the softmax
-        :type gumbel_softmax: bool
-        :param hard_softmax: whether to use the hard version of the Gumbel-softmax
-        (param gumbel_softmax must be equal to True)
-        :type gumbel_softmax: bool
-        :param disable_sampling: whether to disable the sampling of the architectural
-        coefficients in the forward pass
-        :type disable_sampling: bool
-        """
-        for quantizer in [self.w_mps_quantizer, self.a_mps_quantizer]:
-            if isinstance(quantizer, (MPSQtzLayer, MPSQtzChannel)):
-                quantizer.update_softmax_options(gumbel_softmax, hard_softmax, disable_sampling)
 
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   a_mps_quantizer: MPSQtzLayer,
-                   w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel],
-                   b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias],
-                   ):
+                   out_a_mps_quantizer: MPSPerLayerQtz,
+                   w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
+                   b_mps_quantizer: MPSBiasQtz):
         """Create a new fx.Node relative to a MPSConv2d layer, starting from the fx.Node
         of a nn.Conv2d layer, and replace it into the parent fx.GraphModule
 
@@ -133,12 +114,12 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param a_mps_quantizer: The MPS quantizer to be used for activations
-        :type a_mps_quantizer: MPSQtzLayer
+        :param out_a_mps_quantizer: The MPS quantizer to be used for activations
+        :type out_a_mps_quantizer: MPSQtzLayer
         :param w_mps_quantizer: The MPS quantizer to be used for weights
         :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
         :param b_mps_quantizer: The MPS quantizer to be used for biases (if present)
-        :type b_mps_quantizer: Union[MPSQtzLayerBias, MPSQtzChannelBias]
+        :type b_mps_quantizer: MPSQtzBias
         :raises TypeError: if the input fx.Node is not of the correct type
         """
         submodule = mod.get_submodule(str(n.target))
@@ -147,7 +128,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
             raise TypeError(msg)
         submodule = cast(nn.Conv2d, submodule)
         new_submodule = MPSConv2d(submodule,
-                                  a_mps_quantizer,
+                                  out_a_mps_quantizer,
                                   w_mps_quantizer,
                                   b_mps_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
@@ -166,52 +147,30 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         if type(submodule) != MPSConv2d:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
 
-        # Select precision and quantizer for activations
-        selected_a_precision = submodule.selected_out_a_precision
-        selected_a_precision = cast(int, selected_a_precision)
-        selected_out_a_quantizer = submodule.selected_out_a_quantizer
-        selected_out_a_quantizer = cast(Type[Quantizer], selected_out_a_quantizer)
-        selected_in_a_quantizer = submodule.selected_in_a_quantizer
-        selected_in_a_quantizer = cast(Type[Quantizer], selected_in_a_quantizer)
-
-        # Select precision(s) and quantizer(s) for weights and biases
-        selected_w_precision = submodule.selected_w_precision
-        selected_w_quantizer = submodule.selected_w_quantizer
-        # w_mixprec_type is `PER_LAYER` => single precision/quantizer
-        if submodule.w_mixprec_type == MPSType.PER_LAYER:
-            selected_w_precision = cast(int, selected_w_precision)
-            selected_w_quantizer = cast(Type[Quantizer], selected_w_quantizer)
+        # per-layer search => single precision/quantizer
+        if isinstance(submodule.w_mps_quantizer, MPSPerLayerQtz):
             if submodule.bias is not None:
-                submodule.b_mps_quantizer = cast(MPSQtzLayerBias,
-                                                 submodule.b_mps_quantizer)
-                # Build bias quantizer using s_factors corresponding to selected
-                # act and weights quantizers
-                b_quantizer_class = submodule.b_mps_quantizer.quantizer
-                b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
-                b_quantizer_kwargs = submodule.b_mps_quantizer.quantizer_kwargs
-                b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
-                b_quantizer = cast(Type[Quantizer], b_quantizer)
+                # TODO: DP not sure why bias quantizer was re-created here,
+                # trying to use the existing one now...
+                b_quantizer = cast(Quantizer, submodule.b_mps_quantizer.qtz_func)
             else:
                 b_quantizer = None
-            submodule = cast(nn.Conv2d, submodule)
-            new_submodule = Quant_Conv2d(submodule,
-                                         selected_a_precision,
-                                         selected_w_precision,
-                                         selected_in_a_quantizer,
-                                         selected_out_a_quantizer,
-                                         selected_w_quantizer,
-                                         b_quantizer)
-        # w_mixprec_type is `PER_CHANNEL` => multiple precision/quantizer
-        elif submodule.w_mixprec_type == MPSType.PER_CHANNEL:
-            selected_w_precision = cast(List[int], selected_w_precision)
-            selected_w_quantizer = cast(List[Type[Quantizer]], selected_w_quantizer)
-            submodule = cast(nn.Conv2d, submodule)
+            new_submodule = QuantConv2d(submodule,
+                                        submodule.selected_in_a_quantizer,
+                                        submodule.selected_out_a_quantizer,
+                                        cast(Quantizer, submodule.selected_w_quantizer),
+                                        b_quantizer)
+        # per-channel search => multiple precisions/quantizers
+        elif isinstance(submodule.w_mps_quantizer, MPSPerChannelQtz):
+            selected_w_precision = cast(List[int], submodule.selected_w_precision)
+            selected_w_quantizer = cast(List[Quantizer], submodule.selected_w_quantizer)
             nn_list = []
             prec_and_quantz = dict(zip(selected_w_precision, selected_w_quantizer))
+            # TODO: debug this. Isn't it doing multiple iterations on the same precision?
             for prec, w_quant in prec_and_quantz.items():
                 mask = [c == prec for c in selected_w_precision]
                 out_channels = sum(mask)
-                if out_channels == 0:  # No out_channels for the current prec
+                if out_channels == 0:  # no out_channels for the current prec
                     continue
                 new_conv = nn.Conv2d(submodule.in_channels,
                                      out_channels,
@@ -227,31 +186,24 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                     new_conv.weight.copy_(new_weights)
                     if submodule.bias is not None:
                         cast(nn.parameter.Parameter, new_conv.bias).copy_(submodule.bias[mask])
-                        submodule.mixprec_b_quantizer = cast(MPSQtzChannelBias,
-                                                             submodule.mixprec_b_quantizer)
-                        # Build bias quantizer using s_factors corresponding to selected
-                        # act and weights quantizers
-                        b_quantizer_class = submodule.mixprec_b_quantizer.quantizer
-                        b_quantizer_class = cast(Type[Quantizer], b_quantizer_class)
-                        b_quantizer_kwargs = submodule.mixprec_b_quantizer.quantizer_kwargs
+                        # re-create bias quantizer using correct number of channels
+                        # TODO: DP: shouldn't we also recreate the w_quantizer with fewer channels?
+                        b_quantizer_class = submodule.b_mps_quantizer.quantizer
+                        b_quantizer_kwargs = submodule.b_mps_quantizer.quantizer_kwargs
                         b_quantizer_kwargs['cout'] = out_channels
                         b_quantizer = b_quantizer_class(**b_quantizer_kwargs)
-                        b_quantizer = cast(Type[Quantizer], b_quantizer)
                     else:
                         b_quantizer = None
-                quant_conv = Quant_Conv2d(new_conv,
-                                          selected_a_precision,
-                                          prec,
-                                          selected_in_a_quantizer,
-                                          selected_out_a_quantizer,
-                                          w_quant,
-                                          b_quantizer)
+                quant_conv = QuantConv2d(new_conv,
+                                         submodule.selected_in_a_quantizer,
+                                         submodule.selected_out_a_quantizer,
+                                         w_quant,
+                                         b_quantizer)
                 nn_list.append(quant_conv)
-            new_submodule = Quant_List(nn_list)
+            new_submodule = QuantList(nn_list)
         else:
             msg = f'Supported mixed-precision types: {list(MPSType)}'
             raise ValueError(msg)
-
         mod.add_submodule(str(n.target), new_submodule)
 
     def summary(self) -> Dict[str, Any]:
@@ -260,11 +212,43 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: a dictionary containing the optimized layer hyperparameter values
         :rtype: Dict[str, Any]
         """
+        # TODO: name incompatibility with get_modified_vars
         return {
             'in_a_precision': self.selected_in_a_precision,
             'out_a_precision': self.selected_out_a_precision,
             'w_precision': self.selected_w_precision,
         }
+
+    def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
+        """Method that returns the modified vars(self) dictionary for the instance, for each
+        combination of supported precision, used for cost computation
+
+        :return: an iterator over the modified vars(self) data structures
+        :rtype: Iterator[Dict[str, Any]]
+        """
+        # TODO: check this function
+        for i, a_prec in enumerate(self.in_a_mps_quantizer.precisions):
+            for j, w_prec in enumerate(self.w_mps_quantizer.precisions):
+                v = dict(vars(self))
+                v['in_bits'] = a_prec
+                v['in_format'] = int
+                v['w_bits'] = w_prec
+                v['w_format'] = int
+                # downscale the input_channels times the probability of using that
+                # input precision
+                v['in_channels'] = (self.input_features_calculator.features *
+                                    self.in_a_mps_quantizer.theta_alpha[i])
+                # same with weights precision and output channels, but distinguish the two types
+                # of quantizer
+                if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
+                    v['out_channels'] = (self.out_channels *
+                                         self.w_mps_quantizer.theta_alpha[j])
+                elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
+                    v['out_channels'] = self.w_mps_quantizer.theta_alpha[j, :].sum()
+                else:
+                    msg = f'Supported mixed-precision types: {list(MPSType)}'
+                    raise ValueError(msg)
+                yield v
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -281,15 +265,13 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.a_mps_quantizer.named_parameters(
-                prfx + "a_quantizer", recurse):
+        for name, param in self.out_a_mps_quantizer.named_parameters(
+                prfx + "out_a_mps_quantizer", recurse):
             yield name, param
         for name, param in self.w_mps_quantizer.named_parameters(
-                prfx + "w_quantizer", recurse):
+                prfx + "w_mps_quantizer", recurse):
             yield name, param
-        # for name, param in self.mixprec_b_quantizer.named_parameters(
-        #         prfx + "mixprec_b_quantizer", recurse):
-        #     yield name, param
+        # no bias MPS quantizer since it is sharing the parameters of the act and weights
 
     @property
     def selected_in_a_precision(self) -> int:
@@ -300,8 +282,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.input_quantizer.alpha_prec))
-            return self.input_quantizer.precisions[idx]
+            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha_prec))
+            return int(self.in_a_mps_quantizer.precisions[idx])
 
     @property
     def selected_out_a_precision(self) -> Union[int, str]:
@@ -312,10 +294,10 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: the selected precision
         :rtype: Union[int, str]
         """
-        if type(self.a_mps_quantizer) != nn.Identity:
+        if type(self.out_a_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.a_mps_quantizer.alpha_prec))
-                return self.a_mps_quantizer.precisions[idx]
+                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+                return int(self.out_a_mps_quantizer.precisions[idx])
         else:
             return 'float'
 
@@ -328,66 +310,67 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :rtype: Union[int, List[int]]
         """
         with torch.no_grad():
-            if isinstance(self.w_mps_quantizer, MPSQtzLayer):
+            if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
                 idx = int(torch.argmax(self.w_mps_quantizer.alpha_prec))
-                return self.w_mps_quantizer.precisions[idx]
-            elif isinstance(self.w_mps_quantizer, MPSQtzChannel):
+                return int(self.w_mps_quantizer.precisions[idx])
+            elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
                 idx = torch.argmax(self.w_mps_quantizer.alpha_prec, dim=0)
-                return [self.w_mps_quantizer.precisions[int(i)] for i in idx]
+                return [int(self.w_mps_quantizer.precisions[int(i)]) for i in idx]
             else:
                 msg = f'Supported mixed-precision types: {list(MPSType)}'
                 raise ValueError(msg)
 
     @property
-    def selected_in_a_quantizer(self) -> Type[Quantizer]:
+    def selected_in_a_quantizer(self) -> Quantizer:
         """Return the selected quantizer based on the magnitude of `alpha_prec`
         components for input activations
 
         :return: the selected quantizer
-        :rtype: Type[Quantizer]
+        :rtype: Quantizer
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.input_quantizer.alpha_prec))
-            qtz = self.input_quantizer.mix_qtz[idx]
-            qtz = cast(Type[Quantizer], qtz)
+            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha_prec))
+            qtz = self.in_a_mps_quantizer.qtz_funcs[idx]
+            qtz = cast(Quantizer, qtz)
             return qtz
 
     @property
-    def selected_out_a_quantizer(self) -> Type[Quantizer]:
+    def selected_out_a_quantizer(self) -> Quantizer:
         """Return the selected quantizer based on the magnitude of `alpha_prec`
         components for output activations
 
         :return: the selected quantizer
-        :rtype: Type[Quantizer]
+        :rtype: Quantizer
         """
-        if type(self.a_mps_quantizer) != nn.Identity:
+        if type(self.out_a_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.a_mps_quantizer.alpha_prec))
-                qtz = self.a_mps_quantizer.mix_qtz[idx]
-                qtz = cast(Type[Quantizer], qtz)
+                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+                qtz = self.out_a_mps_quantizer.qtz_funcs[idx]
+                qtz = cast(Quantizer, qtz)
                 return qtz
         else:
-            qtz = cast(Type[Quantizer], self.a_mps_quantizer)
+            # TODO: DP: when is this used? Output layer?
+            qtz = cast(Quantizer, self.out_a_mps_quantizer)
             return qtz
 
     @property
-    def selected_w_quantizer(self) -> Union[Type[Quantizer], List[Type[Quantizer]]]:
+    def selected_w_quantizer(self) -> Union[Quantizer, List[Quantizer]]:
         """Return the selected quantizer(s) based on the magnitude of `alpha_prec`
         components for weights
 
         :return: the selected quantizer(s)
-        :rtype: Union[Type[Quantizer], List[Type[Quantizer]]]
+        :rtype: Union[Quantizer, List[Quantizer]]
         """
         with torch.no_grad():
-            if isinstance(self.w_mps_quantizer, MPSQtzLayer):
+            if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
                 idx = int(torch.argmax(self.w_mps_quantizer.alpha_prec))
-                qtz = self.w_mps_quantizer.mix_qtz[idx]
-                qtz = cast(Type[Quantizer], qtz)
+                qtz = self.w_mps_quantizer.qtz_funcs[idx]
+                qtz = cast(Quantizer, qtz)
                 return qtz
-            elif isinstance(self.w_mps_quantizer, MPSQtzChannel):
+            elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
                 idx = torch.argmax(self.w_mps_quantizer.alpha_prec, dim=0)
-                qtz = [self.w_mps_quantizer.mix_qtz[i] for i in idx]
-                qtz = cast(List[Type[Quantizer]], qtz)
+                qtz = [self.w_mps_quantizer.qtz_funcs[i] for i in idx]
+                qtz = cast(List[Quantizer], qtz)
                 return qtz
             else:
                 msg = f'Supported mixed-precision types: {list(MPSType)}'
@@ -400,7 +383,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: the number of not pruned channels for this layer.
         :rtype: torch.Tensor
         """
-        if isinstance(self.w_mps_quantizer, MPSQtzChannel):
+        if isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
             return cast(torch.Tensor, self.w_mps_quantizer.out_features_eff)
         else:
             return cast(torch.Tensor, self.out_channels)
@@ -438,22 +421,22 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         self._input_features_calculator = calc
 
     @property
-    def input_quantizer(self) -> MPSQtzLayer:
+    def in_a_mps_quantizer(self) -> MPSPerLayerQtz:
         """Returns the `MPSQtzLayer` for input activations calculation
 
         :return: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :rtype: MPSQtzLayer
         """
-        return self._input_quantizer
+        return self._in_a_mps_quantizer
 
-    @input_quantizer.setter
-    def input_quantizer(self, qtz: MPSQtzLayer):
+    @in_a_mps_quantizer.setter
+    def in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :type qtz: MPSQtzLayer
         """
-        self._input_quantizer = qtz
-        self.b_mps_quantizer.a_mps_quantizer = self._input_quantizer
+        self._in_a_mps_quantizer = qtz
+        self.b_mps_quantizer.in_a_mps_quantizer = self._in_a_mps_quantizer

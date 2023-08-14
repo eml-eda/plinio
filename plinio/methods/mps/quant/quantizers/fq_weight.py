@@ -24,7 +24,7 @@ import torch.nn as nn
 from .quantizer import Quantizer
 
 
-class FQ_Weight(nn.Module, Quantizer):
+class FQWeight(Quantizer):
     """A nn.Module implementing the FQ quantization strategy for weights.
     More details can be found at: https://arxiv.org/abs/1912.09356
 
@@ -45,7 +45,7 @@ class FQ_Weight(nn.Module, Quantizer):
                  ch_wise: bool = True,
                  train_scale_param: bool = True,
                  dequantize: bool = True):
-        super(FQ_Weight, self).__init__()
+        super(FQWeight, self).__init__()
         self.num_bits = num_bits
         self.quant_bins = 2**(self.num_bits - 1) - 1
         self.cout = cout

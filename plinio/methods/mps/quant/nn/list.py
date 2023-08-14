@@ -21,11 +21,11 @@ from typing import Iterator, Tuple, List
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..backends import Backend, backend_solver
-from .quant_module import QuantModule
+from ..backends import Backend, backend_factory
+from .module import QuantModule
 
 
-class Quant_List(nn.ModuleList, QuantModule):
+class QuantList(nn.ModuleList, QuantModule):
     """A nn.Module implementing a collection of quantized layers sharing the input.
     The output is obtained as the concat of the outputs of each layer in the list.
 
@@ -34,7 +34,7 @@ class Quant_List(nn.ModuleList, QuantModule):
     """
     def __init__(self,
                  nn_list: List[nn.Module]):
-        super(Quant_List, self).__init__(nn_list)
+        super(QuantList, self).__init__(nn_list)
         # self.nn_list = nn_list
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -69,25 +69,11 @@ class Quant_List(nn.ModuleList, QuantModule):
         :type backend: Backend
         """
         submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != Quant_List:
+        if type(submodule) != QuantList:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        integer_list = backend_solver(type(submodule), backend)
+        integer_list = backend_factory(submodule, backend)
         new_submodule = integer_list()  # TODO
         mod.add_submodule(str(n.target), new_submodule)
-
-    # def summary(self) -> Dict[str, Any]:
-    #     """Export a dictionary with the optimized layer hyperparameters
-
-    #     :return: a dictionary containing the optimized layer hyperparameter values
-    #     :rtype: Dict[str, Any]
-    #     """
-    #     return {
-    #         'a_precision': self.a_precision,
-    #         'w_precision': self.w_precision,
-    #         'a_quantizer': self.a_quantizer.summary(),  # type: ignore
-    #         'w_quantizer': self.w_quantizer.summary(),  # type: ignore
-    #         'b_quantizer': self.b_quantizer.summary(),  # type: ignore
-    #     }
 
     def named_quant_parameters(
             self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -104,6 +90,5 @@ class Quant_List(nn.ModuleList, QuantModule):
         # TODO: Check
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.named_parameters(
-                prfx + "nn_list", recurse):  # type: ignore
-            yield name, param
+        for name, submod in self.named_modules():
+            return submod.named_quant_parameters(prfx + name, recurse)

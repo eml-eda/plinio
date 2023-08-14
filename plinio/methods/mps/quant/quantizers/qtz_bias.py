@@ -28,7 +28,7 @@ from .quantizer import Quantizer
 #       then both scale-factors will be available.
 #       Need to understand how to manage this operation whether one of
 #       weights and activations is not quantized.
-class QuantizerBias(nn.Module, Quantizer):
+class QuantizerBias(Quantizer):
     """A nn.Module implementing bias quantization.
 
     :param num_bits: quantization precision

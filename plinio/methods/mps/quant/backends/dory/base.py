@@ -26,7 +26,6 @@ import plinio.methods.mps.quant.backends.dory.nn as dory_nn
 
 # add new supported layers here:
 dory_layer_map: Dict[Type[nn.Module], Type[dory_nn.DORYModule]] = {
-    qnn.Quant_Conv2d: dory_nn.DORYConv2d,
-    qnn.Quant_Linear: dory_nn.DORYLinear,
-    # qnn.Quant_Identity: dory_nn.DORYIdentity,
+    qnn.QuantConv2d: dory_nn.DORYConv2d,
+    qnn.QuantLinear: dory_nn.DORYLinear,
 }

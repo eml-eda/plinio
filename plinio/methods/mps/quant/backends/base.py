@@ -77,7 +77,7 @@ def get_map():
     return maps
 
 
-def backend_solver(layer: nn.Module, backend: Backend) -> nn.Module:
+def backend_factory(layer: nn.Module, backend: Backend) -> nn.Module:
     """Depending on the specific `layer` and specified `backend` returns
     the appropriate backend-specific layer implementation.
 
@@ -132,7 +132,7 @@ def integerize_arch(model: nn.Module,
     for n in mod.graph.nodes:
         m = modules.get(n.target)
         # The input quantizer is kept and forced to return integer outputs
-        if n.name == 'input_quantizer_quantizer':  # TODO: ugly, find better way
+        if n.name == 'input_quantizer_out_a_quantizer':  # TODO: name-dependent, find better way
             m = cast(Quantizer, m)
             m.dequantize = False
         # Target layers are automagically converted with their backend-specific ver
@@ -154,7 +154,7 @@ def remove_inp_quantizer(mod: nn.Module) -> nn.Module:
     mod = cast(fx.GraphModule, mod)
     modules = dict(mod.named_modules())
     for node in mod.graph.nodes:
-        if node.name == 'input_quantizer_quantizer':  # TODO: ugly, find better way
+        if node.name == 'input_quantizer_out_a_quantizer':  # TODO: name-dependent, find better way
             inp_qtz = nn.Identity()
             replace_node_module(node, modules, inp_qtz)
             node.replace_all_uses_with(node.args[0])

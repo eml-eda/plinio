@@ -18,11 +18,10 @@
 # *----------------------------------------------------------------------------*
 
 from abc import abstractmethod
-from typing import Dict, Any, Optional, Iterator, Tuple
+from typing import Dict, Any, Iterator, Tuple
 import torch.fx as fx
 import torch.nn as nn
-from plinio.methods.mixprec.quant.quantizers import Quantizer
-import plinio.methods.mixprec.quant.backends as bk
+import plinio.methods.mps.quant.backends as bk
 
 
 class QuantModule:
@@ -32,36 +31,12 @@ class QuantModule:
     def __init__(self):
         raise NotImplementedError("Calling init on base abstract QuantModule class")
 
+    # TODO: this function needs to be implemented, currently instances of QuantX classes
+    # are only created when converting from a MPS model
     @staticmethod
     @abstractmethod
-    def autoimport(n: fx.Node,
-                   mod: fx.GraphModule,
-                   precision: int,
-                   quantizer: Quantizer,
-                   sq: Optional[Quantizer],
-                   quantizer_kwargs: Dict = {}
-                   ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a QuantModule layer, starting from the fx.Node
-        of a nn.Module layer, and replace it into the parent fx.GraphModule
-
-        Also returns a quantizer in case it needs to be shared with other layers
-
-        :param n: a fx.Node corresponding to a standard nn.Module layer, with shape annotations
-        :type n: fx.Node
-        :param mod: the parent fx.GraphModule
-        :type mod: fx.GraphModule
-        :param precision: The precision to be enforced
-        :type precision: int
-        :param quantizer: The quantizer to be used
-        :type quantizer: Quantizer
-        :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
-        :type quantizer_kwargs: Dict
-        :param sq: An optional shared quantizer derived from other layers
-        :type sq: Optional[Quantizer]
-        :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared quantizer
-        :rtype: Optional[Quantizer]
-        """
+    def autoimport():
+        """ TODO: implement """
         raise NotImplementedError("Trying to import layer using the base abstract class")
 
     @staticmethod
@@ -104,7 +79,8 @@ class QuantModule:
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        raise NotImplementedError("Calling arch_parameters on base abstract QuantModule class")
+        raise NotImplementedError(
+                "Calling named_quant_parameters on base abstract QuantModule class")
 
     def quant_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the quantization parameters of this layer
@@ -115,5 +91,5 @@ class QuantModule:
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        for name, param in self.named_quant_parameters(recurse=recurse):
+        for _, param in self.named_quant_parameters(recurse=recurse):
             yield param

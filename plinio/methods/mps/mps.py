@@ -22,10 +22,11 @@ import torch
 import torch.nn as nn
 
 from plinio.methods.dnas_base import DNAS
+from plinio.cost import CostSpec, CostFn, params_bit
+from plinio.graph.inspection import shapes_dict
 from .graph import convert
 from .nn.module import MPSModule
-from .nn.qtz import MPSType, MPSQtzLayer, MPSQtzChannel
-from plinio.cost import CostSpec, CostFn, bit_params
+from .nn.qtz import MPSType, MPSBaseQtz, MPSPerLayerQtz, MPSPerChannelQtz
 
 from .quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
@@ -103,7 +104,7 @@ class MPS(DNAS):
     def __init__(
             self,
             model: nn.Module,
-            cost: Union[CostSpec, Dict[str, CostSpec]] = bit_params,
+            cost: Union[CostSpec, Dict[str, CostSpec]] = params_bit,
             input_example: Optional[Any] = None,
             input_shape: Optional[Tuple[int, ...]] = None,
             a_precisions: Tuple[int, ...] = (2, 4, 8),
@@ -120,7 +121,7 @@ class MPS(DNAS):
             disable_sampling: bool = False,
             disable_shared_quantizers: bool = False):
         super(MPS, self).__init__(model, cost, input_example, input_shape)
-        self.seed, self._target_layers = convert(
+        self.seed, self._leaf_modules, self._unique_leaf_modules = convert(
             model,
             self._input_example,
             'autoimport' if autoconvert_layers else 'import',
@@ -132,12 +133,6 @@ class MPS(DNAS):
             exclude_names,
             exclude_types,
             disable_shared_quantizers)
-        self.activation_precisions = a_precisions
-        self.weight_precisions = w_precisions
-        self.w_search_type = w_search_type
-        self.qinfo = qinfo
-        self.qinfo_input_quantizer = qinfo_input_quantizer
-        self.disable_shared_quantizers = disable_shared_quantizers
         self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
 
     def forward(self, *args: Any) -> torch.Tensor:
@@ -149,96 +144,56 @@ class MPS(DNAS):
         """
         return self.seed.forward(*args)
 
-    def supported_regularizers(self) -> Tuple[str, ...]:
-        """Returns a tuple of strings with the names of the supported cost regularizers
+    @property
+    def cost_specification(self) -> Union[CostSpec, Dict[str, CostSpec]]:
+        return self._cost_specification
 
-        :return: a tuple of strings with the names of the supported cost regularizers
-        :rtype: Tuple[str, ...]
-        """
-        return ('size', 'macs')
-
-    def get_size(self) -> torch.Tensor:
-        """Computes the total number of effective parameters of all NAS-able layers
-
-        :return: the effective memory occupation of weights
-        :rtype: torch.Tensor
-        """
-        size = torch.tensor(0, dtype=torch.float32)
-        for layer in self._target_layers:
-            size = size + layer.get_size()
-        return size
+    @cost_specification.setter
+    def cost_specification(self, cs: Union[CostSpec, Dict[str, CostSpec]]):
+        self._cost_specification = cs
+        self._cost_fn_map = self._create_cost_fn_map()
 
     def binarize_alpha(self):
         """Binarize the architecture coefficients by means of the argmax operator
         """
-        for layer in self._target_layers:
-            for quantizer in [layer.w_quantizer, layer.a_quantizer]:
-                if isinstance(quantizer, (MPSQtzLayer, MPSQtzChannel)):
-                    alpha_prec = quantizer.alpha_prec
-                    max_index = alpha_prec.argmax(dim=0)
-                    argmaxed_alpha = torch.zeros(alpha_prec.shape, device=alpha_prec.device)
+        for _, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, MPSModule):
+                # HERE
+                for k, v in vars(self).items():
+                    # skips input quantiers which would affect another layer
+                    # skips bias quantizers which are a function of a/w quantizers
+                    # TODO: make this field-name-independent
+                    qtz = ['out_a_mps_quantizer', 'w_mps_quantizer']
+                    if k in qtz and isinstance(v, (MPSBaseQtz,)):
+                        alpha_prec = v.alpha_prec
+                        max_index = alpha_prec.argmax(dim=0)
+                        argmaxed_alpha = torch.zeros(alpha_prec.shape, device=alpha_prec.device)
 
-                    if len(argmaxed_alpha.shape) > 1:
-                        for channel_index in range(argmaxed_alpha.shape[-1]):
-                            argmaxed_alpha[max_index[channel_index], channel_index] = 1
-                    else:  # single precision
-                        # TODO: check
-                        argmaxed_alpha[max_index.reshape(-1)[0]] = 1
-                    quantizer.theta_alpha = argmaxed_alpha
-        return
+                        # if len(argmaxed_alpha.shape) > 1:
+                        if isinstance(v, (MPSPerChannelQtz,)):
+                            for channel_index in range(argmaxed_alpha.shape[-1]):
+                                argmaxed_alpha[max_index[channel_index], channel_index] = 1
+                        elif isinstance(v, (MPSPerLayerQtz,)):
+                            # TODO: check
+                            argmaxed_alpha[max_index.reshape(-1)[0]] = 1
+                        else:
+                            raise ValueError("Unsupported MPS quantization")
+                        v.theta_alpha = argmaxed_alpha
 
     def freeze_alpha(self):
         """Freeze the alpha coefficients disabling the gradient computation.
         Useful for fine-tuning the model without changing its architecture
         """
-        for layer in self._target_layers:
-            for quantizer in [layer.w_quantizer, layer.a_quantizer]:
-                if isinstance(quantizer, (MPSQtzLayer, MPSQtzChannel)):
-                    quantizer.alpha_prec.requires_grad = False
-
-    # N.B., this follows EdMIPS formulation -> layer_macs*mix_wbit*mix_abit
-    # TODO: include formulation with cycles
-    def get_macs(self) -> torch.Tensor:
-        """Computes the total number of effective MACs of all NAS-able layers
-
-        :return: the effective number of MACs
-        :rtype: torch.Tensor
-        """
-        macs = torch.tensor(0, dtype=torch.float32)
-        for layer in self._target_layers:
-            macs = macs + layer.get_macs()
-        return macs
-
-    @property
-    def regularizer(self) -> str:
-        """Returns the regularizer type
-
-        :raises ValueError: for unsupported conversion types
-        :return: the string identifying the regularizer type
-        :rtype: str
-        """
-        return self._regularizer
-
-    @regularizer.setter
-    def regularizer(self, value: str):
-        if value == 'size':
-            self.get_regularization_loss = self.get_size
-        elif value == 'macs':
-            self.get_regularization_loss = self.get_macs
-        else:
-            raise ValueError(f"Invalid regularizer {value}")
-        self._regularizer = value
-
-    def get_pruning_loss(self) -> torch.Tensor:
-        """Returns the pruning loss, computed on top of the number of pruned channels of each layer
-
-        :return: the pruning loss
-        :rtype: torch.Tensor
-        """
-        ploss = torch.tensor(0, dtype=torch.float32)
-        for layer in self._target_layers:
-            ploss = ploss + layer.get_pruning_loss()
-        return ploss
+        for _, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, MPSModule):
+                # HERE
+                for k, v in vars(self).items():
+                    # skips input quantiers which would affect another layer
+                    # skips bias quantizers which are a function of a/w quantizers
+                    # TODO: make this field-name-independent
+                    qtz = ['out_a_mps_quantizer', 'w_mps_quantizer']
+                    if k in qtz and isinstance(v, (MPSBaseQtz,)):
+                        v.alpha_prec.requires_grad = False
 
     def update_softmax_options(
             self,
@@ -255,16 +210,13 @@ class MPS(DNAS):
         :type hard: Optional[bool]
         :param gumbel: Gumbel-softmax vs standard softmax
         :type gumbel: Optional[bool]
-        :param disable_sampling: disable the sampling of the architectural coefficients in the forward pass
+        :param disable_sampling: disable the sampling of the architectural coefficients in the
+        forward pass
         :type disable_sampling: Optional[bool]
         """
         for _, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
-                if temperature is not None:
-                    layer.softmax_temperature = temperature
-                if hard is not None:
-                    layer.hard_softmax = hard
-
+                layer.update_softmax_options(temperature, hard, gumbel, disable_sampling)
 
     def arch_export(self):
         """Export the architecture found by the NAS as a `quant.nn` module
@@ -275,18 +227,7 @@ class MPS(DNAS):
         :return: the precision-assignement found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
-        # TODO update
-        mod, _ = convert(self.seed,
-                         self._input_shape,
-                         self.activation_precisions,
-                         self.weight_precisions,
-                         self.w_search_type,
-                         self.qinfo,
-                         self.qinfo_input_quantizer,
-                         'export',
-                         input_quantization=self.input_quantization,
-                         disable_shared_quantizers=self.disable_shared_quantizers)
-
+        mod, _, _ = convert(self.seed, self._input_example, 'export')
         return mod
 
     def arch_summary(self) -> Dict[str, Dict[str, Any]]:
@@ -297,50 +238,45 @@ class MPS(DNAS):
         :rtype: Dict[str, Dict[str, Any]]
         """
         arch = {}
-        for name, layer in self.seed.named_modules():
-            if layer in self._target_layers:
-                layer = cast(MPSModule, layer)
-                arch[name] = layer.summary()
-                arch[name]['type'] = layer.__class__.__name__
+        for lname, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, MPSModule):
+                arch[lname] = layer.summary()
+                arch[lname]['type'] = layer.__class__.__name__
         return arch
 
-    def alpha_summary(self) -> Dict[str, Dict[str, Any]]:
+    def alpha_summary(self, post_softmax: bool = False) -> Dict[str, Dict[str, Any]]:
         """Generates a dictionary representation of the architectural coefficients found by the NAS.
         Only optimized layers are reported
 
         :return: a dictionary representation of the architectural coefficients found by the NAS
         :rtype: Dict[str, Dict[str, any]]"""
         arch = {}
-        for name, layer in self.seed.named_modules():
-            if layer in self._target_layers:
+        for lname, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, MPSModule):
                 prec_dict = {}
-                if isinstance(layer.a_quantizer, (MPSQtzLayer, MPSQtzChannel)):
-                    prec_dict['a_precision'] = layer.a_quantizer.alpha_prec.detach()
-                if isinstance(layer.w_quantizer, (MPSQtzLayer, MPSQtzChannel)):
-                    prec_dict['w_precision'] = layer.w_quantizer.alpha_prec.detach()
-
-                arch[name] = prec_dict
-                arch[name]['type'] = layer.__class__.__name__
+                for k, v in vars(self).items():
+                    # skips input quantiers and bias quantizer
+                    # TODO: make this field-name-independent
+                    if k == 'out_a_mps_quantizer' and isinstance(v, (MPSBaseQtz,)):
+                        if post_softmax:
+                            prec_dict['out_a_precision'] = v.theta_alpha.detach()
+                        else:
+                            prec_dict['out_a_precision'] = v.alpha_prec.detach()
+                    if k == 'w_mps_quantizer' and isinstance(v, (MPSBaseQtz,)):
+                        if post_softmax:
+                            prec_dict['w_precision'] = v.theta_alpha.detach()
+                        else:
+                            prec_dict['w_precision'] = v.alpha_prec.detach()
+                arch[lname] = prec_dict
+                arch[lname]['type'] = layer.__class__.__name__
         return arch
 
     def theta_alpha_summary(self) -> Dict[str, Dict[str, Any]]:
-        """Generates a dictionary representation of the architectural coefficients found by the NAS.
-        Only optimized layers are reported
+        """DEPRECATED: use alpha_summary(post_softmax=True)
 
         :return: a dictionary representation of the architectural coefficients found by the NAS
         :rtype: Dict[str, Dict[str, any]]"""
-        arch = {}
-        for name, layer in self.seed.named_modules():
-            if layer in self._target_layers:
-                prec_dict = {}
-                if isinstance(layer.a_quantizer, (MPSQtzLayer, MPSQtzChannel)):
-                    prec_dict['a_precision'] = layer.a_quantizer.theta_alpha.detach()
-                if isinstance(layer.w_quantizer, (MPSQtzLayer, MPSQtzChannel)):
-                    prec_dict['w_precision'] = layer.w_quantizer.theta_alpha.detach()
-
-                arch[name] = prec_dict
-                arch[name]['type'] = layer.__class__.__name__
-        return arch
+        return self.alpha_summary(post_softmax=True)
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -355,9 +291,8 @@ class MPS(DNAS):
         :rtype: Iterator[nn.Parameter]
         """
         included = set()
-        for lname, layer in self.named_modules():
-            if layer in self._target_layers:
-                layer = cast(MPSModule, layer)
+        for lname, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, MPSModule):
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname
@@ -380,7 +315,7 @@ class MPS(DNAS):
         :rtype: Iterator[nn.Parameter]
         """
         exclude = set(_[0] for _ in self.named_nas_parameters())
-        for name, param in self.named_parameters():
+        for name, param in self.named_parameters(prefix=prefix, recurse=recurse):
             if name not in exclude:
                 yield name, param
 
@@ -409,15 +344,18 @@ class MPS(DNAS):
     def _get_single_cost(self, cost_spec: CostSpec,
                          cost_fn_map: Dict[str, CostFn]) -> torch.Tensor:
         """Private method to compute a single cost value"""
-        # TODO: relies on the attribute name sn_branches. Not nice, but didn't find
-        # a better solution that remains flexible.
         cost = torch.tensor(0, dtype=torch.float32)
         target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
         for lname, node, layer in target_list:
             if isinstance(layer, MPSModule):
-                cost = cost + layer.get_cost(cost_spec, cost_fn_map)
-            elif 'sn_branches' not in str(node.target) and self.full_cost:
+                # a list of layer parameters for each combination of supported precision
+                v_iterator = layer.get_modified_vars()
+                for v in v_iterator:
+                    v.update(shapes_dict(node))
+                    cost = cost + cost_fn_map[lname](v)
+            elif self.full_cost:
                 # TODO: this is constant and can be pre-computed for efficiency
+                # TODO: should we add default bitwidth and format for non-MPS layers or not?
                 v = vars(layer)
                 v.update(shapes_dict(node))
                 cost = cost + cost_fn_map[lname](v)

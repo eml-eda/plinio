@@ -17,30 +17,25 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Optional, Iterator, Tuple, cast
+from typing import Dict, Any, Optional, Iterator, Tuple
 import torch
 import torch.fx as fx
 import torch.nn as nn
-import torch.nn.functional as F
 from ..quantizers import Quantizer
-from ..backends import Backend, backend_solver
-from .quant_module import QuantModule
+from ..backends import Backend, backend_factory
+from .module import QuantModule
 
 
-class Quant_ReLU(nn.ReLU, QuantModule):
-    """A nn.Module implementing a quantized ReLU layer
+class QuantIdentity(nn.Identity, QuantModule):
+    """A nn.Module implementing a quantized Identity layer
 
-    :param precision: the quantization precision
-    :type precisions: int
-    :param quantizer: input tensor quantizer
+    :param quantizer: output activations quantizer
     :type quantizer: Type[Quantizer]
     """
     def __init__(self,
-                 precision: int,
                  quantizer: Quantizer):
-        super(Quant_ReLU, self).__init__()
-        self.precision = precision
-        self.quantizer = quantizer
+        super(QuantIdentity, self).__init__()
+        self.out_a_quantizer = quantizer
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of quantized layer.
@@ -52,60 +47,22 @@ class Quant_ReLU(nn.ReLU, QuantModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        q_out = self.quantizer(input)  # type: ignore
-        q_out = cast(torch.Tensor, q_out)
-        out = F.relu(q_out)
+        out = self.out_a_quantizer(input)
         return out
 
+    # TODO: this function needs to be implemented, currently instances of this class
+    # are only created when converting from a MPS model
     @staticmethod
-    def autoimport(n: fx.Node,
-                   mod: fx.GraphModule,
-                   precision: int,
-                   quantizer: Quantizer,
-                   sq: Optional[Quantizer],
-                   quantizer_kwargs: Dict = {}
-                   ) -> Optional[Quantizer]:
-        """Create a new fx.Node relative to a Quant_ReLU layer, starting from the fx.Node
-        of a nn.ReLU layer, and replace it into the parent fx.GraphModule
-
-        Also returns a quantizer in case it needs to be shared with other layers
-
-        :param n: a fx.Node corresponding to a nn.ReLU layer, with shape annotations
-        :type n: fx.Node
-        :param mod: the parent fx.GraphModule
-        :type mod: fx.GraphModule
-        :param precision: the quantization precision
-        :type precision: int
-        :param quantizer: the quantizer to be used
-        :type quantizer: Type[Quantizer]
-        :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
-        :type quantizer_kwargs: Dict
-        :param sq: An optional shared quantizer derived from other layers
-        :type sq: Optional[Quantizer]
-        :raises TypeError: if the input fx.Node is not of the correct type
-        :return: the updated shared quantizer
-        :rtype: Optional[Quantizer]
-        """
-        submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != nn.ReLU:
-            msg = f"Trying to generate Quant_Identity from layer of type {type(submodule)}"
-            raise TypeError(msg)
-        if sq is not None:
-            qtz_obj = sq
-        else:
-            qtz_obj = quantizer(precision,
-                                **quantizer_kwargs)  # type: ignore
-
-        new_submodule = Quant_ReLU(precision, qtz_obj)
-        mod.add_submodule(str(n.target), new_submodule)
-        return None  # TODO: Understand if I should return something and when
+    def autoimport() -> Optional[Quantizer]:
+        """ TODO: implement """
+        raise NotImplementedError
 
     @staticmethod
     def export(n: fx.Node,
                mod: fx.GraphModule,
                backend: Backend):
-        """Replaces a fx.Node corresponding to a Quant_ReLU layer,
-        with a backend-specific quantize ReLU layer within a fx.GraphModule
+        """Replaces a fx.Node corresponding to a Quant_Identity layer,
+        with a backend-specific quantize Identity layer within a fx.GraphModule
 
         :param n: the node to be rewritten
         :type n: fx.Node
@@ -115,12 +72,11 @@ class Quant_ReLU(nn.ReLU, QuantModule):
         :type backend: Backend
         """
         submodule = mod.get_submodule(str(n.target))
-        if type(submodule) != Quant_ReLU:
+        if type(submodule) != QuantIdentity:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        integer_relu = backend_solver(type(submodule), backend)
-        new_submodule = integer_relu(
-            submodule.precision,
-            submodule.quantizer
+        integer_identity = backend_factory(submodule, backend)
+        new_submodule = integer_identity(
+            submodule.out_a_quantizer
         )
         mod.add_submodule(str(n.target), new_submodule)
 
@@ -131,8 +87,7 @@ class Quant_ReLU(nn.ReLU, QuantModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'precision': self.precision,
-            'quantizer': self.quantizer.summary(),
+            'quantizer': self.out_a_quantizer.summary(),
         }
 
     def named_quant_parameters(
@@ -150,6 +105,6 @@ class Quant_ReLU(nn.ReLU, QuantModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.quantizer.named_quant_parameters(
-                prfx + "mixprec_quantizer", recurse):
+        for name, param in self.out_a_quantizer.named_quant_parameters(
+                prfx + "out_a_quantizer", recurse):
             yield name, param

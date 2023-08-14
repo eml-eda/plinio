@@ -98,7 +98,9 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
     clean_up_propagated_shapes(mod)
     add_node_properties(mod)
     if conversion_type in ('autoimport', 'export'):
-        convert_layers(mod, conversion_type, exclude_names, exclude_types)
+        # dictionary of shared feature maskers. Used only in 'autoimport' mode.
+        sm_dict = {} if conversion_type != 'autoimport' else build_shared_features_map(mod)
+        convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
         fuse_pit_modules(mod)
         add_features_calculator(mod, [pit_features_calc])
@@ -113,6 +115,7 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
 
 def convert_layers(mod: fx.GraphModule,
                    conversion_type: str,
+                   sm_dict: Dict,
                    exclude_names: Iterable[str],
                    exclude_types: Iterable[Type[nn.Module]],
                    ):
@@ -124,6 +127,8 @@ def convert_layers(mod: fx.GraphModule,
     :type mod: fx.GraphModule
     :param conversion_type: a string specifying the type of conversion
     :type conversion_type: str
+    :param sm_dict: dictionary associating each fx.Node to a shared feature masker
+    :type sm_dict: Dict
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
@@ -131,8 +136,6 @@ def convert_layers(mod: fx.GraphModule,
     """
     g = mod.graph
     queue = get_graph_outputs(g)
-    # dictionary of shared feature maskers. Used only in 'autoimport' mode.
-    sm_dict = build_shared_features_map(mod)
     visited = []
     while queue:
         n = queue.pop(0)

@@ -17,8 +17,8 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .base import Backend, backend_solver, integerize_arch
+from .base import Backend, backend_factory, integerize_arch
 
 __all__ = [
-    'Backend', 'backend_solver', 'integerize_arch',
+    'Backend', 'backend_factory', 'integerize_arch',
 ]

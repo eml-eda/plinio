@@ -25,7 +25,6 @@ class SuperNetCombiner(nn.Module):
         self.n_branches = n_branches
         self.alpha = nn.Parameter(
             (1 / n_branches) * torch.ones(n_branches, dtype=torch.float), requires_grad=False)
-        # self.register_buffer('theta_alpha', torch.tensor(self.n_branches, dtype=torch.float32))
         self.theta_alpha = torch.tensor(self.n_branches, dtype=torch.float32)
         self.theta_alpha.data = self.alpha
         self._softmax_temperature = 1

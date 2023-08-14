@@ -24,7 +24,7 @@ import torch.nn as nn
 from .quantizer import Quantizer
 
 
-class PACTAct(nn.Module, Quantizer):
+class PACTAct(Quantizer):
     """A nn.Module implementing the PACT (PArametrized Clipping Activation)
     quantization strategy for activations.
     More details can be found at: https://openreview.net/forum?id=By5ugjyCb
@@ -180,7 +180,7 @@ class PACT_Act_STE(torch.autograd.Function):
         return grad_input, None, grad_alpha, None
 
 
-class PACT_Act_Signed(nn.Module, Quantizer):
+class PACT_Act_Signed(Quantizer):
     """A nn.Module implementing the PACT (PArametrized Clipping Activation)
     quantization strategy for activations.
     More details can be found at: https://openreview.net/forum?id=By5ugjyCb

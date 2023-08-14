@@ -17,13 +17,11 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .dory_module import DORYModule
-from .dory_conv2d import DORYConv2d
-from .dory_linear import DORYLinear
-# from .dory_identity import DORYIdentity
+from .module import DORYModule
+from .conv2d import DORYConv2d
+from .linear import DORYLinear
 
 __all__ = [
     'DORYModule', 'DORYConv2d',
     'DORYLinear',
-    # 'DORYIdentity',
 ]

@@ -18,6 +18,11 @@
 # *----------------------------------------------------------------------------*
 from .cost_spec import CostFn, CostSpec, PatternSpec
 from .params import params
+from .params_bias import params_bias
+from .params_bit import params_bit
 from .ops import ops
+from .ops_bias import ops_bias
 
-__all__ = ['CostFn', 'CostSpec', 'PatternSpec', 'params', 'ops']
+__all__ = ['CostFn', 'CostSpec', 'PatternSpec',
+           'params', 'params_bias', 'params_bit',
+           'ops', 'ops_bias']

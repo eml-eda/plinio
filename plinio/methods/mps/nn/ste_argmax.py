@@ -7,7 +7,7 @@ class STEArgmax(torch.autograd.Function):
     """A torch autograd function defining the argmax used in MPS"""
 
     @staticmethod
-    def forward(ctx: Any, *args: Any, **kwargs: Any) -> Any:
+    def forward(ctx: Any, *args: Any, **kwargs: Any) -> torch.Tensor:
         x: torch.Tensor = args[0]
         return F.one_hot(torch.argmax(x, dim=0),
                          num_classes=len(x)

@@ -24,7 +24,7 @@ import torch.nn as nn
 from .quantizer import Quantizer
 
 
-class MinMaxWeight(nn.Module, Quantizer):
+class MinMaxWeight(Quantizer):
     """A nn.Module implementing a min-max quantization strategy for weights.
 
     :param num_bits: quantization precision

@@ -24,12 +24,12 @@ import torch.fx as fx
 import torch.nn as nn
 
 
-class Quantizer:
+class Quantizer(nn.Module):
     """An abstract class representing the interface that all Quantizer layers should implement
     """
     @abstractmethod
     def __init__(self, *args):
-        raise NotImplementedError("Calling init on base abstract Quantizer class")
+        super(Quantizer, self).__init__()
 
     @abstractmethod
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -83,7 +83,7 @@ class Quantizer:
         :return: an iterator over the quantization parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        for name, param in self.named_quant_parameters(recurse=recurse):
+        for _, param in self.named_quant_parameters(recurse=recurse):
             yield param
 
     @property
