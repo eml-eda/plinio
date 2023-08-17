@@ -21,7 +21,7 @@ from abc import abstractmethod
 from typing import Dict, Any, Iterator, Tuple, Union, Optional
 import torch.fx as fx
 import torch.nn as nn
-from .qtz import MPSBaseQtz, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
+from .qtz import MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
 from plinio.graph.features_calculation import FeaturesCalculator
 
 

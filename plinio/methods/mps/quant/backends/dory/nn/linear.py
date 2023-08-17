@@ -156,7 +156,7 @@ class DORYLinear(nn.Linear, DORYModule):
         if self.last_layer:
             return torch.tensor(2 ** 32 - 1, device=self.device)
         else:
-            return torch.tensor(2 ** self.out_quantizer.num_bits - 1, device=self.device)
+            return torch.tensor(2 ** self.out_quantizer.precision - 1, device=self.device)
 
     def _integer_approximation(self,
                                s_w: torch.Tensor,

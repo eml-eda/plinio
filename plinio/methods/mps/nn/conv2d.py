@@ -234,7 +234,6 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: a dictionary containing the optimized layer hyperparameter values
         :rtype: Dict[str, Any]
         """
-        # TODO: name incompatibility with get_modified_vars
         return {
             'in_precision': self.selected_in_precision,
             'out_precision': self.selected_out_precision,
@@ -265,18 +264,16 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: an iterator over the modified vars(self) data structures
         :rtype: Iterator[Dict[str, Any]]
         """
-        # TODO: check this function
         for i, a_prec in enumerate(self.in_mps_quantizer.precisions):
             for j, w_prec in enumerate(self.w_mps_quantizer.precisions):
                 v = dict(vars(self))
-                v['in_bits'] = a_prec
+                v['in_precision'] = a_prec
                 v['in_format'] = int
-                v['w_bits'] = w_prec
+                v['w_precision'] = w_prec
                 v['w_format'] = int
                 # downscale the input_channels times the probability of using that
                 # input precision
-                # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
-                # To be double-checked
+                # TODO: detach to be double-checked
                 v['in_channels'] = (self.input_features_calculator.features.detach() *
                                     self.in_mps_quantizer.theta_alpha[i])
                 # same with weights precision and output channels, but distinguish the two types

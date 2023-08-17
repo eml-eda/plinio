@@ -27,8 +27,8 @@ from .quantizer import Quantizer
 class MinMaxWeight(Quantizer):
     """A nn.Module implementing a min-max quantization strategy for weights.
 
-    :param num_bits: quantization precision
-    :type num_bits: int
+    :param precision: quantization precision
+    :type precision: int
     :param cout: number of output channels
     :type cout: int
     :param symmetric: wether the weight upper and lower bound should be the same
@@ -37,12 +37,12 @@ class MinMaxWeight(Quantizer):
     :type dequantize: bool
     """
     def __init__(self,
-                 num_bits: int,
+                 precision: int,
                  cout: int,
                  symmetric: bool = True,
                  dequantize: bool = True):
         super(MinMaxWeight, self).__init__()
-        self._num_bits = num_bits
+        self._precision = precision
         if symmetric:
             self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
             self.compute_min_max = self._compute_min_max_sym
@@ -72,7 +72,7 @@ class MinMaxWeight(Quantizer):
         input_q = self.qtz_func.apply(input,
                                       self.ch_min,
                                       self.ch_max,
-                                      self.num_bits,
+                                      self.precision,
                                       self.dequantize)
         return input_q
 
@@ -92,16 +92,16 @@ class MinMaxWeight(Quantizer):
 
     @property
     def s_w(self) -> torch.Tensor:
-        """Return the computed scale factor which depends upon self.num_bits and
+        """Return the computed scale factor which depends upon self.precision and
         weights magnitude
 
         :return: the scale factor
         :rtype: torch.Tensor
         """
         ch_range = self.ch_max - self.ch_min
-        if self.num_bits != 0:
+        if self.precision != 0:
             ch_range.masked_fill_(ch_range.eq(0), 1)
-            n_steps = 2 ** self.num_bits - 1
+            n_steps = 2 ** self.precision - 1
             scale_factor = ch_range / n_steps
         else:
             scale_factor = torch.zeros(ch_range.shape, device=ch_range.device)
@@ -137,12 +137,12 @@ class MinMaxWeight(Quantizer):
             yield name, param
 
     @property
-    def num_bits(self) -> int:
-        return self._num_bits
+    def precision(self) -> int:
+        return self._precision
 
-    @num_bits.setter
-    def num_bits(self, val: int):
-        self._num_bits = val
+    @precision.setter
+    def precision(self, val: int):
+        self._precision = val
 
     @property
     def dequantize(self) -> bool:
@@ -181,7 +181,7 @@ class MinMaxWeight(Quantizer):
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
-            f'(num_bits={self.num_bits}, '
+            f'(precision={self.precision}, '
             f'scale_factor={self.s_w})'
         )
         return msg
@@ -189,8 +189,8 @@ class MinMaxWeight(Quantizer):
 
 class MinMax_Asym_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, ch_min, ch_max, num_bits, dequantize):
-        return _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize)
+    def forward(ctx, x, ch_min, ch_max, precision, dequantize):
+        return _min_max_quantize(x, ch_min, ch_max, precision, dequantize)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -199,22 +199,22 @@ class MinMax_Asym_STE(torch.autograd.Function):
 
 class MinMax_Sym_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, ch_min, ch_max, num_bits, dequantize):
-        return _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize)
+    def forward(ctx, x, ch_min, ch_max, precision, dequantize):
+        return _min_max_quantize(x, ch_min, ch_max, precision, dequantize)
 
     @staticmethod
     def backward(ctx, grad_output):
         return grad_output, None, None, None, None
 
 
-def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
+def _min_max_quantize(x, ch_min, ch_max, precision, dequantize):
 
     # if the precision is equal to 0 bit, return a zeros-filled tensor
-    if num_bits != 0:
+    if precision != 0:
         # Compute scale factor
         ch_range = ch_max - ch_min
         ch_range.masked_fill_(ch_range.eq(0), 1)
-        n_steps = 2 ** num_bits - 1
+        n_steps = 2 ** precision - 1
         scale_factor = ch_range / n_steps
 
         # Reshape
@@ -230,7 +230,7 @@ def _min_max_quantize(x, ch_min, ch_max, num_bits, dequantize):
         # We solve the problem using the unbiased rounding to nearest even strategy
         # (aka round) and we clip to avoid exceeding the dynamic.
         y = torch.round(x / scale_factor)
-        y = torch.clip(y, max=2 ** (num_bits - 1) - 1)
+        y = torch.clip(y, max=2 ** (precision - 1) - 1)
         # y = torch.floor(x / scale_factor)
 
         if dequantize:

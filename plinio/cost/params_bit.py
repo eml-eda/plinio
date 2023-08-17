@@ -25,11 +25,11 @@ def _params_bit_conv1d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin * k + 1) * w_bits
-    cost = cout * (cin * k) * w_bits
+    # cost = cout * (cin * k + 1) * w_precision
+    cost = cout * (cin * k) * w_precision
     return cost
 
 
@@ -37,44 +37,44 @@ def _params_bit_conv2d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin * k[0] * k[1] + 1) * w_bits
-    cost = cout * (cin * k[0] * k[1]) * w_bits
+    # cost = cout * (cin * k[0] * k[1] + 1) * w_precision
+    cost = cout * (cin * k[0] * k[1]) * w_precision
     return cost
 
 
 def _params_bit_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    # cost = cin * (k + 1) * w_bits
-    cost = cin * (k) * w_bits
+    # cost = cin * (k + 1) * w_precision
+    cost = cin * (k) * w_precision
     return cost
 
 
 def _params_bit_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    # cost = cin * (k[0] * k[1] + 1) * w_bits
-    cost = cin * (k[0] * k[1]) * w_bits
+    # cost = cin * (k[0] * k[1] + 1) * w_precision
+    cost = cin * (k[0] * k[1]) * w_precision
     return cost
 
 
 def _params_bit_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
     assert w_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin + 1) * w_bits
-    cost = cout * (cin) * w_bits
+    # cost = cout * (cin + 1) * w_precision
+    cost = cout * (cin) * w_precision
     return cost
 
 

@@ -88,13 +88,13 @@ class Quantizer(nn.Module):
 
     @property
     @abstractmethod
-    def num_bits(self) -> int:
-        raise NotImplementedError("Calling num_bits on base abstract Quantizer class")
+    def precision(self) -> int:
+        raise NotImplementedError("Calling precision on base abstract Quantizer class")
 
-    @num_bits.setter
+    @precision.setter
     @abstractmethod
-    def num_bits(self, val: int):
-        raise NotImplementedError("Calling num_bits on base abstract Quantizer class")
+    def precision(self, val: int):
+        raise NotImplementedError("Calling precision on base abstract Quantizer class")
 
     @property
     @abstractmethod

@@ -436,15 +436,15 @@ class TestMPSConvert(unittest.TestCase):
         for name, child in exported_nn.named_children():
             if name == 'conv0':
                 child = cast(qnn.QuantConv2d, child)
-                self.assertEqual(child.out_quantizer.num_bits, 8, "Wrong act precision")
+                self.assertEqual(child.out_quantizer.precision, 8, "Wrong act precision")
                 self.assertEqual(child.out_quantizer.clip_val, 5., "Wrong act qtz clip_val")
-                self.assertEqual(child.w_quantizer.num_bits, 2, "Wrong weight precision")
+                self.assertEqual(child.w_quantizer.precision, 2, "Wrong weight precision")
             if name == 'conv1':
                 child = cast(qnn.QuantConv2d, child)
-                self.assertEqual(child.out_quantizer.num_bits, 4, "Wrong act precision")
+                self.assertEqual(child.out_quantizer.precision, 4, "Wrong act precision")
                 self.assertEqual(child.out_quantizer.clip_val, 1.,  # type: ignore
                                  "Wrong act qtz clip_val")
-                self.assertEqual(child.w_quantizer.num_bits, 8, "Wrong weight precision")
+                self.assertEqual(child.w_quantizer.precision, 8, "Wrong weight precision")
 
     def test_repeated_precisions(self):
         """Check that if the weights or the activation precisions used for the model's
@@ -744,8 +744,8 @@ class TestMPSConvert(unittest.TestCase):
         self.assertTrue(child.groups == new_child.groups)
         self.assertTrue(child.padding_mode == new_child.padding_mode)
         # Check qtz param
-        self.assertTrue(child.out_quantizer.num_bits == new_child.out_quantizer.num_bits)
-        self.assertTrue(child.w_quantizer.num_bits == new_child.w_quantizer.num_bits)
+        self.assertTrue(child.out_quantizer.precision == new_child.out_quantizer.precision)
+        self.assertTrue(child.w_quantizer.precision == new_child.w_quantizer.precision)
 
     def _check_linear(self, child, new_child):
         """Collection of checks on QuantLinear"""
@@ -755,8 +755,8 @@ class TestMPSConvert(unittest.TestCase):
         self.assertTrue(child.out_features == new_child.out_features)
         # Check qtz param
         if type(new_child.out_quantizer) != nn.Identity:
-            self.assertTrue(child.out_quantizer.num_bits == new_child.out_quantizer.num_bits)
-        self.assertTrue(child.w_quantizer.num_bits == new_child.w_quantizer.num_bits)
+            self.assertTrue(child.out_quantizer.precision == new_child.out_quantizer.precision)
+        self.assertTrue(child.w_quantizer.precision == new_child.w_quantizer.precision)
 
 
 if __name__ == '__main__':

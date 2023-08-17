@@ -26,13 +26,13 @@ def _ops_bit_conv1d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
-    in_bits = spec['in_bits']
+    in_precision = spec['in_precision']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin * k + 1) * w_bits * in_bits * out_shape[2]
-    cost = cout * (cin * k) * w_bits * in_bits * out_shape[2]
+    # cost = cout * (cin * k + 1) * w_precision * in_precision * out_shape[2]
+    cost = cout * (cin * k) * w_precision * in_precision * out_shape[2]
     return cost
 
 
@@ -41,13 +41,13 @@ def _ops_bit_conv2d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
-    in_bits = spec['in_bits']
+    in_precision = spec['in_precision']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin * k[0] * k[1] + 1) * w_bits * in_bits * out_shape[2] * out_shape[3]
-    cost = cout * (cin * k[0] * k[1]) * w_bits * in_bits * out_shape[2] * out_shape[3]
+    # cost = cout * (cin * k[0] * k[1] + 1) * w_precision * in_precision * out_shape[2] * out_shape[3]
+    cost = cout * (cin * k[0] * k[1]) * w_precision * in_precision * out_shape[2] * out_shape[3]
     return cost
 
 
@@ -55,13 +55,13 @@ def _ops_bit_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
-    in_bits = spec['in_bits']
+    in_precision = spec['in_precision']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    # cost = cin * (k + 1) * w_bits * in_bits * out_shape[2]
-    cost = cin * (k) * w_bits * in_bits * out_shape[2]
+    # cost = cin * (k + 1) * w_precision * in_precision * out_shape[2]
+    cost = cin * (k) * w_precision * in_precision * out_shape[2]
     return cost
 
 
@@ -69,26 +69,26 @@ def _ops_bit_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
-    in_bits = spec['in_bits']
+    in_precision = spec['in_precision']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    # cost = cin * (k[0] * k[1] + 1) * w_bits * in_bits * out_shape[2] * out_shape[3]
-    cost = cin * (k[0] * k[1]) * w_bits * in_bits * out_shape[2] * out_shape[3]
+    # cost = cin * (k[0] * k[1] + 1) * w_precision * in_precision * out_shape[2] * out_shape[3]
+    cost = cin * (k[0] * k[1]) * w_precision * in_precision * out_shape[2] * out_shape[3]
     return cost
 
 
 def _ops_bit_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    w_bits = spec['w_bits']
+    w_precision = spec['w_precision']
     w_format = spec['w_format']
-    in_bits = spec['in_bits']
+    in_precision = spec['in_precision']
     in_format = spec['in_format']
     assert w_format == int and in_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin + 1) * w_bits * in_bits
-    cost = cout * (cin) * w_bits * in_bits
+    # cost = cout * (cin + 1) * w_precision * in_precision
+    cost = cout * (cin) * w_precision * in_precision
     return cost
 
 

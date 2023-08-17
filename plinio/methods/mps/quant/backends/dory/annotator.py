@@ -111,8 +111,8 @@ class DORYAnnotator:
                     op_name = n.name.split('/')[1]
                 pytorch_module = network.get_submodule(op_name)
                 if isinstance(pytorch_module, (nn.Linear, nn.Conv1d, nn.Conv2d, nn.Conv3d)):
-                    weight_bits = pytorch_module.w_quantizer.num_bits
-                    bias_bits = pytorch_module.b_quantizer.num_bits
+                    weight_bits = pytorch_module.w_quantizer.precision
+                    bias_bits = pytorch_module.b_quantizer.precision
                     annotations.append(onnx_helper.make_attribute(key='weight_bits',
                                                                   value=weight_bits))
                     annotations.append(onnx_helper.make_attribute(key='bias_bits',

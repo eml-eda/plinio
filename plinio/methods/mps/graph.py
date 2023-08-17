@@ -93,7 +93,7 @@ def convert(model: nn.Module,
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
     :type w_search_type: MPSType
     :param qinfo: dict containing desired quantizers for act, weight and bias
-    and their arguments excluding the num_bits precision
+    and their arguments excluding the precision precision
     :type qinfo: Dict
     :param qinfo_input_quantizer: desired quantizer for the input of the network. If set to None,
     the input is not quantized (default: None)
@@ -159,7 +159,7 @@ def convert_layers(mod: fx.GraphModule,
     :param conversion_type: a string specifying the type of conversion
     :type conversion_type: str
     :param qinfo: dictionary containing desired quantizers for act, weight and bias
-    and their arguments excluding the num_bits precision
+    and their arguments excluding the precision precision
     :type qinfo: Dict
     :param sq_dict: dictionary associating each fx.Node to a set of shared quantizers
     :type sq_dict: Dict
@@ -416,7 +416,7 @@ def add_input_quantizer(mod: fx.GraphModule,
     by the NAS
     :type activation_precisions: Tuple[int, ...]
     :param qinfo: dict containing desired quantizers for act and their arguments excluding
-    the num_bits precision
+    the precision precision
     :type qinfo: Dict
     """
     g = mod.graph

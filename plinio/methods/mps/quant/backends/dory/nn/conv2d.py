@@ -169,7 +169,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
     @property
     def clip_sup(self):
         # Define ReLU superior extreme
-        return torch.tensor(2 ** cast(int, self.out_quantizer.num_bits) - 1, device=self.device)
+        return torch.tensor(2 ** cast(int, self.out_quantizer.precision) - 1, device=self.device)
 
     def _integer_approximation(self,
                                s_w: torch.Tensor,

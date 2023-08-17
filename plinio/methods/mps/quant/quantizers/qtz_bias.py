@@ -31,19 +31,19 @@ from .quantizer import Quantizer
 class QuantizerBias(Quantizer):
     """A nn.Module implementing bias quantization.
 
-    :param num_bits: quantization precision
-    :type num_bits: int
+    :param precision: quantization precision
+    :type precision: int
     :param cout: number of output channels, coincide with len of bias vector
     :type cout: int
     :param dequantize: whether the output should be fake-quantized or not
     :type dequantize: bool
     """
     def __init__(self,
-                 num_bits: int,
+                 precision: int,
                  cout: int,
                  dequantize: bool = True):
         super(QuantizerBias, self).__init__()
-        self._num_bits = num_bits
+        self._precision = precision
         self._dequantize = dequantize
         # self.register_buffer('s_b', torch.Tensor(cout))
         self.s_b = torch.Tensor(cout)
@@ -117,12 +117,12 @@ class QuantizerBias(Quantizer):
             yield name, param
 
     @property
-    def num_bits(self) -> int:
-        return self._num_bits
+    def precision(self) -> int:
+        return self._precision
 
-    @num_bits.setter
-    def num_bits(self, val: int):
-        self._num_bits = val
+    @precision.setter
+    def precision(self, val: int):
+        self._precision = val
 
     @property
     def dequantize(self) -> bool:
@@ -135,7 +135,7 @@ class QuantizerBias(Quantizer):
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
-            f'(num_bits={self.num_bits}, '
+            f'(precision={self.precision}, '
             f'scale_factor={self.s_b})'
         )
         return msg

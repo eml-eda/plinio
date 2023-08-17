@@ -28,8 +28,8 @@ class FQWeight(Quantizer):
     """A nn.Module implementing the FQ quantization strategy for weights.
     More details can be found at: https://arxiv.org/abs/1912.09356
 
-    :param num_bits: quantization precision
-    :type num_bits: int
+    :param precision: quantization precision
+    :type precision: int
     :param cout: number of output channels, used only if ch_wise is True
     :type cout: int
     :param ch_wise: wether the quantization is channel-wise or not
@@ -40,14 +40,14 @@ class FQWeight(Quantizer):
     :type dequantize: bool
     """
     def __init__(self,
-                 num_bits: int,
+                 precision: int,
                  cout: int,
                  ch_wise: bool = True,
                  train_scale_param: bool = True,
                  dequantize: bool = True):
         super(FQWeight, self).__init__()
-        self.num_bits = num_bits
-        self.quant_bins = 2**(self.num_bits - 1) - 1
+        self.precision = precision
+        self.quant_bins = 2**(self.precision - 1) - 1
         self.cout = cout
         self.ch_wise = ch_wise
         self.train_scale_param
@@ -131,7 +131,7 @@ class FQWeight(Quantizer):
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
-            f'(num_bits={self.num_bits}, '
+            f'(precision={self.precision}, '
             f'scale_factor={self.s_w})'
         )
         return msg

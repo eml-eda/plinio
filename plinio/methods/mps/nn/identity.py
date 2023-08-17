@@ -159,16 +159,16 @@ class MPSIdentity(nn.Identity, MPSModule):
         """
         for i, a_prec in enumerate(self.out_mps_quantizer.precisions):
             v = dict(vars(self))
-            v['out_bits'] = a_prec
+            v['out_precision'] = a_prec
             v['out_format'] = int
-            # downscale the input_channels times the probability of using that
-            # input precision
-            # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
-            # To be double-checked
+            # TODO: detach to be double-checked
             v['in_channels'] = self.input_features_calculator.features.detach()
-            # TODO: verify that it's correct that i'm using _eff here, and not for conv.
+            # conv/linear layers.
             # downscale the output_channels times the probability of using that
             # output precision
+            # TODO: verify that it's correct to use out_features_eff here, differently from
+            # TODO: this is the only layer using out_precision/out_format (as opposed to
+            # in_precision/in_format) at the moment
             v['out_channels'] = (self.out_features_eff *
                                  self.out_mps_quantizer.theta_alpha[i])
             yield v

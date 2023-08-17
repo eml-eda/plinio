@@ -21,7 +21,7 @@ class SimpleMPSNN(nn.Module):
         mixprec_b_quantizer = MPSBiasQtz(QuantizerBias,
                                          mixprec_w_quantizer,
                                          in_mps_quantizer=mixprec_a_quantizer,
-                                         quantizer_kwargs={'num_bits': 32, 'cout': 32})
+                                         quantizer_kwargs={'precision': 32, 'cout': 32})
         # TODO: DP: this seems wrong. the bias quantizer is getting the out_a
         # quantizer but should be getting the in_a quantizer
         self.conv0 = MPSConv2d(nn.Conv2d(3, 32, (3, 3), padding='same'),
@@ -52,33 +52,33 @@ class SimpleExportedNN2D(nn.Module):
     def __init__(self, input_shape=(3, 40, 40), num_classes=3, bias=True):
         super(SimpleExportedNN2D, self).__init__()
         self.input_shape = input_shape
-        conv0_in_a_qtz = PACTAct(num_bits=8)
-        conv0_out_a_qtz = PACTAct(num_bits=8)
+        conv0_in_a_qtz = PACTAct(precision=8)
+        conv0_out_a_qtz = PACTAct(precision=8)
         self.conv0 = qnn.QuantConv2d(
             nn.Conv2d(3, 32, (3, 3), padding='same', bias=bias),
             in_quantizer=conv0_in_a_qtz,
             out_quantizer=conv0_out_a_qtz,
-            w_quantizer=MinMaxWeight(num_bits=8, cout=32),
-            b_quantizer=QuantizerBias(num_bits=32, cout=32)
+            w_quantizer=MinMaxWeight(precision=8, cout=32),
+            b_quantizer=QuantizerBias(precision=32, cout=32)
             )
         self.pool0 = nn.AvgPool2d(2)
-        conv1_out_a_qtz = PACTAct(num_bits=8)
+        conv1_out_a_qtz = PACTAct(precision=8)
         self.conv1 = qnn.QuantConv2d(
             nn.Conv2d(32, 57, (5, 5), padding='same', bias=bias),
             in_quantizer=conv0_out_a_qtz,
             out_quantizer=conv1_out_a_qtz,
-            w_quantizer=MinMaxWeight(num_bits=8, cout=57),
-            b_quantizer=QuantizerBias(num_bits=32, cout=57)
+            w_quantizer=MinMaxWeight(precision=8, cout=57),
+            b_quantizer=QuantizerBias(precision=32, cout=57)
             )
         self.pool1 = nn.AvgPool2d(2)
         self.dpout = nn.Dropout(0.5)
-        fc_out_a_qtz = PACTAct(num_bits=8)
+        fc_out_a_qtz = PACTAct(precision=8)
         self.fc = qnn.QuantLinear(
             nn.Linear(57 * (input_shape[-1] // 2 // 2)**2, num_classes),
             in_quantizer=conv1_out_a_qtz,
             out_quantizer=fc_out_a_qtz,
-            w_quantizer=MinMaxWeight(num_bits=8, cout=num_classes),
-            b_quantizer=QuantizerBias(num_bits=32, cout=num_classes)
+            w_quantizer=MinMaxWeight(precision=8, cout=num_classes),
+            b_quantizer=QuantizerBias(precision=32, cout=num_classes)
             )
         self.foo = "non-nn.Module attribute"
 
@@ -96,60 +96,60 @@ class SimpleExportedNN2D_ch(nn.Module):
     def __init__(self, input_shape=(3, 40, 40), num_classes=3, bias=True):
         super(SimpleExportedNN2D_ch, self).__init__()
         self.input_shape = input_shape
-        conv0_in_a_qtz = PACTAct(num_bits=8)
-        conv0_out_a_qtz = PACTAct(num_bits=8)
+        conv0_in_a_qtz = PACTAct(precision=8)
+        conv0_out_a_qtz = PACTAct(precision=8)
         self.conv0 = qnn.QuantList([
             qnn.QuantConv2d(
                 nn.Conv2d(3, 10, (3, 3), padding='same', bias=bias),
                 in_quantizer=conv0_in_a_qtz,
                 out_quantizer=conv0_out_a_qtz,
-                w_quantizer=MinMaxWeight(num_bits=2, cout=10),
-                b_quantizer=QuantizerBias(num_bits=32, cout=10)
+                w_quantizer=MinMaxWeight(precision=2, cout=10),
+                b_quantizer=QuantizerBias(precision=32, cout=10)
             ),
             qnn.QuantConv2d(
                 nn.Conv2d(3, 10, (3, 3), padding='same', bias=bias),
                 in_quantizer=conv0_in_a_qtz,
                 out_quantizer=conv0_out_a_qtz,
-                w_quantizer=MinMaxWeight(num_bits=4, cout=10),
-                b_quantizer=QuantizerBias(num_bits=32, cout=10),
+                w_quantizer=MinMaxWeight(precision=4, cout=10),
+                b_quantizer=QuantizerBias(precision=32, cout=10),
             ),
             qnn.QuantConv2d(
                 nn.Conv2d(3, 12, (3, 3), padding='same', bias=bias),
                 in_quantizer=conv0_in_a_qtz,
                 out_quantizer=conv0_out_a_qtz,
-                w_quantizer=MinMaxWeight(num_bits=8, cout=12),
-                b_quantizer=QuantizerBias(num_bits=32, cout=12),
+                w_quantizer=MinMaxWeight(precision=8, cout=12),
+                b_quantizer=QuantizerBias(precision=32, cout=12),
             ),
         ])
 
         self.pool0 = nn.AvgPool2d(2)
-        conv1_out_a_qtz = PACTAct(num_bits=8)
+        conv1_out_a_qtz = PACTAct(precision=8)
         self.conv1 = qnn.QuantList([
             qnn.QuantConv2d(
                 nn.Conv2d(32, 57, (5, 5), padding='same', bias=bias),
                 in_quantizer=conv0_out_a_qtz,
                 out_quantizer=conv1_out_a_qtz,
-                w_quantizer=MinMaxWeight(num_bits=8, cout=57),
-                b_quantizer=QuantizerBias(num_bits=32, cout=57),
+                w_quantizer=MinMaxWeight(precision=8, cout=57),
+                b_quantizer=QuantizerBias(precision=32, cout=57),
             ),
         ])
         self.pool1 = nn.AvgPool2d(2)
         self.dpout = nn.Dropout(0.5)
-        fc_out_a_qtz = PACTAct(num_bits=8)
+        fc_out_a_qtz = PACTAct(precision=8)
         self.fc = qnn.QuantList([
             qnn.QuantLinear(
                 nn.Linear(57 * (input_shape[-1] // 2 // 2)**2, 2),
                 in_quantizer=conv1_out_a_qtz,
                 out_quantizer=fc_out_a_qtz,
-                w_quantizer=MinMaxWeight(num_bits=8, cout=2),
-                b_quantizer=QuantizerBias(num_bits=32, cout=2),
+                w_quantizer=MinMaxWeight(precision=8, cout=2),
+                b_quantizer=QuantizerBias(precision=32, cout=2),
             ),
             qnn.QuantLinear(
                 nn.Linear(57 * (input_shape[-1] // 2 // 2)**2, num_classes - 2),
                 in_quantizer=conv1_out_a_qtz,
                 out_quantizer=fc_out_a_qtz,
-                w_quantizer=MinMaxWeight(num_bits=8, cout=num_classes - 2),
-                b_quantizer=QuantizerBias(num_bits=32, cout=num_classes - 2),
+                w_quantizer=MinMaxWeight(precision=8, cout=num_classes - 2),
+                b_quantizer=QuantizerBias(precision=32, cout=num_classes - 2),
             ),
         ])
         self.foo = "non-nn.Module attribute"

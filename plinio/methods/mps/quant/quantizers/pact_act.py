@@ -29,8 +29,8 @@ class PACTAct(Quantizer):
     quantization strategy for activations.
     More details can be found at: https://openreview.net/forum?id=By5ugjyCb
 
-    :param num_bits: quantization precision
-    :type num_bits: int
+    :param precision: quantization precision
+    :type precision: int
     :param cout: dummy argument used to maintain same interface with other quantizers
     :type cout: None
     :param init_clip_val: input upper bound
@@ -39,12 +39,12 @@ class PACTAct(Quantizer):
     :type dequantize: bool
     """
     def __init__(self,
-                 num_bits: int,
+                 precision: int,
                  cout: None = None,
                  init_clip_val: float = 6.,
                  dequantize: bool = True):
         super(PACTAct, self).__init__()
-        self._num_bits = num_bits
+        self._precision = precision
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]), requires_grad=True)
         self._dequantize = dequantize
         # Buffer is probably wrong choice cause we might need gradients (?)
@@ -65,7 +65,7 @@ class PACTAct(Quantizer):
         """
         # input_q, s_a = PACT_Act_STE.apply(input,
         input_q = PACT_Act_STE.apply(input,
-                                     self.num_bits,
+                                     self.precision,
                                      self.clip_val,
                                      self.dequantize)
         # self.s_a = 1 / s_a
@@ -87,13 +87,13 @@ class PACTAct(Quantizer):
 
     @property
     def s_a(self) -> torch.Tensor:
-        """Return the computed scale factor which depends upon self.num_bits and
+        """Return the computed scale factor which depends upon self.precision and
         self.clip_val
 
         :return: the scale factor
         :rtype: torch.Tensor
         """
-        return self.clip_val.data[0] / (2 ** self.num_bits - 1)
+        return self.clip_val.data[0] / (2 ** self.precision - 1)
 
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer quantization hyperparameters
@@ -128,19 +128,19 @@ class PACTAct(Quantizer):
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
-            f'(num_bits={self.num_bits}, '
+            f'(precision={self.precision}, '
             f'clip_val={self.clip_val}, '
             f'scale_factor={self.s_a})'
         )
         return msg
 
     @property
-    def num_bits(self) -> int:
-        return self._num_bits
+    def precision(self) -> int:
+        return self._precision
 
-    @num_bits.setter
-    def num_bits(self, val: int):
-        self._num_bits = val
+    @precision.setter
+    def precision(self, val: int):
+        self._precision = val
 
     @property
     def dequantize(self) -> bool:
@@ -153,9 +153,9 @@ class PACTAct(Quantizer):
 
 class PACT_Act_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, num_bits, clip_val, dequantize):
+    def forward(ctx, input, precision, clip_val, dequantize):
         ctx.save_for_backward(input, clip_val)
-        scale_factor = (2**num_bits - 1) / clip_val.data[0]
+        scale_factor = (2**precision - 1) / clip_val.data[0]
         output = torch.clamp(input, 0, clip_val.data[0])
         output = torch.floor(scale_factor * output)
         if dequantize:
@@ -185,8 +185,8 @@ class PACT_Act_Signed(Quantizer):
     quantization strategy for activations.
     More details can be found at: https://openreview.net/forum?id=By5ugjyCb
 
-    :param num_bits: quantization precision
-    :type num_bits: int
+    :param precision: quantization precision
+    :type precision: int
     :param cout: dummy argument used to maintain same interface with other quantizers
     :type cout: None
     :param init_clip_val: input upper bound
@@ -195,13 +195,13 @@ class PACT_Act_Signed(Quantizer):
     :type dequantize: bool
     """
     def __init__(self,
-                 num_bits: int,
+                 precision: int,
                  cout: None = None,
                  init_clip_val_sup: float = 6.,
                  init_clip_val_inf: float = -6.,
                  dequantize: bool = True):
         super(PACT_Act_Signed, self).__init__()
-        self._num_bits = num_bits
+        self._precision = precision
         self.clip_val_sup = nn.Parameter(torch.Tensor([init_clip_val_sup]), requires_grad=True)
         self.clip_val_inf = nn.Parameter(torch.Tensor([init_clip_val_inf]), requires_grad=True)
         self._dequantize = dequantize
@@ -223,7 +223,7 @@ class PACT_Act_Signed(Quantizer):
         """
         # input_q, s_a = PACT_Act_STE.apply(input,
         input_q = PACT_Act_Signed_STE.apply(input,
-                                            self.num_bits,
+                                            self.precision,
                                             self.clip_val_sup,
                                             self.clip_val_inf,
                                             self.dequantize)
@@ -246,13 +246,13 @@ class PACT_Act_Signed(Quantizer):
 
     @property
     def s_a(self) -> torch.Tensor:
-        """Return the computed scale factor which depends upon self.num_bits and
+        """Return the computed scale factor which depends upon self.precision and
         self.clip_val
 
         :return: the scale factor
         :rtype: torch.Tensor
         """
-        return (self.clip_val_sup.data[0] - self.clip_val_inf.data[0]) / (2 ** self.num_bits - 1)
+        return (self.clip_val_sup.data[0] - self.clip_val_inf.data[0]) / (2 ** self.precision - 1)
 
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer quantization hyperparameters
@@ -287,7 +287,7 @@ class PACT_Act_Signed(Quantizer):
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
-            f'(num_bits={self.num_bits}, '
+            f'(precision={self.precision}, '
             f'clip_val_sup={self.clip_val_sup}, '
             f'clip_val_inf={self.clip_val_inf}, '
             f'scale_factor={self.s_a})'
@@ -295,12 +295,12 @@ class PACT_Act_Signed(Quantizer):
         return msg
 
     @property
-    def num_bits(self) -> int:
-        return self._num_bits
+    def precision(self) -> int:
+        return self._precision
 
-    @num_bits.setter
-    def num_bits(self, val: int):
-        self._num_bits = val
+    @precision.setter
+    def precision(self, val: int):
+        self._precision = val
 
     @property
     def dequantize(self) -> bool:
@@ -313,9 +313,9 @@ class PACT_Act_Signed(Quantizer):
 
 class PACT_Act_Signed_STE(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input, num_bits, clip_val_sup, clip_val_inf, dequantize):
+    def forward(ctx, input, precision, clip_val_sup, clip_val_inf, dequantize):
         ctx.save_for_backward(input, clip_val_sup, clip_val_inf)
-        scale_factor = (2**num_bits - 1) / (clip_val_sup.data[0] - clip_val_inf.data[0])
+        scale_factor = (2**precision - 1) / (clip_val_sup.data[0] - clip_val_inf.data[0])
         output = torch.clamp(input, clip_val_inf.data[0], clip_val_sup.data[0])
         output = torch.floor(scale_factor * output)
         if dequantize:

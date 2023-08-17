@@ -42,7 +42,7 @@ DEFAULT_QINFO = {
     'b_quantizer': {
         'quantizer': QuantizerBias,
         'kwargs': {
-            'num_bits': 32,
+            'precision': 32,
         },
     },
 }
@@ -78,10 +78,10 @@ class MPS(DNAS):
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
     :type w_search_type: MPSType
     :param qinfo: dict containing desired quantizers for act, weight and bias
-    and their arguments excluding the num_bits precision
+    and their arguments excluding the precision precision
     :type qinfo: Dict
     :param qinfo_input_quanizer: optional dict containing desired quantizers for the network input
-    and its arguments excluding the num_bits precision, defaults to None
+    and its arguments excluding the precision precision, defaults to None
     :type qinfo: Dict, optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
