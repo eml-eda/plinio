@@ -33,8 +33,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
 
     :param conv: the inner `nn.Conv2d` layer to be optimized
     :type conv: nn.Conv2d
-    :param out_a_mps_quantizer: activation MPS quantizer
-    :type out_a_mps_quantizer: MPSQtzLayer
+    :param out_mps_quantizer: activation MPS quantizer
+    :type out_mps_quantizer: MPSQtzLayer
     :param w_mps_quantizer: weight MPS quantizer
     :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
     :param b_mps_quantizer: bias MPS quantizer
@@ -42,7 +42,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
     """
     def __init__(self,
                  conv: nn.Conv2d,
-                 out_a_mps_quantizer: MPSPerLayerQtz,
+                 out_mps_quantizer: MPSPerLayerQtz,
                  w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
                  b_mps_quantizer: MPSBiasQtz):
         super(MPSConv2d, self).__init__(
@@ -67,7 +67,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                 self.bias.copy_(conv.bias)
             else:
                 self.bias = None
-        self.out_a_mps_quantizer = out_a_mps_quantizer
+        self.out_mps_quantizer = out_mps_quantizer
         self.w_mps_quantizer = w_mps_quantizer
         if self.bias is not None:
             self.b_mps_quantizer = b_mps_quantizer
@@ -96,13 +96,13 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         # Linear operation
         out = self._conv_forward(input, q_w, q_b)
         # Quantization of output
-        q_out = self.out_a_mps_quantizer(out)
+        q_out = self.out_mps_quantizer(out)
         return q_out
 
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   out_a_mps_quantizer: MPSPerLayerQtz,
+                   out_mps_quantizer: MPSPerLayerQtz,
                    w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
                    b_mps_quantizer: MPSBiasQtz):
         """Create a new fx.Node relative to a MPSConv2d layer, starting from the fx.Node
@@ -112,8 +112,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param out_a_mps_quantizer: The MPS quantizer to be used for activations
-        :type out_a_mps_quantizer: MPSQtzLayer
+        :param out_mps_quantizer: The MPS quantizer to be used for activations
+        :type out_mps_quantizer: MPSQtzLayer
         :param w_mps_quantizer: The MPS quantizer to be used for weights
         :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
         :param b_mps_quantizer: The MPS quantizer to be used for biases (if present)
@@ -126,7 +126,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
             raise TypeError(msg)
         submodule = cast(nn.Conv2d, submodule)
         new_submodule = MPSConv2d(submodule,
-                                  out_a_mps_quantizer,
+                                  out_mps_quantizer,
                                   w_mps_quantizer,
                                   b_mps_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
@@ -154,8 +154,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
             else:
                 b_quantizer = None
             new_submodule = QuantConv2d(submodule,
-                                        submodule.selected_in_a_quantizer,
-                                        submodule.selected_out_a_quantizer,
+                                        submodule.selected_in_quantizer,
+                                        submodule.selected_out_quantizer,
                                         cast(Quantizer, submodule.selected_w_quantizer),
                                         b_quantizer)
         # per-channel search => multiple precisions/quantizers
@@ -193,8 +193,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                     else:
                         b_quantizer = None
                 quant_conv = QuantConv2d(new_conv,
-                                         submodule.selected_in_a_quantizer,
-                                         submodule.selected_out_a_quantizer,
+                                         submodule.selected_in_quantizer,
+                                         submodule.selected_out_quantizer,
                                          w_quant,
                                          b_quantizer)
                 nn_list.append(quant_conv)
@@ -223,7 +223,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         forward pass
         :type disable_sampling: Optional[bool]
         """
-        self.out_a_mps_quantizer.update_softmax_options(
+        self.out_mps_quantizer.update_softmax_options(
                 temperature, hard, gumbel, disable_sampling)
         self.w_mps_quantizer.update_softmax_options(
                 temperature, hard, gumbel, disable_sampling)
@@ -236,8 +236,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         # TODO: name incompatibility with get_modified_vars
         return {
-            'in_a_precision': self.selected_in_a_precision,
-            'out_a_precision': self.selected_out_a_precision,
+            'in_precision': self.selected_in_precision,
+            'out_precision': self.selected_out_precision,
             'w_precision': self.selected_w_precision,
         }
 
@@ -249,12 +249,12 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: a dictionary containing the current NAS parameters values
         :rtype: Dict[str, Any]
         """
-        out_a_params = self.out_a_mps_quantizer.theta_alpha.detach() if post_sampling \
-            else self.out_a_mps_quantizer.alpha.detach()
+        out_params = self.out_mps_quantizer.theta_alpha.detach() if post_sampling \
+            else self.out_mps_quantizer.alpha.detach()
         w_params = self.w_mps_quantizer.theta_alpha.detach() if post_sampling \
             else self.w_mps_quantizer.alpha.detach()
         return {
-            'out_a_alpha': out_a_params,
+            'out_params': out_params,
             'w_params': w_params
         }
 
@@ -266,7 +266,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :rtype: Iterator[Dict[str, Any]]
         """
         # TODO: check this function
-        for i, a_prec in enumerate(self.in_a_mps_quantizer.precisions):
+        for i, a_prec in enumerate(self.in_mps_quantizer.precisions):
             for j, w_prec in enumerate(self.w_mps_quantizer.precisions):
                 v = dict(vars(self))
                 v['in_bits'] = a_prec
@@ -278,7 +278,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                 # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
                 # To be double-checked
                 v['in_channels'] = (self.input_features_calculator.features.detach() *
-                                    self.in_a_mps_quantizer.theta_alpha[i])
+                                    self.in_mps_quantizer.theta_alpha[i])
                 # same with weights precision and output channels, but distinguish the two types
                 # of quantizer
                 if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
@@ -306,8 +306,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.out_a_mps_quantizer.named_parameters(
-                prfx + "out_a_mps_quantizer", recurse):
+        for name, param in self.out_mps_quantizer.named_parameters(
+                prfx + "out_mps_quantizer", recurse):
             yield name, param
         for name, param in self.w_mps_quantizer.named_parameters(
                 prfx + "w_mps_quantizer", recurse):
@@ -315,7 +315,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         # no bias MPS quantizer since it is sharing the parameters of the act and weights
 
     @property
-    def selected_in_a_precision(self) -> int:
+    def selected_in_precision(self) -> int:
         """Return the selected precision based on the magnitude of `alpha`
         components for input activations
 
@@ -323,11 +323,11 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha))
-            return int(self.in_a_mps_quantizer.precisions[idx])
+            idx = int(torch.argmax(self.in_mps_quantizer.alpha))
+            return int(self.in_mps_quantizer.precisions[idx])
 
     @property
-    def selected_out_a_precision(self) -> Union[int, str]:
+    def selected_out_precision(self) -> Union[int, str]:
         """Return the selected precision based on the magnitude of `alpha`
         components for output activations.
         If output is not quantized returns the 'float' string.
@@ -335,10 +335,10 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: the selected precision
         :rtype: Union[int, str]
         """
-        if type(self.out_a_mps_quantizer) != nn.Identity:
+        if type(self.out_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
-                return int(self.out_a_mps_quantizer.precisions[idx])
+                idx = int(torch.argmax(self.out_mps_quantizer.alpha))
+                return int(self.out_mps_quantizer.precisions[idx])
         else:
             return 'float'
 
@@ -362,7 +362,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                 raise ValueError(msg)
 
     @property
-    def selected_in_a_quantizer(self) -> Quantizer:
+    def selected_in_quantizer(self) -> Quantizer:
         """Return the selected quantizer based on the magnitude of `alpha`
         components for input activations
 
@@ -370,28 +370,28 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :rtype: Quantizer
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha))
-            qtz = self.in_a_mps_quantizer.qtz_funcs[idx]
+            idx = int(torch.argmax(self.in_mps_quantizer.alpha))
+            qtz = self.in_mps_quantizer.qtz_funcs[idx]
             qtz = cast(Quantizer, qtz)
             return qtz
 
     @property
-    def selected_out_a_quantizer(self) -> Quantizer:
+    def selected_out_quantizer(self) -> Quantizer:
         """Return the selected quantizer based on the magnitude of `alpha`
         components for output activations
 
         :return: the selected quantizer
         :rtype: Quantizer
         """
-        if type(self.out_a_mps_quantizer) != nn.Identity:
+        if type(self.out_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
-                qtz = self.out_a_mps_quantizer.qtz_funcs[idx]
+                idx = int(torch.argmax(self.out_mps_quantizer.alpha))
+                qtz = self.out_mps_quantizer.qtz_funcs[idx]
                 qtz = cast(Quantizer, qtz)
                 return qtz
         else:
             # TODO: DP: when is this used? Output layer?
-            qtz = cast(Quantizer, self.out_a_mps_quantizer)
+            qtz = cast(Quantizer, self.out_mps_quantizer)
             return qtz
 
     @property
@@ -462,22 +462,22 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         self._input_features_calculator = calc
 
     @property
-    def in_a_mps_quantizer(self) -> MPSPerLayerQtz:
+    def in_mps_quantizer(self) -> MPSPerLayerQtz:
         """Returns the `MPSQtzLayer` for input activations calculation
 
         :return: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :rtype: MPSQtzLayer
         """
-        return self._in_a_mps_quantizer
+        return self._in_mps_quantizer
 
-    # @in_a_mps_quantizer.setter
-    def set_in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
+    # @in_mps_quantizer.setter
+    def set_in_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :type qtz: MPSQtzLayer
         """
-        self._in_a_mps_quantizer = qtz
-        self.b_mps_quantizer.in_a_mps_quantizer = qtz
+        self._in_mps_quantizer = qtz
+        self.b_mps_quantizer.in_mps_quantizer = qtz

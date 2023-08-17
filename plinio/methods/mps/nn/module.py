@@ -82,7 +82,7 @@ class MPSModule:
     @abstractmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   out_a_mps_quantizer: MPSPerLayerQtz,
+                   out_mps_quantizer: MPSPerLayerQtz,
                    w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
                    b_mps_quantizer: MPSBiasQtz):
         """Create a new fx.Node relative to a MPSModule layer, starting from the fx.Node
@@ -92,8 +92,8 @@ class MPSModule:
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param out_a_mps_quantizer: The MPS quantizer to be used for activations
-        :type out_a_mps_quantizer: MPSQtzLayer
+        :param out_mps_quantizer: The MPS quantizer to be used for activations
+        :type out_mps_quantizer: MPSQtzLayer
         :param w_mps_quantizer: The MPS quantizer to be used for weights (if present)
         :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
         :param b_mps_quantizer: The MPS quantizer to be used for biases (if present)
@@ -176,7 +176,7 @@ class MPSModule:
 
     @property
     @abstractmethod
-    def in_a_mps_quantizer(self) -> MPSPerLayerQtz:
+    def in_mps_quantizer(self) -> MPSPerLayerQtz:
         """Returns the `MPSQtzLayer` for input activations calculation
 
         :return: the `MPSQtzLayer` instance that computes mixprec quantized
@@ -186,9 +186,9 @@ class MPSModule:
         raise NotImplementedError(
                 "Trying to get input activations quantizer on base abstract MPSModule class")
 
-    # @in_a_mps_quantizer.setter
+    # @in_mps_quantizer.setter
     @abstractmethod
-    def set_in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
+    def set_in_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized

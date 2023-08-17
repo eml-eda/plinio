@@ -135,7 +135,7 @@ def convert(model: nn.Module,
         add_features_calculator(mod, [mps_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
-        register_in_a_mps_quantizers(mod)
+        register_in_mps_quantizers(mod)
     mod.graph.lint()
     mod.recompile()
     nlf = named_leaf_modules(mod)
@@ -215,7 +215,7 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
     :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
     sharing. It can be useful if precision '0' is in the search options.
     :type disable_shared_quantizers: bool
-    :return: a map (node -> out_a_mps_quantizer, w_mps_quantizer)
+    :return: a map (node -> out_mps_quantizer, w_mps_quantizer)
     :rtype: Dict[fx.Node, Tuple[Quantizer, Quantizer]]
     """
     # build a compatibility graph ("sharing graph") with paths between all nodes that must share
@@ -348,7 +348,7 @@ def autoimport_node(n: fx.Node,
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments
     :type qinfo: Dict
-    :param sq_dict: a map (node -> out_a_mps_quantizer, w_mps_quantizer)
+    :param sq_dict: a map (node -> out_mps_quantizer, w_mps_quantizer)
     :type sq_dict: Dict[fx.Node, Tuple[MPSPerLayerQtz, Union[MPSPerLayerQtz, MPSPerChannelQtz]]
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS
     when auto-converting layers, defaults to ()
@@ -364,7 +364,7 @@ def autoimport_node(n: fx.Node,
     else:
         return
 
-    out_a_mps_quantizer, w_mps_quantizer = sq_dict[n]
+    out_mps_quantizer, w_mps_quantizer = sq_dict[n]
 
     # create bias mixprec quantizer (which is never shared)
     b_quantizer = qinfo['b_quantizer']['quantizer']
@@ -376,7 +376,7 @@ def autoimport_node(n: fx.Node,
                                  quantizer_kwargs=b_quantizer_kwargs)
     module_type.autoimport(n,
                            mod,
-                           out_a_mps_quantizer,
+                           out_mps_quantizer,
                            w_mps_quantizer,
                            b_mps_quantizer)
     return
@@ -444,7 +444,7 @@ def add_input_quantizer(mod: fx.GraphModule,
         # Add new node properties
         add_single_node_properties(new_node, mod)
         # Force the new node to be features_defining in order to be recognized
-        # as predecessor when performing the `register_in_a_mps_quantizers` step
+        # as predecessor when performing the `register_in_mps_quantizers` step
         new_node.meta['features_defining'] = True
         # Also copy the input shape information to the new node 'tensor_meta'
         new_node.meta['tensor_meta'] = n.meta['tensor_meta']
@@ -502,7 +502,7 @@ def register_input_features(mod: fx.GraphModule):
             sub_mod.input_features_calculator = fc
 
 
-def register_in_a_mps_quantizers(mod: fx.GraphModule):
+def register_in_mps_quantizers(mod: fx.GraphModule):
     for n in mod.graph.nodes:
         if is_inherited_layer(n, mod, (MPSModule,)):
             sub_mod = cast(MPSModule, mod.get_submodule(str(n.target)))
@@ -512,9 +512,9 @@ def register_in_a_mps_quantizers(mod: fx.GraphModule):
             while not is_inherited_layer(prev_n, mod, (MPSModule,)):
                 prev_n = prev_n.meta['input_features_set_by']
             prev_submod = mod.get_submodule(str(prev_n.target))
-            # sub_mod.in_a_mps_quantizer = cast(MPSPerLayerQtz, prev_submod.out_a_mps_quantizer)
+            # sub_mod.in_mps_quantizer = cast(MPSPerLayerQtz, prev_submod.out_mps_quantizer)
             # TODO: restore setter
-            sub_mod.set_in_a_mps_quantizer(cast(MPSPerLayerQtz, prev_submod.out_a_mps_quantizer))
+            sub_mod.set_in_mps_quantizer(cast(MPSPerLayerQtz, prev_submod.out_mps_quantizer))
 
 
 def mps_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:

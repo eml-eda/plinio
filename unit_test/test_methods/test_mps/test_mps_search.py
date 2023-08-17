@@ -226,7 +226,7 @@ class TestMPSSearch(unittest.TestCase):
         alpha_masks = []
         for layer in convs:
             alpha_masks.append({
-                'alpha_a': layer.out_a_mps_quantizer.alpha.clone().detach(),
+                'alpha_a': layer.out_mps_quantizer.alpha.clone().detach(),
                 'alpha_w': layer.w_mps_quantizer.alpha.clone().detach(),
             })
 
@@ -270,7 +270,7 @@ class TestMPSSearch(unittest.TestCase):
             optimizer.step()
 
         for conv in convs:
-            selected_a_prec = conv.selected_out_a_precision
+            selected_a_prec = conv.selected_out_precision
             self.assertTrue(selected_a_prec == 2,
                             f"Selected act prec is {selected_a_prec} instead of 2.")
             selected_w_prec = conv.selected_w_precision

@@ -34,8 +34,8 @@ class MPSLinear(nn.Linear, MPSModule):
 
     :param linear: the inner `nn.Linear` layer to be optimized
     :type linear: nn.Linear
-    :param out_a_mps_quantizer: activation MPS quantizer
-    :type out_a_mps_quantizer: MPSQtzLayer
+    :param out_mps_quantizer: activation MPS quantizer
+    :type out_mps_quantizer: MPSQtzLayer
     :param w_mps_quantizer: weight MPS quantizer
     :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
     :param b_mps_quantizer: bias MPS quantizer
@@ -43,7 +43,7 @@ class MPSLinear(nn.Linear, MPSModule):
     """
     def __init__(self,
                  linear: nn.Linear,
-                 out_a_mps_quantizer: MPSPerLayerQtz,
+                 out_mps_quantizer: MPSPerLayerQtz,
                  w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
                  b_mps_quantizer: MPSBiasQtz):
         super(MPSLinear, self).__init__(
@@ -58,7 +58,7 @@ class MPSLinear(nn.Linear, MPSModule):
             else:
                 self.bias = None
 
-        self.out_a_mps_quantizer = out_a_mps_quantizer
+        self.out_mps_quantizer = out_mps_quantizer
         self.w_mps_quantizer = w_mps_quantizer
         if self.bias is not None:
             self.b_mps_quantizer = b_mps_quantizer
@@ -87,13 +87,13 @@ class MPSLinear(nn.Linear, MPSModule):
         # Linear operation
         out = F.linear(input, q_w, q_b)
         # Quantization of output
-        q_out = self.out_a_mps_quantizer(out)
+        q_out = self.out_mps_quantizer(out)
         return q_out
 
     @staticmethod
     def autoimport(n: fx.Node,
                    mod: fx.GraphModule,
-                   out_a_mps_quantizer: MPSPerLayerQtz,
+                   out_mps_quantizer: MPSPerLayerQtz,
                    w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
                    b_mps_quantizer: MPSBiasQtz):
         """Create a new fx.Node relative to a MPSLinear layer, starting from the fx.Node
@@ -103,8 +103,8 @@ class MPSLinear(nn.Linear, MPSModule):
         :type n: fx.Node
         :param mod: the parent fx.GraphModule
         :type mod: fx.GraphModule
-        :param out_a_mps_quantizer: The MPS quantizer to be used for activations
-        :type out_a_mps_quantizer: MPSQtzLayer
+        :param out_mps_quantizer: The MPS quantizer to be used for activations
+        :type out_mps_quantizer: MPSQtzLayer
         :param w_mps_quantizer: The MPS quantizer to be used for weights
         :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
         :param b_mps_quantizer: The MPS quantizer to be used for biases (if present)
@@ -117,7 +117,7 @@ class MPSLinear(nn.Linear, MPSModule):
             raise TypeError(msg)
         submodule = cast(nn.Linear, submodule)
         new_submodule = MPSLinear(submodule,
-                                  out_a_mps_quantizer,
+                                  out_mps_quantizer,
                                   w_mps_quantizer,
                                   b_mps_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
@@ -145,8 +145,8 @@ class MPSLinear(nn.Linear, MPSModule):
             else:
                 b_quantizer = None
             new_submodule = QuantLinear(submodule,
-                                        submodule.selected_in_a_quantizer,
-                                        submodule.selected_out_a_quantizer,
+                                        submodule.selected_in_quantizer,
+                                        submodule.selected_out_quantizer,
                                         cast(Quantizer, submodule.selected_w_quantizer),
                                         b_quantizer)
         # per-channel search => multiple precisions/quantizers
@@ -180,8 +180,8 @@ class MPSLinear(nn.Linear, MPSModule):
                     else:
                         b_quantizer = None
                 quant_lin = QuantLinear(new_lin,
-                                        submodule.selected_in_a_quantizer,
-                                        submodule.selected_out_a_quantizer,
+                                        submodule.selected_in_quantizer,
+                                        submodule.selected_out_quantizer,
                                         w_quant,
                                         b_quantizer)
                 nn_list.append(quant_lin)
@@ -211,8 +211,8 @@ class MPSLinear(nn.Linear, MPSModule):
         forward pass
         :type disable_sampling: Optional[bool]
         """
-        if isinstance(self.out_a_mps_quantizer, MPSBaseQtz):
-            self.out_a_mps_quantizer.update_softmax_options(
+        if isinstance(self.out_mps_quantizer, MPSBaseQtz):
+            self.out_mps_quantizer.update_softmax_options(
                     temperature, hard, gumbel, disable_sampling)
         self.w_mps_quantizer.update_softmax_options(
                 temperature, hard, gumbel, disable_sampling)
@@ -224,8 +224,8 @@ class MPSLinear(nn.Linear, MPSModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'in_a_precision': self.selected_in_a_precision,
-            'out_a_precision': self.selected_out_a_precision,
+            'in_precision': self.selected_in_precision,
+            'out_precision': self.selected_out_precision,
             'w_precision': self.selected_w_precision,
         }
 
@@ -237,12 +237,12 @@ class MPSLinear(nn.Linear, MPSModule):
         :return: a dictionary containing the current NAS parameters values
         :rtype: Dict[str, Any]
         """
-        out_a_params = self.out_a_mps_quantizer.theta_alpha.detach() if post_sampling \
-            else self.out_a_mps_quantizer.alpha.detach()
+        out_params = self.out_mps_quantizer.theta_alpha.detach() if post_sampling \
+            else self.out_mps_quantizer.alpha.detach()
         w_params = self.w_mps_quantizer.theta_alpha.detach() if post_sampling \
             else self.w_mps_quantizer.alpha.detach()
         return {
-            'out_a_alpha': out_a_params,
+            'out_a_alpha': out_params,
             'w_params': w_params
         }
 
@@ -254,7 +254,7 @@ class MPSLinear(nn.Linear, MPSModule):
         :rtype: Iterator[Dict[str, Any]]
         """
         # TODO: check this function
-        for i, a_prec in enumerate(self.in_a_mps_quantizer.precisions):
+        for i, a_prec in enumerate(self.in_mps_quantizer.precisions):
             for j, w_prec in enumerate(self.w_mps_quantizer.precisions):
                 v = dict(vars(self))
                 v['in_bits'] = a_prec
@@ -266,7 +266,7 @@ class MPSLinear(nn.Linear, MPSModule):
                 # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
                 # To be double-checked
                 v['in_features'] = (self.input_features_calculator.features.detach() *
-                                    self.in_a_mps_quantizer.theta_alpha[i])
+                                    self.in_mps_quantizer.theta_alpha[i])
                 # same with weights precision and output channels, but distinguish the two types
                 # of quantizer
                 if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
@@ -294,8 +294,8 @@ class MPSLinear(nn.Linear, MPSModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.out_a_mps_quantizer.named_parameters(
-                prfx + "out_a_mps_quantizer", recurse):
+        for name, param in self.out_mps_quantizer.named_parameters(
+                prfx + "out_mps_quantizer", recurse):
             yield name, param
         for name, param in self.w_mps_quantizer.named_parameters(
                 prfx + "w_mps_quantizer", recurse):
@@ -303,7 +303,7 @@ class MPSLinear(nn.Linear, MPSModule):
         # no bias MPS quantizer since it is sharing the parameters of the act and weights
 
     @property
-    def selected_in_a_precision(self) -> int:
+    def selected_in_precision(self) -> int:
         """Return the selected precision based on the magnitude of `alpha`
         components for input activations
 
@@ -311,11 +311,11 @@ class MPSLinear(nn.Linear, MPSModule):
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha))
-            return int(self.in_a_mps_quantizer.precisions[idx])
+            idx = int(torch.argmax(self.in_mps_quantizer.alpha))
+            return int(self.in_mps_quantizer.precisions[idx])
 
     @property
-    def selected_out_a_precision(self) -> Union[int, str]:
+    def selected_out_precision(self) -> Union[int, str]:
         """Return the selected precision based on the magnitude of `alpha`
         components for output activations.
         If output is not quantized returns the 'float' string.
@@ -323,10 +323,10 @@ class MPSLinear(nn.Linear, MPSModule):
         :return: the selected precision
         :rtype: Union[int, str]
         """
-        if type(self.out_a_mps_quantizer) != nn.Identity:
+        if type(self.out_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
-                return int(self.out_a_mps_quantizer.precisions[idx])
+                idx = int(torch.argmax(self.out_mps_quantizer.alpha))
+                return int(self.out_mps_quantizer.precisions[idx])
         else:
             return 'float'
 
@@ -350,7 +350,7 @@ class MPSLinear(nn.Linear, MPSModule):
                 raise ValueError(msg)
 
     @property
-    def selected_in_a_quantizer(self) -> Quantizer:
+    def selected_in_quantizer(self) -> Quantizer:
         """Return the selected quantizer based on the magnitude of `alpha`
         components for input activations
 
@@ -358,28 +358,28 @@ class MPSLinear(nn.Linear, MPSModule):
         :rtype: Type[Quantizer]
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha))
-            qtz = self.in_a_mps_quantizer.qtz_funcs[idx]
+            idx = int(torch.argmax(self.in_mps_quantizer.alpha))
+            qtz = self.in_mps_quantizer.qtz_funcs[idx]
             qtz = cast(Quantizer, qtz)
             return qtz
 
     @property
-    def selected_out_a_quantizer(self) -> Quantizer:
+    def selected_out_quantizer(self) -> Quantizer:
         """Return the selected quantizer based on the magnitude of `alpha`
         components for output activations
 
         :return: the selected quantizer
         :rtype: Type[Quantizer]
         """
-        if type(self.out_a_mps_quantizer) != nn.Identity:
+        if type(self.out_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
-                qtz = self.out_a_mps_quantizer.qtz_funcs[idx]
+                idx = int(torch.argmax(self.out_mps_quantizer.alpha))
+                qtz = self.out_mps_quantizer.qtz_funcs[idx]
                 qtz = cast(Quantizer, qtz)
                 return qtz
         else:
             # TODO: when is this case used? Output layer?
-            qtz = cast(Quantizer, self.out_a_mps_quantizer)
+            qtz = cast(Quantizer, self.out_mps_quantizer)
             return qtz
 
     @property
@@ -450,22 +450,22 @@ class MPSLinear(nn.Linear, MPSModule):
         self._input_features_calculator = calc
 
     @property
-    def in_a_mps_quantizer(self) -> MPSPerLayerQtz:
+    def in_mps_quantizer(self) -> MPSPerLayerQtz:
         """Returns the `MPSQtzLayer` for input activations calculation
 
         :return: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :rtype: MPSQtzLayer
         """
-        return self._in_a_mps_quantizer
+        return self._in_mps_quantizer
 
-    # @in_a_mps_quantizer.setter
-    def set_in_a_mps_quantizer(self, qtz: MPSPerLayerQtz):
+    # @in_mps_quantizer.setter
+    def set_in_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 
         :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
         versions of the input activations
         :type qtz: MPSQtzLayer
         """
-        self._in_a_mps_quantizer = qtz
-        self.b_mps_quantizer.in_a_mps_quantizer = qtz
+        self._in_mps_quantizer = qtz
+        self.b_mps_quantizer.in_mps_quantizer = qtz

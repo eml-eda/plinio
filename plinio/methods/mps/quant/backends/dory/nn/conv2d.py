@@ -32,10 +32,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
 
     :param conv: the inner `nn.Conv2d` layer
     :type conv: nn.Conv2d
-    :param in_a_quantizer: input activation quantizer
-    :type in_a_quantizer: Type[Quantizer]
-    :param out_a_quantizer: output activation quantizer
-    :type out_a_quantizer: Type[Quantizer]
+    :param in_quantizer: input activation quantizer
+    :type in_quantizer: Type[Quantizer]
+    :param out_quantizer: output activation quantizer
+    :type out_quantizer: Type[Quantizer]
     :param w_quantizer: weight quantizer
     :type w_quantizer: Type[Quantizer]
     :param b_quantizer: bias quantizer
@@ -43,8 +43,8 @@ class DORYConv2d(nn.Conv2d, DORYModule):
     """
     def __init__(self,
                  conv: nn.Conv2d,
-                 in_a_quantizer: Quantizer,
-                 out_a_quantizer: Quantizer,
+                 in_quantizer: Quantizer,
+                 out_quantizer: Quantizer,
                  w_quantizer: Quantizer,
                  b_quantizer: Optional[Quantizer]):
         super(DORYConv2d, self).__init__(
@@ -59,8 +59,8 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             conv.padding_mode)
 
         # Store precisions and quantizers
-        self.in_a_quantizer = in_a_quantizer
-        self.out_a_quantizer = out_a_quantizer
+        self.in_quantizer = in_quantizer
+        self.out_quantizer = out_quantizer
         self.w_quantizer = w_quantizer
         if self.bias is not None:
             self.b_quantizer = cast(Quantizer, b_quantizer)
@@ -82,9 +82,9 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         # to be simply s (or similar name) and put it as a property
         # in the abstract Quantizer class
         self.s_w = self.w_quantizer.s_w
-        self.s_x = self.in_a_quantizer.s_a
-        if type(self.out_a_quantizer) != nn.Identity:
-            self.s_y = self.out_a_quantizer.s_a
+        self.s_x = self.in_quantizer.s_a
+        if type(self.out_quantizer) != nn.Identity:
+            self.s_y = self.out_quantizer.s_a
             self.skip_requant = False
         else:
             self.s_y = torch.tensor(1., device=self.device)
@@ -119,7 +119,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             - Sum the integerized `self.bias` vector.
             - Divide by 2 ** `self.shift` amount.
             - Computes floor operation.
-            - Apply clipped relu between 0 and (2 ** `out_a_precision` - 1)
+            - Apply clipped relu between 0 and (2 ** `out_precision` - 1)
 
         :param input: the input activations tensor
         :type input: torch.Tensor
@@ -151,7 +151,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'out_a_quantizer': self.out_a_quantizer.summary(),
+            'out_quantizer': self.out_quantizer.summary(),
             'w_quantizer': self.w_quantizer.summary(),
             'scale_factor': self.scale_fact,
             'shift': self.shift,
@@ -169,7 +169,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
     @property
     def clip_sup(self):
         # Define ReLU superior extreme
-        return torch.tensor(2 ** cast(int, self.out_a_quantizer.num_bits) - 1, device=self.device)
+        return torch.tensor(2 ** cast(int, self.out_quantizer.num_bits) - 1, device=self.device)
 
     def _integer_approximation(self,
                                s_w: torch.Tensor,

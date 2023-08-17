@@ -367,24 +367,24 @@ class MPSBiasQtz(nn.Module):
     :param w_mps_quantizer: mixprec weight quantizer, it is used to gather info
     about weight scale factor
     :type w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz]
-    :param in_a_mps_quantizer: mixprec activation quantizer, it is used to gather info
+    :param in_mps_quantizer: mixprec activation quantizer, it is used to gather info
     about act scale factor. Optional argument, is used only if the user defines
     the network placing MixPrec modules manually.
-    :type in_a_mps_quantizer: Optional[MPSPerLayerQtz]
+    :type in_mps_quantizer: Optional[MPSPerLayerQtz]
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
                  w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
-                 in_a_mps_quantizer: Optional[MPSPerLayerQtz] = None,
+                 in_mps_quantizer: Optional[MPSPerLayerQtz] = None,
                  quantizer_kwargs: Dict = {},
                  ):
         super(MPSBiasQtz, self).__init__()
         self.quantizer = quantizer
         self.quantizer_kwargs = quantizer_kwargs
         # may be overwritten later by the enclosing MPSModule
-        self.in_a_mps_quantizer = in_a_mps_quantizer
+        self.in_mps_quantizer = in_mps_quantizer
         self.w_mps_quantizer = w_mps_quantizer
         self.qtz_func = quantizer(**quantizer_kwargs)
 
@@ -407,9 +407,9 @@ class MPSBiasQtz(nn.Module):
         """
         s_a = torch.tensor(0, dtype=torch.float32)
         # assume this has been set by enclosing MPSModule
-        in_a_mps_quantizer = cast(MPSPerLayerQtz, self.in_a_mps_quantizer)
-        sm_alpha = in_a_mps_quantizer.theta_alpha
-        for i, qtz in enumerate(in_a_mps_quantizer.qtz_funcs):
+        in_mps_quantizer = cast(MPSPerLayerQtz, self.in_mps_quantizer)
+        sm_alpha = in_mps_quantizer.theta_alpha
+        for i, qtz in enumerate(in_mps_quantizer.qtz_funcs):
             s_a = s_a + (sm_alpha[i] * qtz.s_a)
         return s_a
 

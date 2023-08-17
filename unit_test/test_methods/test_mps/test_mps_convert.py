@@ -412,17 +412,17 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
 
         conv0 = cast(MPSConv2d, new_nn.seed.conv0)
-        conv0.out_a_mps_quantizer.alpha = nn.parameter.Parameter(
+        conv0.out_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([0.3, 0.8, 0.99], dtype=torch.float))
-        conv0.out_a_mps_quantizer.qtz_funcs[2].clip_val = nn.parameter.Parameter(
+        conv0.out_mps_quantizer.qtz_funcs[2].clip_val = nn.parameter.Parameter(
             torch.tensor([5.], dtype=torch.float))
         conv0.w_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([1.5, 0.2, 1], dtype=torch.float))
 
         conv1 = cast(MPSConv2d, new_nn.seed.conv1)
-        conv1.out_a_mps_quantizer.alpha = nn.parameter.Parameter(
+        conv1.out_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([0.3, 1.8, 0.99], dtype=torch.float))
-        conv1.out_a_mps_quantizer.qtz_funcs[1].clip_val = nn.parameter.Parameter(
+        conv1.out_mps_quantizer.qtz_funcs[1].clip_val = nn.parameter.Parameter(
             torch.tensor([1.], dtype=torch.float))
         conv1.w_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([1.5, 0.2, 1.9], dtype=torch.float))
@@ -436,13 +436,13 @@ class TestMPSConvert(unittest.TestCase):
         for name, child in exported_nn.named_children():
             if name == 'conv0':
                 child = cast(qnn.QuantConv2d, child)
-                self.assertEqual(child.out_a_quantizer.num_bits, 8, "Wrong act precision")
-                self.assertEqual(child.out_a_quantizer.clip_val, 5., "Wrong act qtz clip_val")
+                self.assertEqual(child.out_quantizer.num_bits, 8, "Wrong act precision")
+                self.assertEqual(child.out_quantizer.clip_val, 5., "Wrong act qtz clip_val")
                 self.assertEqual(child.w_quantizer.num_bits, 2, "Wrong weight precision")
             if name == 'conv1':
                 child = cast(qnn.QuantConv2d, child)
-                self.assertEqual(child.out_a_quantizer.num_bits, 4, "Wrong act precision")
-                self.assertEqual(child.out_a_quantizer.clip_val, 1.,  # type: ignore
+                self.assertEqual(child.out_quantizer.num_bits, 4, "Wrong act precision")
+                self.assertEqual(child.out_quantizer.clip_val, 1.,  # type: ignore
                                  "Wrong act qtz clip_val")
                 self.assertEqual(child.w_quantizer.num_bits, 8, "Wrong weight precision")
 
@@ -648,8 +648,8 @@ class TestMPSConvert(unittest.TestCase):
         """
         converted_layer_names = dict(new_nn.seed.named_modules())
         for layer_1, layer_2, shared_flag in check_rules:
-            quantizer_1_a = converted_layer_names[layer_1].out_a_mps_quantizer
-            quantizer_2_a = converted_layer_names[layer_2].out_a_mps_quantizer
+            quantizer_1_a = converted_layer_names[layer_1].out_mps_quantizer
+            quantizer_2_a = converted_layer_names[layer_2].out_mps_quantizer
             if shared_flag:
                 msg = f"Layers {layer_1} and {layer_2} are expected to share " + \
                         "act quantizer, but don't"
@@ -675,15 +675,15 @@ class TestMPSConvert(unittest.TestCase):
             quantizer_1_w, quantizer_2_w = None, None
             if act_or_w == 'act' or act_or_w == 'both':
                 # special case for bias quantizers, whose act quantizer is called
-                # "in_a_mps_quantizer" rather than "out_a_mps_quantizer"
+                # "in_mps_quantizer" rather than "out_mps_quantizer"
                 if 'b_mps_quantizer' in layer_1:
-                    quantizer_1_a = converted_layer_names[layer_1].in_a_mps_quantizer
+                    quantizer_1_a = converted_layer_names[layer_1].in_mps_quantizer
                 else:
-                    quantizer_1_a = converted_layer_names[layer_1].out_a_mps_quantizer
+                    quantizer_1_a = converted_layer_names[layer_1].out_mps_quantizer
                 if 'b_mps_quantizer' in layer_2:
-                    quantizer_2_a = converted_layer_names[layer_2].in_a_mps_quantizer
+                    quantizer_2_a = converted_layer_names[layer_2].in_mps_quantizer
                 else:
-                    quantizer_2_a = converted_layer_names[layer_2].out_a_mps_quantizer
+                    quantizer_2_a = converted_layer_names[layer_2].out_mps_quantizer
             if act_or_w == 'w' or act_or_w == 'both':
                 quantizer_1_w = converted_layer_names[layer_1].w_mps_quantizer
                 quantizer_2_w = converted_layer_names[layer_2].w_mps_quantizer
@@ -744,7 +744,7 @@ class TestMPSConvert(unittest.TestCase):
         self.assertTrue(child.groups == new_child.groups)
         self.assertTrue(child.padding_mode == new_child.padding_mode)
         # Check qtz param
-        self.assertTrue(child.out_a_quantizer.num_bits == new_child.out_a_quantizer.num_bits)
+        self.assertTrue(child.out_quantizer.num_bits == new_child.out_quantizer.num_bits)
         self.assertTrue(child.w_quantizer.num_bits == new_child.w_quantizer.num_bits)
 
     def _check_linear(self, child, new_child):
@@ -754,8 +754,8 @@ class TestMPSConvert(unittest.TestCase):
         self.assertTrue(child.in_features == new_child.in_features)
         self.assertTrue(child.out_features == new_child.out_features)
         # Check qtz param
-        if type(new_child.out_a_quantizer) != nn.Identity:
-            self.assertTrue(child.out_a_quantizer.num_bits == new_child.out_a_quantizer.num_bits)
+        if type(new_child.out_quantizer) != nn.Identity:
+            self.assertTrue(child.out_quantizer.num_bits == new_child.out_quantizer.num_bits)
         self.assertTrue(child.w_quantizer.num_bits == new_child.w_quantizer.num_bits)
 
 

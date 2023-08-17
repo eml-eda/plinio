@@ -32,10 +32,10 @@ class QuantLinear(nn.Linear, QuantModule):
 
     :param linear: the inner `nn.Linear` layer to be optimized
     :type linear: nn.Linear
-    :param in_a_quantizer: input activation quantizer
-    :type in_a_quantizer: Quantizer
-    :param out_a_quantizer: output activation quantizer
-    :type out_a_quantizer: Quantizer
+    :param in_quantizer: input activation quantizer
+    :type in_quantizer: Quantizer
+    :param out_quantizer: output activation quantizer
+    :type out_quantizer: Quantizer
     :param w_quantizer: weight quantizer
     :type w_quantizer: Quantizer
     :param b_quantizer: bias quantizer
@@ -43,8 +43,8 @@ class QuantLinear(nn.Linear, QuantModule):
     """
     def __init__(self,
                  linear: nn.Linear,
-                 in_a_quantizer: Quantizer,
-                 out_a_quantizer: Quantizer,
+                 in_quantizer: Quantizer,
+                 out_quantizer: Quantizer,
                  w_quantizer: Quantizer,
                  b_quantizer: Optional[Quantizer]):
         super(QuantLinear, self).__init__(
@@ -58,8 +58,8 @@ class QuantLinear(nn.Linear, QuantModule):
                 self.bias.copy_(linear.bias)
             else:
                 self.bias = None
-        self.in_a_quantizer = in_a_quantizer
-        self.out_a_quantizer = out_a_quantizer
+        self.in_quantizer = in_quantizer
+        self.out_quantizer = out_quantizer
         self.w_quantizer = w_quantizer
         if self.bias is not None:
             b_quantizer = cast(Quantizer, b_quantizer)
@@ -74,7 +74,7 @@ class QuantLinear(nn.Linear, QuantModule):
         - Quantization of the `self.weight` tensor using `self.w_quantizer`.
         - Quantization of the `self.bias` vector using `self.b_quantizer` (if needed).
         - Computation of linear operation.
-        - Quantization of the input tensor using `self.out_a_quantizer`.
+        - Quantization of the input tensor using `self.out_quantizer`.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
@@ -84,12 +84,12 @@ class QuantLinear(nn.Linear, QuantModule):
         # Quantization
         q_w = self.w_quantizer(self.weight)
         q_b = self.b_quantizer(self.bias,
-                               self.in_a_quantizer.s_a, self.w_quantizer.s_w)
+                               self.in_quantizer.s_a, self.w_quantizer.s_w)
         # Linear operation
         out = F.linear(input, q_w, q_b)
 
         # Quantization of output
-        q_out = self.out_a_quantizer(out)
+        q_out = self.out_quantizer(out)
 
         return q_out
 
@@ -120,8 +120,8 @@ class QuantLinear(nn.Linear, QuantModule):
         integer_linear = backend_factory(submodule, backend)
         new_submodule = integer_linear(
             submodule,
-            submodule.in_a_quantizer,
-            submodule.out_a_quantizer,
+            submodule.in_quantizer,
+            submodule.out_quantizer,
             submodule.w_quantizer,
             submodule.b_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
@@ -133,8 +133,8 @@ class QuantLinear(nn.Linear, QuantModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'in_a_quantizer': self.in_a_quantizer.summary(),
-            'out_a_quantizer': self.out_a_quantizer.summary(),
+            'in_quantizer': self.in_quantizer.summary(),
+            'out_quantizer': self.out_quantizer.summary(),
             'w_quantizer': self.w_quantizer.summary(),
             'b_quantizer': self.b_quantizer.summary(),
         }
@@ -154,8 +154,8 @@ class QuantLinear(nn.Linear, QuantModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.out_a_quantizer.named_quant_parameters(
-                prfx + "out_a_quantizer", recurse):
+        for name, param in self.out_quantizer.named_quant_parameters(
+                prfx + "out_quantizer", recurse):
             yield name, param
         for name, param in self.w_quantizer.named_quant_parameters(
                 prfx + "w_quantizer", recurse):

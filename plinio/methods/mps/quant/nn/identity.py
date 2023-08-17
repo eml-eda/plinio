@@ -35,7 +35,7 @@ class QuantIdentity(nn.Identity, QuantModule):
     def __init__(self,
                  quantizer: Quantizer):
         super(QuantIdentity, self).__init__()
-        self.out_a_quantizer = quantizer
+        self.out_quantizer = quantizer
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of quantized layer.
@@ -47,7 +47,7 @@ class QuantIdentity(nn.Identity, QuantModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
-        out = self.out_a_quantizer(input)
+        out = self.out_quantizer(input)
         return out
 
     # TODO: this function needs to be implemented, currently instances of this class
@@ -76,7 +76,7 @@ class QuantIdentity(nn.Identity, QuantModule):
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
         integer_identity = backend_factory(submodule, backend)
         new_submodule = integer_identity(
-            submodule.out_a_quantizer
+            submodule.out_quantizer
         )
         mod.add_submodule(str(n.target), new_submodule)
 
@@ -87,7 +87,7 @@ class QuantIdentity(nn.Identity, QuantModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'quantizer': self.out_a_quantizer.summary(),
+            'quantizer': self.out_quantizer.summary(),
         }
 
     def named_quant_parameters(
@@ -105,6 +105,6 @@ class QuantIdentity(nn.Identity, QuantModule):
         """
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
-        for name, param in self.out_a_quantizer.named_quant_parameters(
-                prfx + "out_a_quantizer", recurse):
+        for name, param in self.out_quantizer.named_quant_parameters(
+                prfx + "out_quantizer", recurse):
             yield name, param

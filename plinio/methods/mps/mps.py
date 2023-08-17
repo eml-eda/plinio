@@ -171,7 +171,7 @@ class MPS(DNAS):
                     # skips input quantiers which would affect another layer
                     # skips bias quantizers which are a function of a/w quantizers
                     # TODO: make this field-name-independent
-                    qtz = ['out_a_mps_quantizer', 'w_mps_quantizer']
+                    qtz = ['out_mps_quantizer', 'w_mps_quantizer']
                     if k in qtz and isinstance(v, (MPSBaseQtz,)):
                         alpha_prec = v.alpha
                         max_index = alpha_prec.argmax(dim=0)
@@ -199,7 +199,7 @@ class MPS(DNAS):
                     # skips input quantiers which would affect another layer
                     # skips bias quantizers which are a function of a/w quantizers
                     # TODO: make this field-name-independent
-                    qtz = ['out_a_mps_quantizer', 'w_mps_quantizer']
+                    qtz = ['out_mps_quantizer', 'w_mps_quantizer']
                     if k in qtz and isinstance(v, (MPSBaseQtz,)):
                         v.alpha.requires_grad = False
 
