@@ -24,7 +24,7 @@ import torch.nn as nn
 from plinio.methods.dnas_base import DNAS
 from plinio.cost import CostSpec, CostFn, params_bit
 from plinio.graph.inspection import shapes_dict
-from .graph import convert
+from .graph import convert, mps_layer_map
 from .nn.module import MPSModule
 from .nn.qtz import MPSType, MPSBaseQtz, MPSPerLayerQtz, MPSPerChannelQtz
 
@@ -63,6 +63,8 @@ class MPS(DNAS):
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
+    :param cost: the cost models(s) used by the NAS, defaults to the number of params.
+    :type cost: Union[CostSpec, Dict[str, CostSpec]]
     :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
     :type input_shape: Tuple[int, ...]
@@ -78,14 +80,15 @@ class MPS(DNAS):
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the num_bits precision
     :type qinfo: Dict
-    :param regularizer: the name of the model cost regularizer used by the NAS, defaults to 'size'
-    :type regularizer: Optional[str], optional
+    :param qinfo_input_quanizer: optional dict containing desired quantizers for the network input
+    and its arguments excluding the num_bits precision, defaults to None
+    :type qinfo: Dict, optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
-    :param input_quantization: whether the input of the network needs
-    to be quantized or not (default: True)
-    :type input_quantization: bool
+    :param full_cost: True is the cost model should be applied to the entire network, rather
+    than just to the NAS-able layers, defaults to False
+    :type full_cost: bool, optional
     :param exclude_names: the names of `model` submodules that should be ignored by the NAS,
     defaults to ()
     :type exclude_names: Iterable[str], optional
@@ -93,9 +96,11 @@ class MPS(DNAS):
     defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
     :raises ValueError: when called with an unsupported regularizer
+    :param temperature: the default sampling temperature (for SoftMax/Gumbel SoftMax)
+    :type temperature: float, defaults to 1
     :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SoftMax
     :type gumbel_softmax: bool, optional
-    :param hard_softmax: use hard Gumbel SoftMax sampling (only applies when gumbel_softmax = True)
+    :param hard_softmax: use hard (discretized) SoftMax sampling
     :type hard_softmax: bool, optional
     :param disable_sampling: do not perform any update of the alpha coefficients,
     thus using the saved ones. Useful to perform fine-tuning of the saved model.
@@ -112,10 +117,11 @@ class MPS(DNAS):
             w_search_type: MPSType = MPSType.PER_LAYER,
             qinfo: Dict = DEFAULT_QINFO,
             qinfo_input_quantizer: Optional[Dict] = DEFAULT_QINFO_INPUT_QUANTIZER,
-            temperature: float = 1.,
             autoconvert_layers: bool = True,
+            full_cost: bool = False,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
+            temperature: float = 1.,
             gumbel_softmax: bool = False,
             hard_softmax: bool = False,
             disable_sampling: bool = False,
@@ -133,7 +139,9 @@ class MPS(DNAS):
             exclude_names,
             exclude_types,
             disable_shared_quantizers)
+        self._cost_fn_map = self._create_cost_fn_map()
         self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
+        self.full_cost = full_cost
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the DNAS model.
@@ -165,7 +173,7 @@ class MPS(DNAS):
                     # TODO: make this field-name-independent
                     qtz = ['out_a_mps_quantizer', 'w_mps_quantizer']
                     if k in qtz and isinstance(v, (MPSBaseQtz,)):
-                        alpha_prec = v.alpha_prec
+                        alpha_prec = v.alpha
                         max_index = alpha_prec.argmax(dim=0)
                         argmaxed_alpha = torch.zeros(alpha_prec.shape, device=alpha_prec.device)
 
@@ -193,7 +201,7 @@ class MPS(DNAS):
                     # TODO: make this field-name-independent
                     qtz = ['out_a_mps_quantizer', 'w_mps_quantizer']
                     if k in qtz and isinstance(v, (MPSBaseQtz,)):
-                        v.alpha_prec.requires_grad = False
+                        v.alpha.requires_grad = False
 
     def update_softmax_options(
             self,
@@ -244,39 +252,28 @@ class MPS(DNAS):
                 arch[lname]['type'] = layer.__class__.__name__
         return arch
 
-    def alpha_summary(self, post_softmax: bool = False) -> Dict[str, Dict[str, Any]]:
-        """Generates a dictionary representation of the architectural coefficients found by the NAS.
-        Only optimized layers are reported
+    def nas_parameters_summary(self, post_sampling: bool = False) -> Dict[str, Dict[str, Any]]:
+        """Generates a dictionary representation of the architectural parameters values found by
+        the NAS.
 
-        :return: a dictionary representation of the architectural coefficients found by the NAS
+        :return: a dictionary representation of the architectural parameters values found by the NAS
         :rtype: Dict[str, Dict[str, any]]"""
         arch = {}
         for lname, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
-                prec_dict = {}
-                for k, v in vars(self).items():
-                    # skips input quantiers and bias quantizer
-                    # TODO: make this field-name-independent
-                    if k == 'out_a_mps_quantizer' and isinstance(v, (MPSBaseQtz,)):
-                        if post_softmax:
-                            prec_dict['out_a_precision'] = v.theta_alpha.detach()
-                        else:
-                            prec_dict['out_a_precision'] = v.alpha_prec.detach()
-                    if k == 'w_mps_quantizer' and isinstance(v, (MPSBaseQtz,)):
-                        if post_softmax:
-                            prec_dict['w_precision'] = v.theta_alpha.detach()
-                        else:
-                            prec_dict['w_precision'] = v.alpha_prec.detach()
-                arch[lname] = prec_dict
+                arch[lname] = layer.nas_parameters_summary(post_sampling=post_sampling)
                 arch[lname]['type'] = layer.__class__.__name__
         return arch
 
-    def theta_alpha_summary(self) -> Dict[str, Dict[str, Any]]:
-        """DEPRECATED: use alpha_summary(post_softmax=True)
-
-        :return: a dictionary representation of the architectural coefficients found by the NAS
+    def alpha_summary(self) -> Dict[str, Dict[str, Any]]:
+        """DEPRECATED: use nas_parameters_summary(post_sampling=False)
         :rtype: Dict[str, Dict[str, any]]"""
-        return self.alpha_summary(post_softmax=True)
+        return self.nas_parameters_summary(post_sampling=False)
+
+    def theta_alpha_summary(self) -> Dict[str, Dict[str, Any]]:
+        """DEPRECATED: use nas_parameters_summary(post_sampling=True)
+        :rtype: Dict[str, Dict[str, any]]"""
+        return self.nas_parameters_summary(post_sampling=True)
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -374,12 +371,27 @@ class MPS(DNAS):
 
     def _single_cost_fn_map(self, c: CostSpec) -> Dict[str, CostFn]:
         """MPS-specific creator of {layertype, cost_fn} maps based on a CostSpec."""
-        # simply computes cost of all layers that are not Combiners
         cost_fn_map = {}
         for lname, _, layer in self._unique_leaf_modules:
-            if not isinstance(layer, MPSModule):
+            if isinstance(layer, MPSModule):
+                # get original layer type from MPSModule type
+                # TODO: not all MPSModules have a corresponding nn.Module. Notable cases
+                # are MPSIdentity and MPSAdd. For now, we skip those because CostSpecs require
+                # a nn.Module as "pattern". Will be fixed in a future release. This is why
+                # we have a try/except here
+                try:
+                    # TODO: make this more readable
+                    t = list(mps_layer_map.keys())[list(mps_layer_map.values()).index(type(layer))]
+                    # equally unreadable alternative
+                    # t = layer.__class__.__bases__[0]
+                except ValueError:
+                    # if we didn't find a corresponding nn.Module, just associate the cost of a
+                    # generic nn.Module (which will likely be either 0 or trigger an exception
+                    # depending on the CostSpec)
+                    t = nn.Module
+            else:
                 t = type(layer)
-                cost_fn_map[lname] = c[(t, vars(layer))]
+            cost_fn_map[lname] = c[(t, vars(layer))]
         return cost_fn_map
 
     def __str__(self):

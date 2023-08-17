@@ -30,7 +30,7 @@ class MPSModule:
     """
     @abstractmethod
     def __init__(self):
-        raise NotImplementedError("Calling init on base abstract MPSModule class")
+        pass
 
     def update_softmax_options(
             self,
@@ -51,12 +51,8 @@ class MPSModule:
         forward pass
         :type disable_sampling: Optional[bool]
         """
-        for k, v in vars(self).items():
-            # skips input quantiers which would affect another layer
-            # skips bias quantizers which do not have softmax options
-            # TODO: make this field-name-independent
-            if k in ['out_a_mps_quantizer', 'w_mps_quantizer'] and isinstance(v, MPSBaseQtz):
-                v.update_softmax_options(temperature, hard, gumbel, disable_sampling)
+        # does nothing on the base class (overridden by sub-classes)
+        return
 
     @property
     @abstractmethod
@@ -121,12 +117,24 @@ class MPSModule:
 
     @abstractmethod
     def summary(self) -> Dict[str, Any]:
-        """Export a dictionary with the optimized layer hyperparameters
+        """Export a dictionary with the optimized layer bitwidth
 
-        :return: a dictionary containing the optimized layer hyperparameter values
+        :return: a dictionary containing the optimized layer bitwidth values
         :rtype: Dict[str, Any]
         """
-        raise NotImplementedError("Calling summary on base abstract MPSModule class")
+        return {}
+
+    @abstractmethod
+    def nas_parameters_summary(self, post_sampling: bool = False) -> Dict[str, Any]:
+        """Export a dictionary with the current NAS parameters of this layer
+
+        :param post_sampling: true to get the post-sampling NAS parameters
+        :type post_sampling: bool
+        :return: a dictionary containing the current NAS parameters values
+        :rtype: Dict[str, Any]
+        """
+        # empty for the base class
+        return {}
 
     @abstractmethod
     def get_modified_vars(self) -> Iterator[Dict[str, Any]]:

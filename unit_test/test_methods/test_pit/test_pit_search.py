@@ -304,12 +304,10 @@ class TestPITSearch(unittest.TestCase):
         optimizer = optim.Adam(pit_net.parameters())
         n_steps = 10
         prev_cost = pit_net.cost
-        print("Initial Reg. Loss:", prev_cost.item())
         for _ in range(n_steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             cost = pit_net.cost
-            print("Reg. Loss:", cost.item())
             self.assertLessEqual(cost.item(), prev_cost.item(), "The loss value is not descending")
             optimizer.zero_grad()
             cost.backward()
@@ -535,7 +533,6 @@ class TestPITSearch(unittest.TestCase):
             total_loss.backward()
             optimizer.step()
             conv1_weight = conv1.weight.clone().detach()
-            print("Cout=0, Cin=0 weights:", conv1_weight[0, 0])
             self.assertFalse(torch.all(torch.isclose(prev_conv1_weight, conv1_weight)))
             prev_conv1_weight = conv1_weight
 

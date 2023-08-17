@@ -17,7 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Iterator, Tuple, cast, Union, List
+from typing import Dict, Any, Iterator, Tuple, cast, Union, List, Optional
 import torch
 import torch.fx as fx
 import torch.nn as nn
@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from ..quant.quantizers import Quantizer
 from ..quant.nn import QuantLinear, QuantList
 from .module import MPSModule
-from .qtz import MPSType, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
+from .qtz import MPSType, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz, MPSBaseQtz
 from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
 
 
@@ -192,6 +192,31 @@ class MPSLinear(nn.Linear, MPSModule):
 
         mod.add_submodule(str(n.target), new_submodule)
 
+    def update_softmax_options(
+            self,
+            temperature: Optional[float] = None,
+            hard: Optional[bool] = None,
+            gumbel: Optional[bool] = None,
+            disable_sampling: Optional[bool] = None):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param temperature: SoftMax temperature
+        :type temperature: Optional[float]
+        :param hard: Hard vs Soft sampling
+        :type hard: Optional[bool]
+        :param gumbel: Gumbel-softmax vs standard softmax
+        :type gumbel: Optional[bool]
+        :param disable_sampling: disable the sampling of the architectural coefficients in the
+        forward pass
+        :type disable_sampling: Optional[bool]
+        """
+        if isinstance(self.out_a_mps_quantizer, MPSBaseQtz):
+            self.out_a_mps_quantizer.update_softmax_options(
+                    temperature, hard, gumbel, disable_sampling)
+        self.w_mps_quantizer.update_softmax_options(
+                temperature, hard, gumbel, disable_sampling)
+
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer hyperparameters
 
@@ -202,6 +227,23 @@ class MPSLinear(nn.Linear, MPSModule):
             'in_a_precision': self.selected_in_a_precision,
             'out_a_precision': self.selected_out_a_precision,
             'w_precision': self.selected_w_precision,
+        }
+
+    def nas_parameters_summary(self, post_sampling: bool = False) -> Dict[str, Any]:
+        """Export a dictionary with the current NAS parameters of this layer
+
+        :param post_sampling: true to get the post-softmax NAS parameters
+        :type post_sofmatx: bool
+        :return: a dictionary containing the current NAS parameters values
+        :rtype: Dict[str, Any]
+        """
+        out_a_params = self.out_a_mps_quantizer.theta_alpha.detach() if post_sampling \
+            else self.out_a_mps_quantizer.alpha.detach()
+        w_params = self.w_mps_quantizer.theta_alpha.detach() if post_sampling \
+            else self.w_mps_quantizer.alpha.detach()
+        return {
+            'out_a_alpha': out_a_params,
+            'w_params': w_params
         }
 
     def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
@@ -223,15 +265,15 @@ class MPSLinear(nn.Linear, MPSModule):
                 # input precision
                 # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
                 # To be double-checked
-                v['in_channels'] = (self.input_features_calculator.features.detach() *
+                v['in_features'] = (self.input_features_calculator.features.detach() *
                                     self.in_a_mps_quantizer.theta_alpha[i])
                 # same with weights precision and output channels, but distinguish the two types
                 # of quantizer
                 if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
-                    v['out_channels'] = (self.out_channels *
+                    v['out_features'] = (self.out_features *
                                          self.w_mps_quantizer.theta_alpha[j])
                 elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
-                    v['out_channels'] = self.w_mps_quantizer.theta_alpha[j, :].sum()
+                    v['out_features'] = self.w_mps_quantizer.theta_alpha[j, :].sum()
                 else:
                     msg = f'Supported mixed-precision types: {list(MPSType)}'
                     raise ValueError(msg)
@@ -262,19 +304,19 @@ class MPSLinear(nn.Linear, MPSModule):
 
     @property
     def selected_in_a_precision(self) -> int:
-        """Return the selected precision based on the magnitude of `alpha_prec`
+        """Return the selected precision based on the magnitude of `alpha`
         components for input activations
 
         :return: the selected precision
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha_prec))
+            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha))
             return int(self.in_a_mps_quantizer.precisions[idx])
 
     @property
     def selected_out_a_precision(self) -> Union[int, str]:
-        """Return the selected precision based on the magnitude of `alpha_prec`
+        """Return the selected precision based on the magnitude of `alpha`
         components for output activations.
         If output is not quantized returns the 'float' string.
 
@@ -283,14 +325,14 @@ class MPSLinear(nn.Linear, MPSModule):
         """
         if type(self.out_a_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
                 return int(self.out_a_mps_quantizer.precisions[idx])
         else:
             return 'float'
 
     @property
     def selected_w_precision(self) -> Union[int, List[int]]:
-        """Return the selected precision(s) based on the magnitude of `alpha_prec`
+        """Return the selected precision(s) based on the magnitude of `alpha`
         components for weights
 
         :return: a function returning the selected precision(s)
@@ -298,10 +340,10 @@ class MPSLinear(nn.Linear, MPSModule):
         """
         with torch.no_grad():
             if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
-                idx = int(torch.argmax(self.w_mps_quantizer.alpha_prec))
+                idx = int(torch.argmax(self.w_mps_quantizer.alpha))
                 return int(self.w_mps_quantizer.precisions[idx])
             elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
-                idx = torch.argmax(self.w_mps_quantizer.alpha_prec, dim=0)
+                idx = torch.argmax(self.w_mps_quantizer.alpha, dim=0)
                 return [int(self.w_mps_quantizer.precisions[int(i)]) for i in idx]
             else:
                 msg = f'Supported mixed-precision types: {list(MPSType)}'
@@ -309,21 +351,21 @@ class MPSLinear(nn.Linear, MPSModule):
 
     @property
     def selected_in_a_quantizer(self) -> Quantizer:
-        """Return the selected quantizer based on the magnitude of `alpha_prec`
+        """Return the selected quantizer based on the magnitude of `alpha`
         components for input activations
 
         :return: the selected quantizer(s)
         :rtype: Type[Quantizer]
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha_prec))
+            idx = int(torch.argmax(self.in_a_mps_quantizer.alpha))
             qtz = self.in_a_mps_quantizer.qtz_funcs[idx]
             qtz = cast(Quantizer, qtz)
             return qtz
 
     @property
     def selected_out_a_quantizer(self) -> Quantizer:
-        """Return the selected quantizer based on the magnitude of `alpha_prec`
+        """Return the selected quantizer based on the magnitude of `alpha`
         components for output activations
 
         :return: the selected quantizer
@@ -331,7 +373,7 @@ class MPSLinear(nn.Linear, MPSModule):
         """
         if type(self.out_a_mps_quantizer) != nn.Identity:
             with torch.no_grad():
-                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+                idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
                 qtz = self.out_a_mps_quantizer.qtz_funcs[idx]
                 qtz = cast(Quantizer, qtz)
                 return qtz
@@ -342,7 +384,7 @@ class MPSLinear(nn.Linear, MPSModule):
 
     @property
     def selected_w_quantizer(self) -> Union[Quantizer, List[Quantizer]]:
-        """Return the selected quantizer(s) based on the magnitude of `alpha_prec`
+        """Return the selected quantizer(s) based on the magnitude of `alpha`
         components for weights
 
         :return: the selected quantizer(s)
@@ -350,12 +392,12 @@ class MPSLinear(nn.Linear, MPSModule):
         """
         with torch.no_grad():
             if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
-                idx = int(torch.argmax(self.w_mps_quantizer.alpha_prec))
+                idx = int(torch.argmax(self.w_mps_quantizer.alpha))
                 qtz = self.w_mps_quantizer.qtz_funcs[idx]
                 qtz = cast(Quantizer, qtz)
                 return qtz
             elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
-                idx = torch.argmax(self.w_mps_quantizer.alpha_prec, dim=0)
+                idx = torch.argmax(self.w_mps_quantizer.alpha, dim=0)
                 qtz = [self.w_mps_quantizer.qtz_funcs[i] for i in idx]
                 qtz = cast(List[Quantizer], qtz)
                 return qtz
@@ -373,7 +415,7 @@ class MPSLinear(nn.Linear, MPSModule):
         if isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
             return cast(torch.Tensor, self.w_mps_quantizer.out_features_eff)
         else:
-            return cast(torch.Tensor, self.out_features)
+            return torch.tensor(self.out_features)
 
     @property
     def number_pruned_channels(self) -> torch.Tensor:

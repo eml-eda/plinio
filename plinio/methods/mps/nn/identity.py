@@ -17,7 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Dict, Any, Iterator, Tuple, cast, Union
+from typing import Dict, Any, Iterator, Tuple, cast, Union, Optional
 import torch
 import torch.fx as fx
 import torch.nn as nn
@@ -104,6 +104,28 @@ class MPSIdentity(nn.Identity, MPSModule):
         )
         mod.add_submodule(str(n.target), new_submodule)
 
+    def update_softmax_options(
+            self,
+            temperature: Optional[float] = None,
+            hard: Optional[bool] = None,
+            gumbel: Optional[bool] = None,
+            disable_sampling: Optional[bool] = None):
+        """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
+        and the sampling disabling of the architectural coefficients in the quantizers
+
+        :param temperature: SoftMax temperature
+        :type temperature: Optional[float]
+        :param hard: Hard vs Soft sampling
+        :type hard: Optional[bool]
+        :param gumbel: Gumbel-softmax vs standard softmax
+        :type gumbel: Optional[bool]
+        :param disable_sampling: disable the sampling of the architectural coefficients in the
+        forward pass
+        :type disable_sampling: Optional[bool]
+        """
+        self.out_a_mps_quantizer.update_softmax_options(
+                temperature, hard, gumbel, disable_sampling)
+
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer hyperparameters
 
@@ -111,7 +133,21 @@ class MPSIdentity(nn.Identity, MPSModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'precision': self.selected_out_a_precision,
+            'out_a_precision': self.selected_out_a_precision,
+        }
+
+    def nas_parameters_summary(self, post_sampling: bool = False) -> Dict[str, Any]:
+        """Export a dictionary with the current NAS parameters of this layer
+
+        :param post_sampling: true to get the post-softmax NAS parameters
+        :type post_sofmatx: bool
+        :return: a dictionary containing the current NAS parameters values
+        :rtype: Dict[str, Any]
+        """
+        out_a_params = self.out_a_mps_quantizer.theta_alpha.detach() if post_sampling \
+            else self.out_a_mps_quantizer.alpha.detach()
+        return {
+            'out_a_params': out_a_params
         }
 
     def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
@@ -121,18 +157,20 @@ class MPSIdentity(nn.Identity, MPSModule):
         :return: an iterator over the modified vars(self) data structures
         :rtype: Iterator[Dict[str, Any]]
         """
-        for i, a_prec in enumerate(self.in_a_mps_quantizer.precisions):
+        for i, a_prec in enumerate(self.out_a_mps_quantizer.precisions):
             v = dict(vars(self))
-            v['in_bits'] = a_prec
-            v['in_format'] = int
+            v['out_bits'] = a_prec
+            v['out_format'] = int
             # downscale the input_channels times the probability of using that
             # input precision
             # TODO: detach added based on Beatrice and Alessio's observations on back-prop.
             # To be double-checked
-            v['in_channels'] = (self.input_features_calculator.features.detach() *
-                                self.in_a_mps_quantizer.theta_alpha[i])
+            v['in_channels'] = self.input_features_calculator.features.detach()
             # TODO: verify that it's correct that i'm using _eff here, and not for conv.
-            v['out_channels'] = self.out_features_eff
+            # downscale the output_channels times the probability of using that
+            # output precision
+            v['out_channels'] = (self.out_features_eff *
+                                 self.out_a_mps_quantizer.theta_alpha[i])
             yield v
 
     def named_nas_parameters(
@@ -156,26 +194,26 @@ class MPSIdentity(nn.Identity, MPSModule):
 
     @property
     def selected_out_a_precision(self) -> int:
-        """Return the selected precision based on the magnitude of `alpha_prec`
+        """Return the selected precision based on the magnitude of `alpha`
         components
 
         :return: the selected precision
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+            idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
             return int(self.out_a_mps_quantizer.precisions[idx])
 
     @property
     def selected_out_a_quantizer(self) -> Quantizer:
-        """Return the selected quantizer based on the magnitude of `alpha_prec`
+        """Return the selected quantizer based on the magnitude of `alpha`
         components
 
         :return: the selected precision
         :rtype: int
         """
         with torch.no_grad():
-            idx = int(torch.argmax(self.out_a_mps_quantizer.alpha_prec))
+            idx = int(torch.argmax(self.out_a_mps_quantizer.alpha))
             qtz = self.out_a_mps_quantizer.qtz_funcs[idx]
             qtz = cast(Quantizer, qtz)
             return qtz

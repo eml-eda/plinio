@@ -70,7 +70,6 @@ class DNAS(nn.Module):
         self._cost_specification = cs
 
     @property
-    @abstractmethod
     def cost(self) -> torch.Tensor:
         """Returns the value of the default cost metric
 

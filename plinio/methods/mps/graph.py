@@ -433,10 +433,10 @@ def add_input_quantizer(mod: fx.GraphModule,
                              a_quantizer_kwargs)
         inp_qtz = MPSIdentity(q_a)
         # Add quantizer to graph
-        mod.add_submodule('input_quantizer', inp_qtz)
+        mod.add_submodule(n.name + '_input_quantizer', inp_qtz)
         with mod.graph.inserting_after(n):
             new_node = mod.graph.call_module(
-                'input_quantizer',
+                n.name + '_input_quantizer',
                 args=(n,)
             )
             n.replace_all_uses_with(new_node)
@@ -446,6 +446,8 @@ def add_input_quantizer(mod: fx.GraphModule,
         # Force the new node to be features_defining in order to be recognized
         # as predecessor when performing the `register_in_a_mps_quantizers` step
         new_node.meta['features_defining'] = True
+        # Also copy the input shape information to the new node 'tensor_meta'
+        new_node.meta['tensor_meta'] = n.meta['tensor_meta']
 
 
 def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):

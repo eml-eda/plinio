@@ -80,7 +80,7 @@ class MPSBaseQtz(nn.Module):
                 disable_sampling=disable_sampling)
         # create and initialize the parameters (placeholder for type-checking,
         # rewritten by sub-classes)
-        self.alpha_prec = torch.tensor(0)
+        self.alpha = torch.tensor(0)
         self.theta_alpha = torch.tensor(0)
 
     @abstractmethod
@@ -89,7 +89,7 @@ class MPSBaseQtz(nn.Module):
 
         In a nutshell, it computes the different quantized representations of `mix_qtz`
         and combines them weighting the different terms channel-wise or layer-wise by means of
-        softmax-ed `alpha_prec` trainable parameters.
+        softmax-ed `alpha` trainable parameters.
 
         :param input: the input float tensor
         :type input: torch.Tensor
@@ -104,7 +104,7 @@ class MPSBaseQtz(nn.Module):
         Samples the alpha coefficients using a standard SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = F.softmax(self.alpha_prec / self.temperature.item(), dim=0)
+        self.theta_alpha = F.softmax(self.alpha / self.temperature.item(), dim=0)
         if (self.hard_softmax) or (not self.training):
             self.theta_alpha = cast(torch.Tensor, STEArgmax.apply(self.theta_alpha))
 
@@ -115,7 +115,7 @@ class MPSBaseQtz(nn.Module):
         """
         if self.training:
             self.theta_alpha = F.gumbel_softmax(
-                logits=self.alpha_prec,
+                logits=self.alpha,
                 tau=self.temperature.item(),
                 hard=self.hard_softmax,
                 dim=0)
@@ -161,7 +161,7 @@ class MPSBaseQtz(nn.Module):
     @abstractmethod
     def effective_precision(self) -> torch.Tensor:
         """Return the layer's effective precision as the average precision weighted by softmax-ed
-        `alpha_prec` parameters
+        `alpha` parameters
 
         :return: the effective precision
         :rtype: torch.Tensor
@@ -210,11 +210,11 @@ class MPSPerChannelQtz(MPSBaseQtz):
         # find the 0-bit precision (if present)
         self.zero_index = None if 0 not in precisions else precisions.index(0)
         # create and initialize the NAS parameters
-        self.alpha_prec = nn.Parameter(torch.empty((len(precisions), quantizer_kwargs['cout']),
-                                                   dtype=torch.float32), requires_grad=True)
+        self.alpha = nn.Parameter(torch.empty((len(precisions), quantizer_kwargs['cout']),
+                                              dtype=torch.float32), requires_grad=True)
         max_precision = max(precisions)
         for i, p in enumerate(precisions):
-            self.alpha_prec.data[i, :].fill_(float(p) / max_precision)
+            self.alpha.data[i, :].fill_(float(p) / max_precision)
         self.theta_alpha = torch.ones((len(precisions), quantizer_kwargs['cout']),
                                       dtype=torch.float32)
         # initial sampling
@@ -226,7 +226,7 @@ class MPSPerChannelQtz(MPSBaseQtz):
 
         In a nutshell, it computes the different quantized representations of `mix_qtz`
         and combines them weighting the different terms channel-wise by means of
-        softmax-ed `alpha_prec` trainable parameters.
+        softmax-ed `alpha` trainable parameters.
 
         :param input: the input float tensor
         :type input: torch.Tensor
@@ -269,7 +269,7 @@ class MPSPerChannelQtz(MPSBaseQtz):
     @property
     def effective_precision(self) -> torch.Tensor:
         """Return each channel effective precision as the average precision weighted by
-        softmax-ed `alpha_prec` parameters
+        softmax-ed `alpha` parameters
 
         :return: the effective precision
         :rtype: torch.Tensor
@@ -315,11 +315,11 @@ class MPSPerLayerQtz(MPSBaseQtz):
                 hard_softmax,
                 gumbel_softmax,
                 disable_sampling)
-        self.alpha_prec = nn.Parameter(torch.empty((len(precisions),), dtype=torch.float32),
-                                       requires_grad=True)
+        self.alpha = nn.Parameter(torch.empty((len(precisions),), dtype=torch.float32),
+                                  requires_grad=True)
         max_precision = max(precisions)
         for i, p in enumerate(precisions):
-            self.alpha_prec.data[i].fill_(float(p) / max_precision)
+            self.alpha.data[i].fill_(float(p) / max_precision)
         self.theta_alpha = torch.ones((len(precisions),), dtype=torch.float32)
         # initial sampling
         with torch.no_grad():
@@ -330,7 +330,7 @@ class MPSPerLayerQtz(MPSBaseQtz):
 
         In a nutshell, it computes the different quantized representations of `mix_qtz`
         and combines them weighting the different terms by means of softmax-ed
-        `alpha_prec` trainable parameters.
+        `alpha` trainable parameters.
 
         :param input: the input float tensor
         :type input: torch.Tensor
@@ -347,7 +347,7 @@ class MPSPerLayerQtz(MPSBaseQtz):
     @property
     def effective_precision(self) -> torch.Tensor:
         """Return the effective precision as the average precision weighted by
-        softmax-ed `alpha_prec` parameters
+        softmax-ed `alpha` parameters
 
         :return: the effective precision
         :rtype: torch.Tensor
@@ -389,11 +389,7 @@ class MPSBiasQtz(nn.Module):
         self.qtz_func = quantizer(**quantizer_kwargs)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of the searchable mixed-precision layer.
-
-        In a nutshell, computes the different quantized representations of `mix_qtz`
-        and combine them weighting the different terms by means of softmax-ed
-        `alpha_prec` trainable parameters.
+        """The forward function
 
         :param input: the input float tensor
         :type input: torch.Tensor

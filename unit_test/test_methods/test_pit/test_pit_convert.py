@@ -429,7 +429,6 @@ class TestPITConvert(unittest.TestCase):
         self.assertEqual(summary['conv1']['out_features'], 57, "Wrong out features summary")
         self.assertEqual(summary['conv1']['kernel_size'], (5,), "Wrong kernel size summary")
         self.assertEqual(summary['conv1']['dilation'], (1,), "Wrong dilation summary")
-        print(new_nn)
 
     def _compare_prepared(self,
                           old_mod: nn.Module, new_mod: nn.Module,

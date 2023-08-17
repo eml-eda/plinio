@@ -37,7 +37,7 @@ class TestMPSConvert(unittest.TestCase):
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=3)
+        self._check_target_layers(new_nn, exp_tgt=4)
 
     def test_autoimport_simple_channel(self):
         """Test the conversion of a simple sequential model with layer autoconversion
@@ -47,7 +47,7 @@ class TestMPSConvert(unittest.TestCase):
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=3)
+        self._check_target_layers(new_nn, exp_tgt=4)
 
     def test_autoimport_lastfc_zero_removal(self):
         """Test the removal of the 0 precision search for the last fc layer"""
@@ -56,7 +56,7 @@ class TestMPSConvert(unittest.TestCase):
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=3)
+        self._check_target_layers(new_nn, exp_tgt=4)
         fc_prec = cast(MPSLinear, new_nn.seed.fc).w_mps_quantizer.precisions
         self.assertTrue(0 not in fc_prec, '0 prec not removed by last fc layer')
 
@@ -67,9 +67,9 @@ class TestMPSConvert(unittest.TestCase):
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=3)
-        self.assertTrue(hasattr(new_nn.seed, 'input_quantizer'), 'inp quantizer not inserted')
-        inp_quantizer = getattr(new_nn.seed, 'input_quantizer')
+        self._check_target_layers(new_nn, exp_tgt=4)
+        self.assertTrue(hasattr(new_nn.seed, 'x_input_quantizer'), 'inp quantizer not inserted')
+        inp_quantizer = getattr(new_nn.seed, 'x_input_quantizer')
         msg = f'inp quantizer is of type {type(inp_quantizer)} instead of MPSIdentity'
         self.assertTrue(isinstance(inp_quantizer, MPSIdentity), msg)
 
@@ -79,7 +79,7 @@ class TestMPSConvert(unittest.TestCase):
         nn_ut = DSCNN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=14)
+        self._check_target_layers(new_nn, exp_tgt=15)
 
     def test_autoimport_depthwise_channel(self):
         """Test the conversion of a model with depthwise convolutions (cin=cout=groups)
@@ -89,7 +89,7 @@ class TestMPSConvert(unittest.TestCase):
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=14)
+        self._check_target_layers(new_nn, exp_tgt=15)
         # Check that depthwise layer shares quantizers with the previous conv layer
         shared_quantizer_rules = (
             ('depthwise1', 'inputlayer', True),
@@ -106,7 +106,7 @@ class TestMPSConvert(unittest.TestCase):
         nn_ut = ToyMultiPath1_2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=7)
+        self._check_target_layers(new_nn, exp_tgt=11)
         shared_quantizer_rules = (
             ('conv2', 'conv4', True),  # inputs to add must share the quantizer
             ('conv2', 'conv5', True),  # inputs to add must share the quantizer
@@ -124,7 +124,7 @@ class TestMPSConvert(unittest.TestCase):
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=7)
+        self._check_target_layers(new_nn, exp_tgt=11)
         shared_quantizer_rules = (
             ('conv2', 'conv4', True),  # inputs to add must share the quantizer
             ('conv2', 'conv5', True),  # inputs to add must share the quantizer
@@ -165,20 +165,20 @@ class TestMPSConvert(unittest.TestCase):
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=7)
+        self._check_target_layers(new_nn, exp_tgt=11)
         shared_quantizer_rules_a = (
-            ('conv0.mixprec_b_quantizer', 'input_quantizer', True),
-            ('conv5.mixprec_b_quantizer', 'add_[conv0, conv1]_quant', True),
-            ('fc.mixprec_b_quantizer', 'add_2_[add_1, conv4]_quant', True),
-            ('conv0.mixprec_b_quantizer', 'conv5.mixprec_b_quantizer',
+            ('conv0.b_mps_quantizer', 'x_input_quantizer', True),
+            ('conv5.b_mps_quantizer', 'add_[conv0, conv1]_quant', True),
+            ('fc.b_mps_quantizer', 'add_2_[add_1, conv4]_quant', True),
+            ('conv0.b_mps_quantizer', 'conv5.b_mps_quantizer',
              False),  # two far aways layers must not share
         )
         self._check_shared_quantizers(new_nn, shared_quantizer_rules_a, act_or_w='act')
         shared_quantizer_rules_w = (
-            ('conv0.mixprec_b_quantizer', 'conv0', True),
-            ('conv5.mixprec_b_quantizer', 'conv5', True),
-            ('fc.mixprec_b_quantizer', 'fc', True),
-            ('conv0.mixprec_b_quantizer', 'conv5.mixprec_b_quantizer',
+            ('conv0.b_mps_quantizer', 'conv0', True),
+            ('conv5.b_mps_quantizer', 'conv5', True),
+            ('fc.b_mps_quantizer', 'fc', True),
+            ('conv0.b_mps_quantizer', 'conv5.b_mps_quantizer',
              False),  # two far aways layers must not share
         )
         self._check_shared_quantizers(new_nn, shared_quantizer_rules_w, act_or_w='w')
@@ -188,8 +188,9 @@ class TestMPSConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv2d,))
-        # excluding Conv2D, only the final FC should be converted to MPS format
-        self._check_target_layers(new_nn, exp_tgt=1)
+        # excluding Conv2D, we are left with: input quantizer (MPSIdentity), 3 MPSAdd, and one
+        # MPSLinear
+        self._check_target_layers(new_nn, exp_tgt=5)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
 
@@ -200,8 +201,9 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL, exclude_types=(nn.Conv2d,))
-        # excluding Conv2D, only the final FC should be converted to MPS format
-        self._check_target_layers(new_nn, exp_tgt=1)
+        # excluding Conv2D, we are left with: input quantizer (MPSIdentity), 3 MPSAdd, and one
+        # MPSLinear
+        self._check_target_layers(new_nn, exp_tgt=5)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         self._check_layers_exclusion(new_nn, excluded)
 
@@ -252,7 +254,7 @@ class TestMPSConvert(unittest.TestCase):
         nn_ut = SimpleMPSNN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
         self._compare_prepared(nn_ut, new_nn.seed)
-        # convert with autoconvert disabled. This is as if we exclude layers except the one already
+        # convert with autoimport disabled. This is as if we exclude layers except the one already
         # in MPS form
         excluded = ('conv1')
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
@@ -265,7 +267,7 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_search_type=MPSType.PER_CHANNEL)
         self._compare_prepared(nn_ut, new_nn.seed)
-        # convert with autoconvert disabled. This is as if we exclude layers except the one already
+        # convert with autoimport disabled. This is as if we exclude layers except the one already
         # in MPS form
         excluded = ('conv1')
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
@@ -297,7 +299,7 @@ class TestMPSConvert(unittest.TestCase):
     #     ]
     #     new_alpha_t = nn.Parameter(torch.Tensor(new_alpha))
     #     conv0 = cast(MixPrec_Conv2d, new_nn.seed.conv0)
-    #     conv0.mixprec_w_quantizer.alpha_prec = new_alpha_t
+    #     conv0.mixprec_w_quantizer.alpha = new_alpha_t
     #     # Force precision selection for the final linear layer
     #     new_alpha = [
     #         [0, 0, 0],  # 0 ch
@@ -306,7 +308,7 @@ class TestMPSConvert(unittest.TestCase):
     #     ]
     #     new_alpha_t = nn.Parameter(torch.Tensor(new_alpha))
     #     fc = cast(MixPrec_Conv2d, new_nn.seed.fc)
-    #     fc.mixprec_w_quantizer.alpha_prec = new_alpha_t
+    #     fc.mixprec_w_quantizer.alpha = new_alpha_t
     #     # Export
     #     exported_nn = new_nn.arch_export()
     #     expected_exported_nn = SimpleExportedNN2D_ch()
@@ -317,7 +319,6 @@ class TestMPSConvert(unittest.TestCase):
         GPU (if available) with PER_LAYER weight mixed-precision (default)"""
         # Check CUDA availability
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-        print("Training on:", device)
         nn_ut = SimpleNN2D().to(device)
         # Dummy inference
         with torch.no_grad():
@@ -364,7 +365,7 @@ class TestMPSConvert(unittest.TestCase):
     #     ]
     #     new_alpha_t = nn.Parameter(torch.tensor(new_alpha, device=device, dtype=torch.float))
     #     conv0 = cast(MixPrec_Conv2d, new_nn.seed.conv0)
-    #     conv0.mixprec_w_quantizer.alpha_prec = new_alpha_t
+    #     conv0.mixprec_w_quantizer.alpha = new_alpha_t
     #     # Force precision selection for the final linear layer
     #     new_alpha = [
     #         [0, 0, 0],  # 0 ch
@@ -373,7 +374,7 @@ class TestMPSConvert(unittest.TestCase):
     #     ]
     #     new_alpha_t = nn.Parameter(torch.tensor(new_alpha, device=device, dtype=torch.float))
     #     fc = cast(MixPrec_Conv2d, new_nn.seed.fc)
-    #     fc.mixprec_w_quantizer.alpha_prec = new_alpha_t
+    #     fc.mixprec_w_quantizer.alpha = new_alpha_t
     #     # Export
     #     exported_nn = new_nn.arch_export().to(device)
     #     # Dummy inference
@@ -404,26 +405,26 @@ class TestMPSConvert(unittest.TestCase):
     #     expected_exported_nn = SimpleExportedNN2D_NoBias_ch()
     #     self._compare_exported(exported_nn, expected_exported_nn)
 
-    def test_export_with_qparams(self):
+    def test_export_with_alpha(self):
         """Test the conversion of a simple model after forcing the nas/quant
         params values in some layers"""
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
 
         conv0 = cast(MPSConv2d, new_nn.seed.conv0)
-        conv0.out_a_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+        conv0.out_a_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([0.3, 0.8, 0.99], dtype=torch.float))
         conv0.out_a_mps_quantizer.qtz_funcs[2].clip_val = nn.parameter.Parameter(
             torch.tensor([5.], dtype=torch.float))
-        conv0.w_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+        conv0.w_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([1.5, 0.2, 1], dtype=torch.float))
 
         conv1 = cast(MPSConv2d, new_nn.seed.conv1)
-        conv1.out_a_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+        conv1.out_a_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([0.3, 1.8, 0.99], dtype=torch.float))
         conv1.out_a_mps_quantizer.qtz_funcs[1].clip_val = nn.parameter.Parameter(
             torch.tensor([1.], dtype=torch.float))
-        conv1.w_mps_quantizer.alpha_prec = nn.parameter.Parameter(
+        conv1.w_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([1.5, 0.2, 1.9], dtype=torch.float))
 
         exported_nn = new_nn.arch_export()
@@ -489,11 +490,11 @@ class TestMPSConvert(unittest.TestCase):
         net = ToyAdd_2D()
         input_shape = net.input_shape
         a_prec = (2, 4, 8)
-        alpha_prec = torch.zeros(4, 10)
-        alpha_prec[torch.tensor([0, 0, 0, 1, 1, 1, 1, 1, 2, 3]),
+        alpha = torch.zeros(4, 10)
+        alpha[torch.tensor([0, 0, 0, 1, 1, 1, 1, 1, 2, 3]),
                    torch.tensor([3, 5, 9, 0, 1, 2, 7, 8, 6, 4])] = 1
         x = torch.rand(input_shape).unsqueeze(0)
-        # Use the following alpha_prec matrix to check the sanity of out_features_eff
+        # Use the following alpha matrix to check the sanity of out_features_eff
         # for one specific layer
         # [[0., 0., 0., 1., 0., 1., 0., 0., 0., 1.],
         #  [1., 1., 1., 0., 0., 0., 0., 1., 1., 0.],
@@ -510,11 +511,11 @@ class TestMPSConvert(unittest.TestCase):
                           hard_softmax=True)
         for layer in mixprec_net.modules():  # force sampling of 8-bit precision
             if isinstance(layer, MPSConv2d) or isinstance(layer, MPSLinear):
-                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha_prec.shape)
+                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha.shape)
                 alpha_no_0bit[-1, :] = 1
-                layer.w_mps_quantizer.alpha_prec.data = alpha_no_0bit
+                layer.w_mps_quantizer.alpha.data = alpha_no_0bit
         conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
-        conv1.w_mps_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
+        conv1.w_mps_quantizer.alpha.data = alpha  # update conv1 layer's alpha
         mixprec_net(x)  # perform a forward pass to update the out_features_eff values
         self.assertEqual(conv1.out_features_eff.item(), 7)
 
@@ -528,11 +529,11 @@ class TestMPSConvert(unittest.TestCase):
                           hard_softmax=True)
         for layer in mixprec_net.modules():
             if isinstance(layer, MPSConv2d) or isinstance(layer, MPSLinear):
-                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha_prec.shape)
+                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha.shape)
                 alpha_no_0bit[-1, :] = 1
-                layer.w_mps_quantizer.alpha_prec.data = alpha_no_0bit
+                layer.w_mps_quantizer.alpha.data = alpha_no_0bit
         conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
-        conv1.w_mps_quantizer.alpha_prec.data = alpha_prec  # update conv1 layer's alpha_prec
+        conv1.w_mps_quantizer.alpha.data = alpha  # update conv1 layer's alpha
         mixprec_net(x)  # perform a forward pass to update the out_features_eff values
         self.assertEqual(conv1.out_features_eff.item(), 9)
 
@@ -576,13 +577,13 @@ class TestMPSConvert(unittest.TestCase):
 
         for layer in mixprec_net.modules():  # force sampling of 8-bit precision
             if isinstance(layer, MPSConv2d) or isinstance(layer, MPSLinear):
-                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha_prec.shape)
+                alpha_no_0bit = torch.zeros(layer.w_mps_quantizer.alpha.shape)
                 alpha_no_0bit[-1, :] = 1
-                layer.w_mps_quantizer.alpha_prec.data = alpha_no_0bit
+                layer.w_mps_quantizer.alpha.data = alpha_no_0bit
         # prune one channel of conv1 layer
         conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
-        conv1.w_mps_quantizer.alpha_prec.data[0, 2] = 1
-        conv1.w_mps_quantizer.alpha_prec.data[-1, 2] = 0
+        conv1.w_mps_quantizer.alpha.data[0, 2] = 1
+        conv1.w_mps_quantizer.alpha.data[-1, 2] = 0
         mixprec_net(x)
 
         fc = cast(MPSLinear, mixprec_net.seed.fc)
@@ -673,8 +674,16 @@ class TestMPSConvert(unittest.TestCase):
             quantizer_1_a, quantizer_2_a = None, None
             quantizer_1_w, quantizer_2_w = None, None
             if act_or_w == 'act' or act_or_w == 'both':
-                quantizer_1_a = converted_layer_names[layer_1].out_a_mps_quantizer
-                quantizer_2_a = converted_layer_names[layer_2].out_a_mps_quantizer
+                # special case for bias quantizers, whose act quantizer is called
+                # "in_a_mps_quantizer" rather than "out_a_mps_quantizer"
+                if 'b_mps_quantizer' in layer_1:
+                    quantizer_1_a = converted_layer_names[layer_1].in_a_mps_quantizer
+                else:
+                    quantizer_1_a = converted_layer_names[layer_1].out_a_mps_quantizer
+                if 'b_mps_quantizer' in layer_2:
+                    quantizer_2_a = converted_layer_names[layer_2].in_a_mps_quantizer
+                else:
+                    quantizer_2_a = converted_layer_names[layer_2].out_a_mps_quantizer
             if act_or_w == 'w' or act_or_w == 'both':
                 quantizer_1_w = converted_layer_names[layer_1].w_mps_quantizer
                 quantizer_2_w = converted_layer_names[layer_2].w_mps_quantizer

@@ -44,7 +44,11 @@ class TestMPSSearch(unittest.TestCase):
                           a_precisions=a_prec,
                           w_precisions=w_prec)
         # Check the total bits for the whole net
-        eff_w_prec = sum(list(w_prec)) / len(w_prec)
+        # all computed using torch to ensure same numerical precision
+        theta_alpha = torch.nn.functional.softmax(
+                torch.tensor([p/max(w_prec) for p in w_prec]), dim=0)
+        w_prec_tensor = torch.tensor(w_prec)
+        eff_w_prec = torch.sum(torch.mul(w_prec_tensor, theta_alpha))
         exp_size_conv1 = 3 * 10 * 3 * 3 * eff_w_prec
         exp_size_conv2 = (10 * 20 * 5 * 5) * eff_w_prec
         exp_size_fc = (980 * 2) * eff_w_prec
@@ -55,16 +59,19 @@ class TestMPSSearch(unittest.TestCase):
         self.assertEqual(float(mixprec_net.get_cost()),
                          float(mixprec_net.cost),
                          "get_cost() returns wrong result")
-
-        eff_a_prec = sum(list(a_prec)) / len(a_prec)
+        # all computed using torch to ensure same numerical precision
+        theta_alpha = torch.nn.functional.softmax(
+                torch.tensor([p/max(a_prec) for p in a_prec]), dim=0)
+        a_prec_tensor = torch.tensor(a_prec)
+        eff_a_prec = torch.sum(torch.mul(a_prec_tensor, theta_alpha))
         exp_macs_conv1 = exp_size_conv1 * \
             input_shape[1] * input_shape[2] * eff_a_prec
         # conv2 has half the output length due to pooling
-        exp_macs_net = 2 * exp_macs_conv1 + \
-            (exp_size_conv2 * eff_a_prec *
-             ((input_shape[1] // 2) * (input_shape[2] // 2)))
+        exp_macs_conv2 = exp_size_conv2 * \
+            ((input_shape[1] // 2) * (input_shape[2] // 2)) * eff_a_prec
         # for FC, macs and size are equal
-        exp_macs_net = exp_macs_net + exp_size_fc * eff_a_prec
+        exp_macs_fc = exp_size_fc * eff_a_prec
+        exp_macs_net = exp_macs_conv1 + exp_macs_conv1 + exp_macs_conv2 + exp_macs_fc
         mixprec_net.cost_specification = ops_bit
         self.assertAlmostEqual(float(mixprec_net.cost), exp_macs_net, None, "Wrong net MACs",
                                delta=1)
@@ -82,9 +89,8 @@ class TestMPSSearch(unittest.TestCase):
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape)
         optimizer = torch.optim.Adam(mixprec_net.parameters(), lr=1e-2)
         n_steps = 10
-        with torch.no_grad():
-            x = torch.rand((batch_size,) + nn_ut.input_shape)
-            mixprec_net(x)
+        x = torch.rand((batch_size,) + nn_ut.input_shape)
+        mixprec_net(x)
         prev_loss = mixprec_net.get_cost()
         for _ in range(n_steps):
             optimizer.zero_grad()
@@ -220,8 +226,8 @@ class TestMPSSearch(unittest.TestCase):
         alpha_masks = []
         for layer in convs:
             alpha_masks.append({
-                'alpha_a': layer.out_a_mps_quantizer.alpha_prec.clone().detach(),
-                'alpha_w': layer.w_mps_quantizer.alpha_prec.clone().detach(),
+                'alpha_a': layer.out_a_mps_quantizer.alpha.clone().detach(),
+                'alpha_w': layer.w_mps_quantizer.alpha.clone().detach(),
             })
 
         for alpha_set in alpha_masks:
@@ -242,7 +248,7 @@ class TestMPSSearch(unittest.TestCase):
         w_prec = (8, 4, 2)
         mixprec_net = MPS(nn_ut,
                           input_shape=nn_ut.input_shape,
-                          cost=params_bit,
+                          cost=ops_bit,
                           w_search_type=MPSType.PER_CHANNEL,
                           a_precisions=a_prec,
                           w_precisions=w_prec)
@@ -263,22 +269,12 @@ class TestMPSSearch(unittest.TestCase):
             loss.backward()
             optimizer.step()
 
-        # check that in the alpha nas params the greatest value is the one corresponding
-        # to the first idx (lowest prec)
-        alpha_masks = []
-        for layer in convs:
-            alpha_masks.append({
-                'alpha_a': layer.out_a_mps_quantizer.alpha_prec.clone().detach(),
-                'alpha_w': layer.w_mps_quantizer.alpha_prec.clone().detach(),
-            })
-
-        for alpha_set in alpha_masks:
-            selected_a_prec = a_prec[int(alpha_set['alpha_a'].argmax())]
+        for conv in convs:
+            selected_a_prec = conv.selected_out_a_precision
             self.assertTrue(selected_a_prec == 2,
                             f"Selected act prec is {selected_a_prec} instead of 2.")
-            selected_w_prec = [w_prec[int(i)]
-                               for i in alpha_set['alpha_w'].argmax(dim=0)]
-            self.assertTrue(selected_w_prec == [2] * alpha_set['alpha_w'].shape[-1],
+            selected_w_prec = conv.selected_w_precision
+            self.assertTrue(selected_w_prec == [2] * conv.out_channels,
                             f"Selected w prec is {selected_w_prec} instead of 2.")
 
     def test_combined_loss_layer(self):
@@ -332,7 +328,6 @@ class TestMPSSearch(unittest.TestCase):
             total_loss.backward()
             optimizer.step()
             conv1_weight = conv1.weight.clone().detach()
-            print("Cout=0, Cin=0 weights:", conv1_weight[0, 0])
             self.assertFalse(torch.all(torch.isclose(
                 prev_conv1_weight, conv1_weight)))
             prev_conv1_weight = conv1_weight
@@ -343,7 +338,7 @@ class TestMPSSearch(unittest.TestCase):
         nn_ut = SimpleNN2D()
         batch_size = 32
         lambda_param = 0.0005
-        n_steps = 10
+        n_steps = 50
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(mixprec_net.parameters())
@@ -371,7 +366,7 @@ class TestMPSSearch(unittest.TestCase):
         nn_ut = SimpleNN2D()
         batch_size = 32
         lambda_param = 0.0005
-        n_steps = 10
+        n_steps = 50
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape,
                           w_search_type=MPSType.PER_CHANNEL)
         criterion = torch.nn.CrossEntropyLoss()
