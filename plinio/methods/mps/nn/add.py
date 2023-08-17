@@ -272,7 +272,6 @@ class MPSAdd(nn.Module, MPSModule):
         """
         return self._in_mps_quantizer
 
-    # @in_mps_quantizer.setter
     def set_in_mps_quantizer(self, qtz: MPSPerLayerQtz):
         """Set the `MPSQtzLayer` for input activations calculation
 

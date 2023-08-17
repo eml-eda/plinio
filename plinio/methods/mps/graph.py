@@ -512,8 +512,6 @@ def register_in_mps_quantizers(mod: fx.GraphModule):
             while not is_inherited_layer(prev_n, mod, (MPSModule,)):
                 prev_n = prev_n.meta['input_features_set_by']
             prev_submod = mod.get_submodule(str(prev_n.target))
-            # sub_mod.in_mps_quantizer = cast(MPSPerLayerQtz, prev_submod.out_mps_quantizer)
-            # TODO: restore setter
             sub_mod.set_in_mps_quantizer(cast(MPSPerLayerQtz, prev_submod.out_mps_quantizer))
 
 
