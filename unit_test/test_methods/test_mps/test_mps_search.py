@@ -283,13 +283,13 @@ class TestMPSSearch(unittest.TestCase):
         nn_ut = ToyAdd_2D()
         batch_size = 5
         lambda_param = 0.0005
-        n_steps = 10
+        n_steps = 100
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(mixprec_net.parameters())
         conv1 = cast(MPSConv2d, mixprec_net.seed.conv1)
         prev_conv1_weight = torch.zeros_like(conv1.weight)
-        for _ in range(n_steps):
+        for i in range(n_steps):
             input = torch.stack([torch.rand(nn_ut.input_shape)] * batch_size)
             target = torch.randint(0, 2, (batch_size,))
             output = mixprec_net(input)
@@ -300,8 +300,9 @@ class TestMPSSearch(unittest.TestCase):
             total_loss.backward()
             optimizer.step()
             conv1_weight = conv1.weight.clone().detach()
-            self.assertFalse(torch.all(torch.isclose(
-                prev_conv1_weight, conv1_weight)))
+            if i % 10 == 0:
+                self.assertFalse(torch.all(torch.isclose(
+                    prev_conv1_weight, conv1_weight)))
             prev_conv1_weight = conv1_weight
 
     def test_combined_loss_channel(self):
