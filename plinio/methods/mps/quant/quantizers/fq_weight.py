@@ -45,21 +45,18 @@ class FQWeight(Quantizer):
                  ch_wise: bool = True,
                  train_scale_param: bool = True,
                  dequantize: bool = True):
-        super(FQWeight, self).__init__()
-        self.precision = precision
+        super(FQWeight, self).__init__(precision, dequantize)
         self.quant_bins = 2**(self.precision - 1) - 1
         self.cout = cout
         self.ch_wise = ch_wise
         self.train_scale_param
-        self.dequantize = dequantize
 
         # Trainable scale param
         self.n_s = cout if ch_wise else 1
         self.scale_param = nn.Parameter(torch.Tensor(self.n_s),
                                         requires_grad=train_scale_param)
-        # self.register_buffer('s_w', torch.Tensor(cout))
-        self.s_w = torch.Tensor(cout)
-        self.s_w.fill_(1.)
+        self._scale = torch.Tensor(cout)
+        self._scale.fill_(1.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the FQ weight quantizer.
@@ -79,7 +76,7 @@ class FQWeight(Quantizer):
         # Quantize
         input_q = FQ_Quant_STE.apply(input_scaled,
                                      self.quant_bins)
-        self.s_w = exp_scale_param / self.quant_bins
+        self._scale = exp_scale_param / self.quant_bins
         if self.dequantize:
             return input_q * exp_scale_param
         else:
@@ -106,7 +103,7 @@ class FQWeight(Quantizer):
         :rtype: Dict[str, Any]
         """
         return {
-            'scale_factor': self.s_w,
+            'scale_factor': self.scale,
         }
 
     def named_quant_parameters(
@@ -128,11 +125,21 @@ class FQWeight(Quantizer):
                 prfx + "weight_quantizer", recurse):
             yield name, param
 
+    @property
+    def scale(self) -> torch.Tensor:
+        """Return the computed scale factor which depends upon self.precision and
+        self.clip_val
+
+        :return: the scale factor
+        :rtype: torch.Tensor
+        """
+        return self._scale
+
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
             f'(precision={self.precision}, '
-            f'scale_factor={self.s_w})'
+            f'scale_factor={self.scale})'
         )
         return msg
 

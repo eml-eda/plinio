@@ -88,7 +88,7 @@ class QuantConv2d(nn.Conv2d, QuantModule):
         # Quantization of weight and bias
         q_w = self.w_quantizer(self.weight)
         q_b = self.b_quantizer(self.bias,
-                               self.in_quantizer.s_a, self.w_quantizer.s_w)
+                               self.in_quantizer.scale, self.w_quantizer.scale)
         # Linear operation
         out = self._conv_forward(input, q_w, q_b)
 

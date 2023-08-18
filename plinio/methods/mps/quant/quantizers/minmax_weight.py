@@ -41,19 +41,15 @@ class MinMaxWeight(Quantizer):
                  cout: int,
                  symmetric: bool = True,
                  dequantize: bool = True):
-        super(MinMaxWeight, self).__init__()
-        self._precision = precision
+        super(MinMaxWeight, self).__init__(precision, dequantize)
         if symmetric:
             self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
             self.compute_min_max = self._compute_min_max_sym
         else:
             self.qtz_func = MinMax_Asym_STE
             self.compute_min_max = self._compute_min_max_asym
-        self._dequantize = dequantize
-        self.register_buffer('ch_max', torch.Tensor(cout))
-        self.register_buffer('ch_min', torch.Tensor(cout))
-        # self.s_w = torch.Tensor(cout)
-        # self.s_w.fill_(1.)
+        self.ch_max = torch.Tensor(cout)
+        self.ch_min = torch.Tensor(cout)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the MinMax weight quantizer.
@@ -91,7 +87,7 @@ class MinMaxWeight(Quantizer):
         raise NotImplementedError("TODO")
 
     @property
-    def s_w(self) -> torch.Tensor:
+    def scale(self) -> torch.Tensor:
         """Return the computed scale factor which depends upon self.precision and
         weights magnitude
 
@@ -114,7 +110,7 @@ class MinMaxWeight(Quantizer):
         :rtype: Dict[str, Any]
         """
         return {
-            'scale_factor': self.s_w.detach().item(),
+            'scale_factor': self.scale.detach().item(),
         }
 
     def named_quant_parameters(
@@ -135,22 +131,6 @@ class MinMaxWeight(Quantizer):
         for name, param in self.named_parameters(
                 prfx + "weight_quantizer", recurse):
             yield name, param
-
-    @property
-    def precision(self) -> int:
-        return self._precision
-
-    @precision.setter
-    def precision(self, val: int):
-        self._precision = val
-
-    @property
-    def dequantize(self) -> bool:
-        return self._dequantize
-
-    @dequantize.setter
-    def dequantize(self, val: bool):
-        self._dequantize = val
 
     def _compute_min_max_sym(self, input: torch.Tensor
                              ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -182,7 +162,7 @@ class MinMaxWeight(Quantizer):
         msg = (
             f'{self.__class__.__name__}'
             f'(precision={self.precision}, '
-            f'scale_factor={self.s_w})'
+            f'scale_factor={self.scale})'
         )
         return msg
 

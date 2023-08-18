@@ -64,7 +64,7 @@ class DORYLinear(nn.Linear, DORYModule):
         # Copy and integerize pretrained weights
         # N.B., is mandatory to first integerize weight
         # compute self.scale and self.shift which depends upon
-        # self.w_quantizer.s_w which is updated every time we quantize a tensor
+        # self.w_quantizer.scale which is updated every time we quantize a tensor
         with torch.no_grad():
             self.w_quantizer.dequantize = False
             int_weight = self.w_quantizer(linear.weight)
@@ -72,13 +72,10 @@ class DORYLinear(nn.Linear, DORYModule):
             self.weight.copy_(int_weight)
 
         # Compute self.scale_fact and self.shift
-        # TODO: to avoid to ignore linter warning refactor s_w and s_a
-        # to be simply s (or similar name) and put it as a property
-        # in the abstract Quantizer class
-        self.s_w = self.w_quantizer.s_w  # type: ignore
-        self.s_x = self.in_quantizer.s_a  # type: ignore
+        self.s_w = self.w_quantizer.scale
+        self.s_x = self.in_quantizer.scale
         if type(self.out_quantizer) != nn.Identity:
-            self.s_y = self.out_quantizer.s_a  # type: ignore
+            self.s_y = self.out_quantizer.scale
             self.last_layer = False
         else:
             self.s_y = torch.tensor(1., device=self.device)

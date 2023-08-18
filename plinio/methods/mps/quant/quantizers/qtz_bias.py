@@ -42,12 +42,9 @@ class QuantizerBias(Quantizer):
                  precision: int,
                  cout: int,
                  dequantize: bool = True):
-        super(QuantizerBias, self).__init__()
-        self._precision = precision
-        self._dequantize = dequantize
-        # self.register_buffer('s_b', torch.Tensor(cout))
-        self.s_b = torch.Tensor(cout)
-        self.s_b.fill_(1.)
+        super(QuantizerBias, self).__init__(precision, dequantize)
+        self._scale = torch.Tensor(cout)
+        self._scale.fill_(1.)
 
     def forward(self, input: torch.Tensor, s_a: torch.Tensor, s_w: torch.Tensor) -> torch.Tensor:
         """The forward function of the bias quantizer.
@@ -64,12 +61,12 @@ class QuantizerBias(Quantizer):
         :return: the output fake-quantized bias tensor
         :rtype: torch.Tensor
         """
-        self.s_b = s_a * s_w
-        scaled_inp = Quantize_Bias_STE.apply(input, self.s_b)
+        self._scale = s_a * s_w
+        scaled_inp = Quantize_Bias_STE.apply(input, self.scale)
         output = Round_STE.apply(scaled_inp)
 
         if self.dequantize:
-            output = self.s_b * output
+            output = self.scale * output
 
         return output
 
@@ -94,7 +91,7 @@ class QuantizerBias(Quantizer):
         :rtype: Dict[str, Any]
         """
         return {
-            'scale_factor': self.s_b,
+            'scale_factor': self.scale,
         }
 
     def named_quant_parameters(
@@ -117,26 +114,19 @@ class QuantizerBias(Quantizer):
             yield name, param
 
     @property
-    def precision(self) -> int:
-        return self._precision
+    def scale(self) -> torch.Tensor:
+        """Return the computed scale factor
 
-    @precision.setter
-    def precision(self, val: int):
-        self._precision = val
-
-    @property
-    def dequantize(self) -> bool:
-        return self._dequantize
-
-    @dequantize.setter
-    def dequantize(self, val: bool):
-        self._dequantize = val
+        :return: the scale factor
+        :rtype: torch.Tensor
+        """
+        return self._scale
 
     def __repr__(self):
         msg = (
             f'{self.__class__.__name__}'
             f'(precision={self.precision}, '
-            f'scale_factor={self.s_b})'
+            f'scale_factor={self.scale})'
         )
         return msg
 

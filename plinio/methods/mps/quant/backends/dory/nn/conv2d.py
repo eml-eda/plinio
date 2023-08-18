@@ -81,10 +81,10 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         # TODO: to avoid to ignore linter warning refactor s_w and s_a
         # to be simply s (or similar name) and put it as a property
         # in the abstract Quantizer class
-        self.s_w = self.w_quantizer.s_w
-        self.s_x = self.in_quantizer.s_a
+        self.s_w = self.w_quantizer.scale
+        self.s_x = self.in_quantizer.scale
         if type(self.out_quantizer) != nn.Identity:
-            self.s_y = self.out_quantizer.s_a
+            self.s_y = self.out_quantizer.scale
             self.skip_requant = False
         else:
             self.s_y = torch.tensor(1., device=self.device)

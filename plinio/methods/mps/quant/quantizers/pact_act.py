@@ -43,14 +43,8 @@ class PACTAct(Quantizer):
                  cout: None = None,
                  init_clip_val: float = 6.,
                  dequantize: bool = True):
-        super(PACTAct, self).__init__()
-        self._precision = precision
+        super(PACTAct, self).__init__(precision, dequantize)
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]), requires_grad=True)
-        self._dequantize = dequantize
-        # Buffer is probably wrong choice cause we might need gradients (?)
-        # self.register_buffer('s_a', torch.Tensor(1))
-        # self.s_a = torch.Tensor(1)
-        # self.s_a.fill_(1.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the PACT activartion quantizer.
@@ -63,12 +57,10 @@ class PACTAct(Quantizer):
         :return: the output fake-quantized activations tensor
         :rtype: torch.Tensor
         """
-        # input_q, s_a = PACT_Act_STE.apply(input,
         input_q = PACT_Act_STE.apply(input,
                                      self.precision,
                                      self.clip_val,
                                      self.dequantize)
-        # self.s_a = 1 / s_a
         return input_q
 
     @staticmethod
@@ -86,7 +78,7 @@ class PACTAct(Quantizer):
         raise NotImplementedError("TODO")
 
     @property
-    def s_a(self) -> torch.Tensor:
+    def scale(self) -> torch.Tensor:
         """Return the computed scale factor which depends upon self.precision and
         self.clip_val
 
@@ -103,7 +95,7 @@ class PACTAct(Quantizer):
         """
         return {
             'clip_val': self.clip_val,
-            'scale_factor': self.s_a
+            'scale_factor': self.scale
         }
 
     def named_quant_parameters(
@@ -130,25 +122,9 @@ class PACTAct(Quantizer):
             f'{self.__class__.__name__}'
             f'(precision={self.precision}, '
             f'clip_val={self.clip_val}, '
-            f'scale_factor={self.s_a})'
+            f'scale_factor={self.scale})'
         )
         return msg
-
-    @property
-    def precision(self) -> int:
-        return self._precision
-
-    @precision.setter
-    def precision(self, val: int):
-        self._precision = val
-
-    @property
-    def dequantize(self) -> bool:
-        return self._dequantize
-
-    @dequantize.setter
-    def dequantize(self, val: bool):
-        self._dequantize = val
 
 
 class PACT_Act_STE(torch.autograd.Function):
@@ -200,15 +176,9 @@ class PACT_Act_Signed(Quantizer):
                  init_clip_val_sup: float = 6.,
                  init_clip_val_inf: float = -6.,
                  dequantize: bool = True):
-        super(PACT_Act_Signed, self).__init__()
-        self._precision = precision
+        super(PACT_Act_Signed, self).__init__(precision, dequantize)
         self.clip_val_sup = nn.Parameter(torch.Tensor([init_clip_val_sup]), requires_grad=True)
         self.clip_val_inf = nn.Parameter(torch.Tensor([init_clip_val_inf]), requires_grad=True)
-        self._dequantize = dequantize
-        # Buffer is probably wrong choice cause we might need gradients (?)
-        # self.register_buffer('s_a', torch.Tensor(1))
-        # self.s_a = torch.Tensor(1)
-        # self.s_a.fill_(1.)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the PACT activartion quantizer.
@@ -221,13 +191,11 @@ class PACT_Act_Signed(Quantizer):
         :return: the output fake-quantized activations tensor
         :rtype: torch.Tensor
         """
-        # input_q, s_a = PACT_Act_STE.apply(input,
         input_q = PACT_Act_Signed_STE.apply(input,
                                             self.precision,
                                             self.clip_val_sup,
                                             self.clip_val_inf,
                                             self.dequantize)
-        # self.s_a = 1 / s_a
         return input_q
 
     @staticmethod
@@ -245,7 +213,7 @@ class PACT_Act_Signed(Quantizer):
         raise NotImplementedError("TODO")
 
     @property
-    def s_a(self) -> torch.Tensor:
+    def scale(self) -> torch.Tensor:
         """Return the computed scale factor which depends upon self.precision and
         self.clip_val
 
@@ -262,7 +230,7 @@ class PACT_Act_Signed(Quantizer):
         """
         return {
             'clip_val': self.clip_val,
-            'scale_factor': self.s_a
+            'scale_factor': self.scale
         }
 
     def named_quant_parameters(
@@ -290,7 +258,7 @@ class PACT_Act_Signed(Quantizer):
             f'(precision={self.precision}, '
             f'clip_val_sup={self.clip_val_sup}, '
             f'clip_val_inf={self.clip_val_inf}, '
-            f'scale_factor={self.s_a})'
+            f'scale_factor={self.scale})'
         )
         return msg
 

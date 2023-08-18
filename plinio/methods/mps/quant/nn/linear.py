@@ -84,7 +84,7 @@ class QuantLinear(nn.Linear, QuantModule):
         # Quantization
         q_w = self.w_quantizer(self.weight)
         q_b = self.b_quantizer(self.bias,
-                               self.in_quantizer.s_a, self.w_quantizer.s_w)
+                               self.in_quantizer.scale, self.w_quantizer.scale)
         # Linear operation
         out = F.linear(input, q_w, q_b)
 

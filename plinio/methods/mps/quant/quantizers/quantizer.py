@@ -28,8 +28,10 @@ class Quantizer(nn.Module):
     """An abstract class representing the interface that all Quantizer layers should implement
     """
     @abstractmethod
-    def __init__(self, *args):
+    def __init__(self, precision: int, dequantize: bool):
         super(Quantizer, self).__init__()
+        self._precision = precision
+        self._dequantize = dequantize
 
     @abstractmethod
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -87,21 +89,27 @@ class Quantizer(nn.Module):
             yield param
 
     @property
-    @abstractmethod
     def precision(self) -> int:
-        raise NotImplementedError("Calling precision on base abstract Quantizer class")
+        return self._precision
 
     @precision.setter
-    @abstractmethod
     def precision(self, val: int):
-        raise NotImplementedError("Calling precision on base abstract Quantizer class")
+        self._precision = val
+
+    @property
+    def dequantize(self) -> bool:
+        return self._dequantize
+
+    @dequantize.setter
+    def dequantize(self, val: bool):
+        self._dequantize = val
 
     @property
     @abstractmethod
-    def dequantize(self) -> bool:
-        raise NotImplementedError("Calling dequantize on base abstract Quantizer class")
+    def scale(self) -> torch.Tensor:
+        """Return the quantizers' scale factor
 
-    @dequantize.setter
-    @abstractmethod
-    def dequantize(self, val: bool):
-        raise NotImplementedError("Calling dequantize on base abstract Quantizer class")
+        :return: the scale factor
+        :rtype: torch.Tensor
+        """
+        raise NotImplementedError("Calling scale on base abstract Quantizer class")

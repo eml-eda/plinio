@@ -158,6 +158,21 @@ class MPSBaseQtz(nn.Module):
             self.sample_alpha = self.sample_alpha_sm
 
     @property
+    def effective_scale(self) -> torch.Tensor:
+        """Return the quantizer's effective scale factor as the average scale factor weighted
+        by softmax-ed `alpha` parameters
+
+        :return: the effective scale factor, either a scalar tensor (per-layer scale) or a
+        rank-1 tensor (per-channel scale)
+        :rtype: torch.Tensor
+        :raises: NotImplementedError on the base class
+        """
+        scale = torch.tensor(0, dtype=torch.float32)
+        for i, qtz in enumerate(self.qtz_funcs):
+            scale = scale + (self.theta_alpha[i] * qtz.scale)
+        return scale
+
+    @property
     @abstractmethod
     def effective_precision(self) -> torch.Tensor:
         """Return the layer's effective precision as the average precision weighted by softmax-ed
@@ -396,31 +411,8 @@ class MPSBiasQtz(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        y = self.qtz_func(input, self.s_a, self.s_w)
-        return y
-
-    @property
-    def s_a(self) -> torch.Tensor:
-        """Return the aggregated act scale factor
-        :return: the scale factor
-        :rtype: torch.Tensor
-        """
-        s_a = torch.tensor(0, dtype=torch.float32)
-        # assume this has been set by enclosing MPSModule
         in_mps_quantizer = cast(MPSPerLayerQtz, self.in_mps_quantizer)
-        sm_alpha = in_mps_quantizer.theta_alpha
-        for i, qtz in enumerate(in_mps_quantizer.qtz_funcs):
-            s_a = s_a + (sm_alpha[i] * qtz.s_a)
-        return s_a
-
-    @property
-    def s_w(self) -> torch.Tensor:
-        """Return the aggregated weight scale factor
-        :return: the scale factor
-        :rtype: torch.Tensor
-        """
-        s_w = torch.tensor(0, dtype=torch.float32)
-        sm_alpha = self.w_mps_quantizer.theta_alpha
-        for i, qtz in enumerate(self.w_mps_quantizer.qtz_funcs):
-            s_w = s_w + (sm_alpha[i] * qtz.s_w)
-        return s_w
+        y = self.qtz_func(input,
+                          in_mps_quantizer.effective_scale,
+                          self.w_mps_quantizer.effective_scale)
+        return y
