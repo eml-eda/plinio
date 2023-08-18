@@ -434,7 +434,6 @@ def named_leaf_modules(mod: fx.GraphModule) -> List[Tuple[str, fx.Node, nn.Modul
     Precisely, it returns a list of tuples (module name, fx.Node, nn.Module)"""
     res = []
     g = fx_to_nx_graph(mod.graph)
-    # TODO: only considers call_module for now. Cost of call_method/call_function will be ignored
     for n in g.nodes:
         if n.op == 'call_module':
             res.append((str(n.target), n, mod.get_submodule(str(n.target))))

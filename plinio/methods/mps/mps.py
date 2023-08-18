@@ -17,7 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Any, Tuple, Type, Iterable, Dict, cast, Iterator, Union, Optional
+from typing import Any, Tuple, Type, Iterable, Dict, Iterator, Union, Optional
 import torch
 import torch.nn as nn
 
@@ -316,28 +316,6 @@ class MPS(DNAS):
             if name not in exclude:
                 yield name, param
 
-    def get_cost(self, name: Optional[str] = None) -> torch.Tensor:
-        """Returns the value of the model cost metric named "name".
-        Only allowed alternative in case of multiple cost metrics.
-
-        :raises NotImplementedError: on the base DNAS class
-        :rtype: torch.Tensor
-        """
-        # TODO: Identical to PIT. Factor-out to DNAS?
-        if name is None:
-            assert isinstance(self._cost_specification, CostSpec), \
-                "Multiple model cost metrics provided, you must use .get_cost('cost_name')"
-            cost_spec = self._cost_specification
-            cost_fn_map = self._cost_fn_map
-        else:
-            assert isinstance(self._cost_specification, dict), \
-                "The provided cost specification is not a dictionary."
-            cost_spec = self._cost_specification[name]
-            cost_fn_map = self._cost_fn_map[name]
-        cost_spec = cast(CostSpec, cost_spec)
-        cost_fn_map = cast(Dict[str, CostFn], cost_fn_map)
-        return self._get_single_cost(cost_spec, cost_fn_map)
-
     def _get_single_cost(self, cost_spec: CostSpec,
                          cost_fn_map: Dict[str, CostFn]) -> torch.Tensor:
         """Private method to compute a single cost value"""
@@ -357,17 +335,6 @@ class MPS(DNAS):
                 v.update(shapes_dict(node))
                 cost = cost + cost_fn_map[lname](v)
         return cost
-
-    def _create_cost_fn_map(self) -> Union[Dict[str, CostFn], Dict[str, Dict[str, CostFn]]]:
-        """Private method to define a map from layers to cost value(s)"""
-        # TODO: identical to PIT. Factor-out to DNAS?
-        if isinstance(self._cost_specification, dict):
-            cost_fn_maps = {}
-            for n, c in self._cost_specification.items():
-                cost_fn_maps[n] = self._single_cost_fn_map(c)
-        else:
-            cost_fn_maps = self._single_cost_fn_map(self._cost_specification)
-        return cost_fn_maps
 
     def _single_cost_fn_map(self, c: CostSpec) -> Dict[str, CostFn]:
         """MPS-specific creator of {layertype, cost_fn} maps based on a CostSpec."""

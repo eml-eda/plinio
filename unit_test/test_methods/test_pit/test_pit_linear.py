@@ -27,7 +27,6 @@ from plinio.methods.pit.nn.features_masker import PITFeaturesMasker
 class TestPITLinear(unittest.TestCase):
     """Test PITConv2d functionalities"""
 
-    # TODO: this test sometimes fails...
     def test_pitlinear_features_mask_output(self):
         """Test that the output of a PITLinear layer with some masked features is equivalent
         to the output of the correspondent nn.Module"""
