@@ -168,6 +168,7 @@ class MPSIdentity(nn.Identity, MPSModule):
             # downscale the output_channels times the probability of using that
             # output precision
             # TODO: verify that it's correct to use out_features_eff here, differently from
+            # conv/linear
             # TODO: this is the only layer using out_precision/out_format (as opposed to
             # in_precision/in_format) at the moment
             v['out_channels'] = (self.out_features_eff *
@@ -181,9 +182,7 @@ class MPSIdentity(nn.Identity, MPSModule):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but MPSModule never have sub-layers TODO: check if true
-        :type recurse: bool
+        :param recurse: recurse into sub-modules
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """

@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Fabio Eterno <fabio.eterno@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from typing import Tuple, cast
+from typing import cast
 import unittest
 import math
 import torch
@@ -28,6 +28,7 @@ from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import ToyAdd, ToyFlatten, ToyRegression, ToyAdd_2D
 import torch.optim as optim
+from unit_test.test_methods.test_pit.utils import check_output_equal
 
 
 class TestPITSearch(unittest.TestCase):
@@ -52,7 +53,7 @@ class TestPITSearch(unittest.TestCase):
         """
         nn_ut = SimpleNN()
         pit_net = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        self._check_output_equal(nn_ut, pit_net, nn_ut.input_shape)
+        check_output_equal(self, nn_ut, pit_net, nn_ut.input_shape)
 
     def test_converted_output_advanced(self):
         """Test that the output of a model converted to PIT is the same as the original nn.Module,
@@ -61,7 +62,7 @@ class TestPITSearch(unittest.TestCase):
         input_shape = (6, 50)
         nn_ut = TCResNet14(self.tc_resnet_config)
         pit_net = PIT(nn_ut, input_shape=input_shape)
-        self._check_output_equal(nn_ut, pit_net, input_shape)
+        check_output_equal(self, nn_ut, pit_net, input_shape)
 
     def test_regularization_loss_init(self):
         """Test the regularization loss computation on an initialized model"""
@@ -488,16 +489,15 @@ class TestPITSearch(unittest.TestCase):
         conv2 = cast(PITConv1d, pit_net.seed.conv2)
         convs = [conv0, conv1, conv2]
         initial_masks = [layer.dilation_masker.theta.clone().detach() for layer in convs]
-        max_dils = [2, 2, 4]
         ths = [layer.binarization_threshold for layer in convs]
-        for i in range(steps):
+        for _ in range(steps):
             x = torch.rand((batch_size,) + nn_ut.input_shape)
             pit_net(x)
             loss = pit_net.get_cost()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        for layer, max_dil, th, initial in zip(convs, max_dils, ths, initial_masks):
+        for layer, th, initial in zip(convs, ths, initial_masks):
             # theta gamma should be fixed at init value
             self.assertTrue(torch.all(layer.dilation_masker.theta == initial),
                             "Dilation mask changed unexpectedly")
@@ -586,19 +586,6 @@ class TestPITSearch(unittest.TestCase):
         self.assertLess(running_err, 1, "Error not decreasing")
         conv0 = cast(PITConv1d, pit_net.seed.conv0)
         self.assertLess(conv0.out_features_opt, conv0.out_channels, "Channels not decreasing")
-
-    def _check_output_equal(self, nn: nn.Module, pit_nn: PIT, input_shape: Tuple[int, ...],
-                            iterations=10):
-        """Verify that a model and a PIT model produce the same output given the same input"""
-        # TODO: avoid duplicated definition with PIT masking
-        for i in range(iterations):
-            # add batch size in front
-            x = torch.rand((32,) + input_shape)
-            nn.eval()
-            pit_nn.eval()
-            y = nn(x)
-            pit_y = pit_nn(x)
-            self.assertTrue(torch.allclose(y, pit_y, atol=1e-7), "Wrong output of PIT model")
 
 
 if __name__ == '__main__':

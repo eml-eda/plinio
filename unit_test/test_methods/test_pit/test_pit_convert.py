@@ -16,16 +16,14 @@
 # *                                                                            *
 # * Author:  Fabio Eterno <fabio.eterno@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from typing import cast, Iterable, Tuple, Type, Dict
+from typing import cast, Tuple
 import unittest
 import warnings
 
 import torch
 import torch.nn as nn
 from plinio.methods import PIT
-from plinio.methods.pit.nn import PITConv1d, PITConv2d, PITLinear
-from plinio.methods.pit.nn import PITModule
-from plinio.methods.pit.nn.features_masker import PITFrozenFeaturesMasker
+from plinio.methods.pit.nn import PITConv1d, PITConv2d
 from unit_test.models import SimpleNN
 from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
@@ -33,6 +31,10 @@ from unit_test.models import ToyAdd, ToyMultiPath1, ToyMultiPath2, ToyInputConne
 from unit_test.models import ToyBatchNorm, ToyIllegalBN
 from unit_test.models import DSCNN
 from unit_test.models import TCN_IR
+from unit_test.test_methods.test_pit.utils import compare_prepared, check_target_layers, \
+        check_input_features, check_shared_maskers, check_frozen_maskers, check_layers_exclusion, \
+        check_batchnorm_folding, check_batchnorm_unfolding, check_batchnorm_memory, \
+        compare_identical
 
 
 class TestPITConvert(unittest.TestCase):
@@ -55,17 +57,17 @@ class TestPITConvert(unittest.TestCase):
         """Test the conversion of a simple sequential model with layer autoconversion"""
         nn_ut = SimpleNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=3)
-        self._check_input_features(new_nn, {'conv0': 3, 'conv1': 32, 'fc': 570})
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=3)
+        check_input_features(self, new_nn, {'conv0': 3, 'conv1': 32, 'fc': 570})
 
     def test_autoimport_advanced(self):
         """Test the conversion of a ResNet-like model"""
         config = self.tc_resnet_config
         nn_ut = TCResNet14(config)
         new_nn = PIT(nn_ut, input_shape=(6, 50))
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=3 * len(config['num_channels'][1:]) + 2)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=3 * len(config['num_channels'][1:]) + 2)
         # check some random layers input features
         fc_in_feats = config['num_channels'][-1] * (3 if config['avg_pool'] else 6)
         expected_features = {
@@ -75,14 +77,14 @@ class TestPITConvert(unittest.TestCase):
             'tcn.network.5.tcn1': config['num_channels'][-1],
             'out': fc_in_feats,
         }
-        self._check_input_features(new_nn, expected_features)
+        check_input_features(self, new_nn, expected_features)
 
     def test_raised_err_complex_shape(self):
         """Test that PIT raises TypeError"""
         nn_ut = SimpleNN()
         complex_shape = [nn_ut.input_shape, nn_ut.input_shape]
         with self.assertRaises(TypeError) as context:
-            PIT(nn_ut, input_shape=complex_shape)
+            PIT(nn_ut, input_shape=complex_shape)  # type: ignore
         msg = 'A TypeError error must be raised.'
         self.assertTrue(isinstance(context.exception, TypeError), msg)
 
@@ -100,9 +102,9 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = DSCNN()
         example = torch.stack([torch.rand(nn_ut.input_shape)] * 3, 0)
         new_nn = PIT(nn_ut, input_example=example, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=14)
-        self._check_input_features(new_nn, {'inputlayer': 1, 'depthwise2': 64,
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=14)
+        check_input_features(self, new_nn, {'inputlayer': 1, 'depthwise2': 64,
                                             'pointwise3': 64, 'out': 64})
         shared_masker_rules = (
             ('inputlayer', 'depthwise1', True),
@@ -110,7 +112,7 @@ class TestPITConvert(unittest.TestCase):
             ('conv2', 'depthwise3', True),
             ('conv3', 'depthwise4', True),
         )
-        self._check_shared_maskers(new_nn, shared_masker_rules)
+        check_shared_maskers(self, new_nn, shared_masker_rules)
 
     def test_autoimport_net_with_complex_input(self):
         """Test the conversion of a model with a complex input type
@@ -118,18 +120,18 @@ class TestPITConvert(unittest.TestCase):
         nn_ut = TCN_IR()
         example = [torch.stack([torch.rand(nn_ut.input_shape)] * 2, 0) for _ in range(3)]
         new_nn = PIT(nn_ut, input_example=example)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=8)
-        self._check_target_layers(new_nn, exp_tgt=4, unique=True)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=8)
+        check_target_layers(self, new_nn, exp_tgt=4, unique=True)
 
     def test_autoimport_multipath(self):
         """Test the conversion of a toy model with multiple concat and add operations"""
         nn_ut = ToyMultiPath1()
         example = torch.stack([torch.rand(nn_ut.input_shape)] * 1, 0)
         new_nn = PIT(nn_ut, input_example=example)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=7)
-        self._check_input_features(new_nn, {'conv2': 3, 'conv4': 50, 'conv5': 64, 'fc': 640})
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=7)
+        check_input_features(self, new_nn, {'conv2': 3, 'conv4': 50, 'conv5': 64, 'fc': 640})
         shared_masker_rules = (
             ('conv2', 'conv4', True),   # inputs to add must share the masker
             ('conv2', 'conv5', True),   # inputs to add must share the masker
@@ -137,18 +139,18 @@ class TestPITConvert(unittest.TestCase):
             ('conv3', 'conv4', False),  # consecutive convs must not share
             ('conv0', 'conv5', False),  # two far aways layers must not share
         )
-        self._check_shared_maskers(new_nn, shared_masker_rules)
+        check_shared_maskers(self, new_nn, shared_masker_rules)
 
         nn_ut = ToyMultiPath2()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=7)
-        self._check_input_features(new_nn, {'conv2': 3, 'conv4': 40})
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=7)
+        check_input_features(self, new_nn, {'conv2': 3, 'conv4': 40})
         shared_masker_rules = (
             ('conv0', 'conv1', True),   # inputs to add
             ('conv2', 'conv3', False),  # concat over channels
         )
-        self._check_shared_maskers(new_nn, shared_masker_rules)
+        check_shared_maskers(self, new_nn, shared_masker_rules)
 
     def test_autoimport_frozen_features(self):
         """Test that input- and output-connected features masks are correctly 'frozen'"""
@@ -159,7 +161,7 @@ class TestPITConvert(unittest.TestCase):
             ('pw_conv', False),  # normal
             ('fc', True),        # output-connected
         )
-        self._check_frozen_maskers(new_nn, frozen_masker_rules)
+        check_frozen_maskers(self, new_nn, frozen_masker_rules)
         nn_ut = ToyAdd()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         frozen_masker_rules = (
@@ -168,49 +170,49 @@ class TestPITConvert(unittest.TestCase):
             ('conv2', False),   # normal
             ('fc', True),       # output-connected
         )
-        self._check_frozen_maskers(new_nn, frozen_masker_rules)
+        check_frozen_maskers(self, new_nn, frozen_masker_rules)
 
     def test_exclude_types_simple(self):
         nn_ut = ToyMultiPath1()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv1d,))
         # excluding Conv1D, only the final FC should be converted to PIT format
-        self._check_target_layers(new_nn, exp_tgt=1)
+        check_target_layers(self, new_nn, exp_tgt=1)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
-        self._check_layers_exclusion(new_nn, excluded)
+        check_layers_exclusion(self, new_nn, excluded)
 
     def test_exclude_names_simple(self):
         nn_ut = ToyMultiPath1()
         excluded = ('conv0', 'conv4')
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
         # excluding conv0 and conv4, there are 5 convertible conv1d and linear layers left
-        self._check_target_layers(new_nn, exp_tgt=5)
-        self._check_layers_exclusion(new_nn, excluded)
+        check_target_layers(self, new_nn, exp_tgt=5)
+        check_layers_exclusion(self, new_nn, excluded)
 
         nn_ut = ToyMultiPath2()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
         # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
-        self._check_target_layers(new_nn, exp_tgt=5)
-        self._check_layers_exclusion(new_nn, excluded)
+        check_target_layers(self, new_nn, exp_tgt=5)
+        check_layers_exclusion(self, new_nn, excluded)
 
     def test_import_simple(self):
         """Test the conversion of a simple sequential model that already contains a PIT layer"""
         nn_ut = SimplePitNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
+        compare_prepared(self, nn_ut, new_nn.seed)
         # convert with autoconvert disabled. This is as if we exclude layers except the one already
         # in PIT form
         excluded = ('conv1')
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
-        self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
+        compare_prepared(self, nn_ut, new_nn.seed, exclude_names=excluded)
 
     def test_batchnorm_fusion(self):
         """Test that batchnorms are correctly fused during import and re-generated during export"""
         nn_ut = ToyBatchNorm()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        self._check_batchnorm_folding(nn_ut, new_nn.seed)
-        self._check_batchnorm_memory(new_nn.seed, ('dw_conv', 'pw_conv', 'fc1'))
+        check_batchnorm_folding(self, nn_ut, new_nn.seed)
+        check_batchnorm_memory(self, new_nn.seed, ('dw_conv', 'pw_conv', 'fc1'))
         exported_nn = new_nn.arch_export()
-        self._check_batchnorm_unfolding(new_nn.seed, exported_nn)
+        check_batchnorm_unfolding(self, new_nn.seed, exported_nn)
 
     def test_batchnorm_fusion_illegal(self):
         """Test that unsupported batchnorm fusions trigger an error"""
@@ -230,31 +232,31 @@ class TestPITConvert(unittest.TestCase):
                 'tcn.network.3.batchnorm0'
                 ]
         new_nn = PIT(nn_ut, input_shape=(6, 50), exclude_names=excluded)
-        self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
+        compare_prepared(self, nn_ut, new_nn.seed, exclude_names=excluded)
         n_layers = 3 * len(config['num_channels'][1:]) + 2 - 3
-        self._check_layers_exclusion(new_nn, excluded)
-        self._check_target_layers(new_nn, exp_tgt=n_layers)
+        check_layers_exclusion(self, new_nn, excluded)
+        check_target_layers(self, new_nn, exp_tgt=n_layers)
 
     def test_export_initial_simple(self):
         """Test the export of a simple sequential model, just after import"""
         nn_ut = SimpleNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         exported_nn = new_nn.arch_export()
-        self._compare_identical(nn_ut, exported_nn)
+        compare_identical(self, nn_ut, exported_nn)
 
     def test_export_initial_advanced(self):
         """Test the conversion of a ResNet-like model, just after import"""
         nn_ut = TCResNet14(self.tc_resnet_config)
         new_nn = PIT(nn_ut, input_shape=(6, 50))
         exported_nn = new_nn.arch_export()
-        self._compare_identical(nn_ut, exported_nn)
+        compare_identical(self, nn_ut, exported_nn)
 
     def test_export_initial_depthwise(self):
         """Test the conversion of a model with depthwise convolutions, just after import"""
         nn_ut = DSCNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         exported_nn = new_nn.arch_export()
-        self._compare_identical(nn_ut, exported_nn)
+        compare_identical(self, nn_ut, exported_nn)
 
     def test_export_with_masks(self):
         """Test the conversion of a simple model after forcing the mask values in some layers"""
@@ -429,172 +431,6 @@ class TestPITConvert(unittest.TestCase):
         self.assertEqual(summary['conv1']['out_features'], 57, "Wrong out features summary")
         self.assertEqual(summary['conv1']['kernel_size'], (5,), "Wrong kernel size summary")
         self.assertEqual(summary['conv1']['dilation'], (1,), "Wrong dilation summary")
-
-    def _compare_prepared(self,
-                          old_mod: nn.Module, new_mod: nn.Module,
-                          base_name: str = "",
-                          exclude_names: Iterable[str] = (),
-                          exclude_types: Tuple[Type[nn.Module], ...] = ()):
-        """Compare a nn.Module and its PIT-converted version"""
-        for name, child in old_mod.named_children():
-            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                # BN cannot be compared due to folding
-                continue
-            new_child = cast(nn.Module, new_mod._modules[name])
-            self._compare_prepared(child, new_child, base_name + name + ".",
-                                   exclude_names, exclude_types)
-            if isinstance(child, nn.Conv1d):
-                if (base_name + name not in exclude_names) and not isinstance(child, exclude_types):
-                    self.assertTrue(isinstance(new_child, PITConv1d), f"Layer {name} not converted")
-                    self.assertEqual(child.out_channels, new_child.out_channels,
-                                     f"Layer {name} wrong output channels")
-                    self.assertEqual(child.kernel_size, new_child.kernel_size,
-                                     f"Layer {name} wrong kernel size")
-                    self.assertEqual(child.dilation, new_child.dilation,
-                                     f"Layer {name} wrong dilation")
-                    self.assertEqual(child.padding_mode, new_child.padding_mode,
-                                     f"Layer {name} wrong padding mode")
-                    self.assertEqual(child.padding, new_child.padding,
-                                     f"Layer {name} wrong padding")
-                    self.assertEqual(child.stride, new_child.stride,
-                                     f"Layer {name} wrong stride")
-                    self.assertEqual(child.groups, new_child.groups,
-                                     f"Layer {name} wrong groups")
-                    # TODO: add other layers
-                    # TODO: removed checks on weights due to BN folding
-                    # self.assertTrue(torch.all(child.weight == new_child.weight),
-                    #                 f"Layer {name} wrong weight values")
-                    # self.assertTrue(torch.all(child.bias == new_child.bias),
-                    #                 f"Layer {name} wrong bias values")
-
-    def _compare_identical(self, old_mod: nn.Module, new_mod: nn.Module):
-        """Compare two nn.Modules, where one has been imported and exported by PIT"""
-        for name, child in old_mod.named_children():
-            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                # BN cannot be compared due to folding
-                continue
-            new_child = cast(nn.Module, new_mod._modules[name])
-            self._compare_identical(child, new_child)
-            if isinstance(child, nn.Conv1d):
-                self.assertIsInstance(new_child, nn.Conv1d, "Wrong layer type")
-                self.assertTrue(child.in_channels == new_child.in_channels)
-                self.assertTrue(child.out_channels == new_child.out_channels)
-                self.assertTrue(child.kernel_size == new_child.kernel_size)
-                self.assertTrue(child.stride == new_child.stride)
-                self.assertTrue(child.padding == new_child.padding)
-                self.assertTrue(child.dilation == new_child.dilation)
-                self.assertTrue(child.groups == new_child.groups)
-                self.assertTrue(child.padding_mode == new_child.padding_mode)
-                # Removed due to BN folding
-                # self.assertTrue(torch.all(child.weight == new_child.weight))
-                # if child.bias is not None:
-                #     self.assertTrue(torch.all(child.bias == new_child.bias))
-                # else:
-                #     self.assertIsNone(new_child.bias)
-
-    def _check_target_layers(self, new_nn: PIT, exp_tgt: int,
-                             unique: bool = False):
-        """Check if number of converted layers is as expected"""
-        if unique:
-            n_tgt = len([_ for _ in new_nn._unique_leaf_modules if isinstance(_[2], PITModule)])
-        else:
-            n_tgt = len([_ for _ in new_nn._leaf_modules if isinstance(_[2], PITModule)])
-        self.assertEqual(exp_tgt, n_tgt,
-                         "Expected {} target layers, but found {}".format(exp_tgt, n_tgt))
-
-    def _check_input_features(self, new_nn: PIT, input_features_dict: Dict[str, int]):
-        """Check if the number of input features of each layer in a NAS-able model is as expected.
-
-        input_features_dict is a dictionary containing: {layer_name, expected_input_features}
-        """
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for name, exp in input_features_dict.items():
-            layer = converted_layer_names[name]
-            in_features = layer.input_features_calculator.features  # type: ignore
-            self.assertEqual(in_features, exp,
-                             f"Layer {name} has {in_features} input features, expected {exp}")
-
-    def _check_shared_maskers(self, new_nn: PIT, check_rules: Iterable[Tuple[str, str, bool]]):
-        """Check if shared maskers are set correctly during an autoimport.
-
-        check_rules contains: (1st_layer, 2nd_layer, shared_flag) where shared_flag can be
-        true or false to specify that 1st_layer and 2nd_layer must/must-not share their maskers
-        respectively.
-        """
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for layer_1, layer_2, shared_flag in check_rules:
-            masker_1 = converted_layer_names[layer_1].out_features_masker  # type: ignore
-            masker_2 = converted_layer_names[layer_2].out_features_masker  # type: ignore
-            if shared_flag:
-                msg = f"Layers {layer_1} and {layer_2} are expected to share a masker, but don't"
-                self.assertEqual(masker_1, masker_2, msg)
-            else:
-                msg = f"Layers {layer_1} and {layer_2} are expected to have independent maskers"
-                self.assertNotEqual(masker_1, masker_2, msg)
-
-    def _check_frozen_maskers(self, new_nn: PIT, check_rules: Iterable[Tuple[str, bool]]):
-        """Check if frozen maskers are set correctly during an autoimport.
-
-        check_rules contains: (layer_name, frozen_flag) where frozen_flag can be true or false to
-        specify that the features masker for layer_name must/must-not be frozen
-        """
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for layer, frozen_flag in check_rules:
-            masker = converted_layer_names[layer].out_features_masker  # type: ignore
-            if frozen_flag:
-                msg = f"Layers {layer} is expected to have a frozen channel masker, but hasn't"
-                self.assertTrue(isinstance(masker, PITFrozenFeaturesMasker), msg)
-            else:
-                msg = f"Layers {layer} is expected to have an unfrozen features masker, but hasn't"
-                self.assertFalse(isinstance(masker, PITFrozenFeaturesMasker), msg)
-
-    def _check_layers_exclusion(self, new_nn: PIT, excluded: Iterable[str]):
-        """Check that layers in "excluded" have not be converted to PIT form"""
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for layer_name in excluded:
-            layer = converted_layer_names[layer_name]
-            # verify that the layer has not been converted to one of the NAS types
-            self.assertNotIsInstance(type(layer), PITModule,
-                                     f"Layer {layer_name} should not be converted")
-            # additionally, verify that there is no channel_masker (al PIT layers have it)
-            # this is probably redundant
-            try:
-                layer.__getattr__('out_channel_masker')
-            except Exception:
-                pass
-            else:
-                self.fail("Excluded layer has the output_channel_masker set")
-
-    def _check_batchnorm_folding(self, original_mod: nn.Module, pit_seed: nn.Module):
-        """Compare two nn.Modules, where one has been imported and exported by PIT
-        to verify batchnorm folding"""
-        for name, child in original_mod.named_children():
-            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                self.assertTrue(name not in pit_seed._modules,
-                                f"BatchNorm {name} not folder")
-        for name, child in pit_seed.named_children():
-            self.assertFalse(isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)),
-                             f"Found BatchNorm {name} in converted module")
-
-    def _check_batchnorm_memory(self, pit_seed: nn.Module, layers: Iterable[str]):
-        """Check that, in a PIT converted model, PIT layers that were originally followed
-        by BatchNorm have saved internally the BN information for restoring it later"""
-        for name, child in pit_seed.named_children():
-            if isinstance(child, PITModule) and name in layers:
-                self.assertTrue(child.following_bn_args is not None)
-
-    def _check_batchnorm_unfolding(self, pit_seed: nn.Module, exported_mod: nn.Module):
-        """Check that, in a PIT converted model, PIT layers that were originally followed
-        by BatchNorm have saved internally the BN information for restoring it later"""
-        for name, child in pit_seed.named_children():
-            if isinstance(child, PITModule) and child.following_bn_args is not None:
-                bn_name = name + "_exported_bn"
-                self.assertTrue(bn_name in exported_mod._modules)
-                new_child = cast(nn.Module, exported_mod._modules[bn_name])
-                if isinstance(child, (PITConv1d, PITLinear)):
-                    self.assertTrue(isinstance(new_child, nn.BatchNorm1d))
-                if isinstance(child, (PITConv2d)):
-                    self.assertTrue(isinstance(new_child, nn.BatchNorm2d))
 
 
 if __name__ == '__main__':

@@ -339,7 +339,7 @@ class TestMPSSearch(unittest.TestCase):
         nn_ut = SimpleNN2D()
         batch_size = 32
         lambda_param = 0.0005
-        n_steps = 50
+        n_steps = 100
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(mixprec_net.parameters())
@@ -367,7 +367,7 @@ class TestMPSSearch(unittest.TestCase):
         nn_ut = SimpleNN2D()
         batch_size = 32
         lambda_param = 0.0005
-        n_steps = 50
+        n_steps = 100
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape,
                           w_search_type=MPSType.PER_CHANNEL)
         criterion = torch.nn.CrossEntropyLoss()
@@ -391,7 +391,7 @@ class TestMPSSearch(unittest.TestCase):
         """Check the output of the combined loss with a trivial regression problem
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyRegression_2D()
-        lambda_param = .5  # lambda very large on purpose
+        lambda_param = .01
         batch_size = 32
         n_steps = 700
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape)

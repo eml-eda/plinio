@@ -17,15 +17,18 @@
 # * Author: Matteo Risso <matteo.risso@polito.it>                              *
 # *----------------------------------------------------------------------------*
 
-from typing import cast, Iterable, Tuple, Type
+from typing import cast
 import unittest
 import torch
 import torch.nn as nn
 from plinio.methods import MPS
-from plinio.methods.mps.nn import MPSConv2d, MPSModule, MPSType, MPSLinear, MPSIdentity
+from plinio.methods.mps.nn import MPSConv2d, MPSType, MPSLinear, MPSIdentity
 import plinio.methods.mps.quant.nn as qnn
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyAdd_2D, \
     SimpleMPSNN, SimpleExportedNN2D, SimpleNN2D_NoBN
+from unit_test.test_methods.test_mps.utils import compare_prepared, \
+        check_target_layers, check_shared_quantizers, check_add_quant_prop, \
+        check_layers_exclusion, compare_exported
 
 
 class TestMPSConvert(unittest.TestCase):
@@ -36,8 +39,8 @@ class TestMPSConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=4)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=4)
 
     def test_autoimport_simple_channel(self):
         """Test the conversion of a simple sequential model with layer autoconversion
@@ -46,8 +49,8 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=4)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=4)
 
     def test_autoimport_lastfc_zero_removal(self):
         """Test the removal of the 0 precision search for the last fc layer"""
@@ -55,8 +58,8 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=4)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=4)
         fc_prec = cast(MPSLinear, new_nn.seed.fc).w_mps_quantizer.precisions
         self.assertTrue(0 not in fc_prec, '0 prec not removed by last fc layer')
 
@@ -66,8 +69,8 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=4)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=4)
         self.assertTrue(hasattr(new_nn.seed, 'x_input_quantizer'), 'inp quantizer not inserted')
         inp_quantizer = getattr(new_nn.seed, 'x_input_quantizer')
         msg = f'inp quantizer is of type {type(inp_quantizer)} instead of MPSIdentity'
@@ -78,8 +81,8 @@ class TestMPSConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = DSCNN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=15)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=15)
 
     def test_autoimport_depthwise_channel(self):
         """Test the conversion of a model with depthwise convolutions (cin=cout=groups)
@@ -88,8 +91,8 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=15)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=15)
         # Check that depthwise layer shares quantizers with the previous conv layer
         shared_quantizer_rules = (
             ('depthwise1', 'inputlayer', True),
@@ -98,15 +101,15 @@ class TestMPSConvert(unittest.TestCase):
             ('depthwise4', 'conv3', True),
             ('depthwise2', 'depthwise4', False),  # two far aways layers must not share
         )
-        self._check_shared_quantizers(new_nn, shared_quantizer_rules)
+        check_shared_quantizers(self, new_nn, shared_quantizer_rules)
 
     def test_autoimport_multipath_layer(self):
         """Test the conversion of a toy model with multiple concat and add operations
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=11)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=11)
         shared_quantizer_rules = (
             ('conv2', 'conv4', True),  # inputs to add must share the quantizer
             ('conv2', 'conv5', True),  # inputs to add must share the quantizer
@@ -114,7 +117,7 @@ class TestMPSConvert(unittest.TestCase):
             ('conv3', 'conv4', False),  # consecutive convs must not share
             ('conv0', 'conv5', False),  # two far aways layers must not share
         )
-        self._check_shared_quantizers(new_nn, shared_quantizer_rules)
+        check_shared_quantizers(self, new_nn, shared_quantizer_rules)
 
     def test_autoimport_multipath_channel(self):
         """Test the conversion of a toy model with multiple concat and add operations
@@ -123,8 +126,8 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_precisions=(0, 2, 4, 8),
                      w_search_type=MPSType.PER_CHANNEL)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=11)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=11)
         shared_quantizer_rules = (
             ('conv2', 'conv4', True),  # inputs to add must share the quantizer
             ('conv2', 'conv5', True),  # inputs to add must share the quantizer
@@ -132,7 +135,7 @@ class TestMPSConvert(unittest.TestCase):
             ('conv3', 'conv4', False),  # consecutive convs must not share
             ('conv0', 'conv5', False),  # two far aways layers must not share
         )
-        self._check_shared_quantizers(new_nn, shared_quantizer_rules)
+        check_shared_quantizers(self, new_nn, shared_quantizer_rules)
         add_quant_prop_rules = (
             ('conv0', 'add_[conv0, conv1]_quant',
              True),  # input to sum and sum output must share
@@ -141,7 +144,7 @@ class TestMPSConvert(unittest.TestCase):
             ('conv0', 'add_2_[add_1, conv4]_quant',
              False),  # two far aways layers must not share
         )
-        self._check_add_quant_prop(new_nn, add_quant_prop_rules)
+        check_add_quant_prop(self, new_nn, add_quant_prop_rules)
 
         # TODO: cat is not supported
         # nn_ut = ToyMultiPath2_2D()
@@ -162,9 +165,9 @@ class TestMPSConvert(unittest.TestCase):
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, exclude_types=(nn.Conv2d,))
         # excluding Conv2D, we are left with: input quantizer (MPSIdentity), 3 MPSAdd, and one
         # MPSLinear
-        self._check_target_layers(new_nn, exp_tgt=5)
+        check_target_layers(self, new_nn, exp_tgt=5)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
-        self._check_layers_exclusion(new_nn, excluded)
+        check_layers_exclusion(self, new_nn, excluded)
 
     def test_exclude_types_simple_channel(self):
         """Test the conversion of a Toy model while excluding conv2d layers
@@ -175,9 +178,9 @@ class TestMPSConvert(unittest.TestCase):
                      w_search_type=MPSType.PER_CHANNEL, exclude_types=(nn.Conv2d,))
         # excluding Conv2D, we are left with: input quantizer (MPSIdentity), 3 MPSAdd, and one
         # MPSLinear
-        self._check_target_layers(new_nn, exp_tgt=5)
+        check_target_layers(self, new_nn, exp_tgt=5)
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
-        self._check_layers_exclusion(new_nn, excluded)
+        check_layers_exclusion(self, new_nn, excluded)
 
     # TODO: not supported at the moment
     # def test_exclude_names_simple_layer(self):
@@ -225,12 +228,12 @@ class TestMPSConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleMPSNN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape)
-        self._compare_prepared(nn_ut, new_nn.seed)
+        compare_prepared(self, nn_ut, new_nn.seed)
         # convert with autoimport disabled. This is as if we exclude layers except the one already
         # in MPS form
         excluded = ('conv1')
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
-        self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
+        compare_prepared(self, nn_ut, new_nn.seed, exclude_names=excluded)
 
     def test_import_simple_channel(self):
         """Test the conversion of a simple sequential model that already contains a MPS layer
@@ -238,12 +241,12 @@ class TestMPSConvert(unittest.TestCase):
         nn_ut = SimpleMPSNN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      w_search_type=MPSType.PER_CHANNEL)
-        self._compare_prepared(nn_ut, new_nn.seed)
+        compare_prepared(self, nn_ut, new_nn.seed)
         # convert with autoimport disabled. This is as if we exclude layers except the one already
         # in MPS form
         excluded = ('conv1')
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, autoconvert_layers=False)
-        self._compare_prepared(nn_ut, new_nn.seed, exclude_names=excluded)
+        compare_prepared(self, nn_ut, new_nn.seed, exclude_names=excluded)
 
     def test_export_initial_simple_layer(self):
         """Test the export of a simple sequential model, just after import
@@ -253,7 +256,7 @@ class TestMPSConvert(unittest.TestCase):
                      a_precisions=(8,), w_precisions=(4, 8))
         exported_nn = new_nn.arch_export()
         expected_exported_nn = SimpleExportedNN2D()
-        self._compare_exported(exported_nn, expected_exported_nn)
+        compare_exported(self, exported_nn, expected_exported_nn)
 
     # TODO: Not supported at the moment
     # def test_export_initial_simple_channel(self):
@@ -308,7 +311,7 @@ class TestMPSConvert(unittest.TestCase):
         with torch.no_grad():
             exported_nn(x)
         expected_exported_nn = SimpleExportedNN2D().to(device)
-        self._compare_exported(exported_nn, expected_exported_nn)
+        compare_exported(self, exported_nn, expected_exported_nn)
 
     # TODO: Not supported at the moment
     # def test_export_initial_cuda_channel(self):
@@ -363,7 +366,7 @@ class TestMPSConvert(unittest.TestCase):
                      a_precisions=(8,), w_precisions=(4, 8))
         exported_nn = new_nn.arch_export()
         expected_exported_nn = SimpleExportedNN2D(bias=False)
-        self._compare_exported(exported_nn, expected_exported_nn)
+        compare_exported(self, exported_nn, expected_exported_nn)
 
     # TODO: Not supported at the moment
     # def test_export_initial_nobn_channel(self):
@@ -464,7 +467,7 @@ class TestMPSConvert(unittest.TestCase):
         a_prec = (2, 4, 8)
         alpha = torch.zeros(4, 10)
         alpha[torch.tensor([0, 0, 0, 1, 1, 1, 1, 1, 2, 3]),
-                   torch.tensor([3, 5, 9, 0, 1, 2, 7, 8, 6, 4])] = 1
+              torch.tensor([3, 5, 9, 0, 1, 2, 7, 8, 6, 4])] = 1
         x = torch.rand(input_shape).unsqueeze(0)
         # Use the following alpha matrix to check the sanity of out_features_eff
         # for one specific layer
@@ -561,166 +564,6 @@ class TestMPSConvert(unittest.TestCase):
         fc = cast(MPSLinear, mixprec_net.seed.fc)
         self.assertEqual(fc.input_features_calculator.features.item(),
                          conv1.out_features_eff.item() * 10 * 10)
-
-    def _compare_prepared(self,
-                          old_mod: nn.Module, new_mod: nn.Module,
-                          base_name: str = "",
-                          exclude_names: Iterable[str] = (),
-                          exclude_types: Tuple[Type[nn.Module], ...] = ()):
-        """Compare a nn.Module and its MixPrec-converted version"""
-        for name, child in old_mod.named_children():
-            if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
-                # BN cannot be compared due to folding
-                continue
-            new_child = cast(nn.Module, new_mod._modules[name])
-            self._compare_prepared(child, new_child, base_name + name + ".",
-                                   exclude_names, exclude_types)
-            if isinstance(child, nn.Conv2d):
-                if (base_name + name not in exclude_names) and not isinstance(child, exclude_types):
-                    self.assertTrue(isinstance(new_child, MPSConv2d),
-                                    f"Layer {name} not converted")
-                    self.assertEqual(child.out_channels, new_child.out_channels,
-                                     f"Layer {name} wrong output channels")
-                    self.assertEqual(child.kernel_size, new_child.kernel_size,
-                                     f"Layer {name} wrong kernel size")
-                    self.assertEqual(child.dilation, new_child.dilation,
-                                     f"Layer {name} wrong dilation")
-                    self.assertEqual(child.padding_mode, new_child.padding_mode,
-                                     f"Layer {name} wrong padding mode")
-                    self.assertEqual(child.padding, new_child.padding,
-                                     f"Layer {name} wrong padding")
-                    self.assertEqual(child.stride, new_child.stride,
-                                     f"Layer {name} wrong stride")
-                    self.assertEqual(child.groups, new_child.groups,
-                                     f"Layer {name} wrong groups")
-                    # TODO: add other layers
-                    # TODO: removed checks on weights due to BN folding
-                    # self.assertTrue(torch.all(child.weight == new_child.weight),
-                    #                 f"Layer {name} wrong weight values")
-                    # self.assertTrue(torch.all(child.bias == new_child.bias),
-                    #                 f"Layer {name} wrong bias values")
-
-    def _check_target_layers(self, new_nn: MPS, exp_tgt: int, unique: bool = False):
-        """Check if number of target layers is as expected"""
-        if unique:
-            n_tgt = len([_ for _ in new_nn._unique_leaf_modules if isinstance(_[2], MPSModule)])
-        else:
-            n_tgt = len([_ for _ in new_nn._leaf_modules if isinstance(_[2], MPSModule)])
-        self.assertEqual(exp_tgt, n_tgt,
-                         "Expected {} target layers, but found {}".format(exp_tgt, n_tgt))
-
-    def _check_add_quant_prop(self,
-                              new_nn: MPS,
-                              check_rules: Iterable[Tuple[str, str, bool]]):
-        """Check if add quantizers are correctly propagated during an autoimport.
-
-        The check_rules contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
-        true or false to specify that 1st_layer and 2nd_layer must/must-not share their maskers
-        respectively.
-        """
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for layer_1, layer_2, shared_flag in check_rules:
-            quantizer_1_a = converted_layer_names[layer_1].out_mps_quantizer
-            quantizer_2_a = converted_layer_names[layer_2].out_mps_quantizer
-            if shared_flag:
-                msg = f"Layers {layer_1} and {layer_2} are expected to share " + \
-                        "act quantizer, but don't"
-                self.assertEqual(quantizer_1_a, quantizer_2_a, msg)
-            else:
-                msg = f"Layers {layer_1} and {layer_2} are expected to have independent " + \
-                        "act quantizers"
-                self.assertNotEqual(quantizer_1_a, quantizer_2_a, msg)
-
-    def _check_shared_quantizers(self,
-                                 new_nn: MPS,
-                                 check_rules: Iterable[Tuple[str, str, bool]],
-                                 act_or_w: str = 'both'):
-        """Check if shared quantizers are set correctly during an autoimport.
-
-        The check_rules contains: {1st_layer: (2nd_layer, shared_flag)} where shared_flag can be
-        true or false to specify that 1st_layer and 2nd_layer must/must-not share their
-        quantizers respectively.
-        """
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for layer_1, layer_2, shared_flag in check_rules:
-            quantizer_1_a, quantizer_2_a = None, None
-            quantizer_1_w, quantizer_2_w = None, None
-            if act_or_w == 'act' or act_or_w == 'both':
-                quantizer_1_a = converted_layer_names[layer_1].out_mps_quantizer
-                quantizer_2_a = converted_layer_names[layer_2].out_mps_quantizer
-            if act_or_w == 'w' or act_or_w == 'both':
-                quantizer_1_w = converted_layer_names[layer_1].w_mps_quantizer
-                quantizer_2_w = converted_layer_names[layer_2].w_mps_quantizer
-            if shared_flag:
-                msg = f"Layers {layer_1} and {layer_2} are expected to share "
-                if act_or_w == 'act' or act_or_w == 'both':
-                    msg_a = msg + "act quantizer, but don't"
-                    self.assertEqual(quantizer_1_a, quantizer_2_a, msg_a)
-                if act_or_w == 'w' or act_or_w == 'both':
-                    msg_w = msg + "weight quantizer, but don't"
-                    self.assertEqual(quantizer_1_w, quantizer_2_w, msg_w)
-            else:
-                msg = f"Layers {layer_1} and {layer_2} are expected to have independent "
-                if act_or_w == 'act' or act_or_w == 'both':
-                    msg_a = msg + "act quantizers"
-                    self.assertNotEqual(quantizer_1_a, quantizer_2_a, msg_a)
-                if act_or_w == 'w' or act_or_w == 'both':
-                    msg_w = msg + "weight quantizers"
-                    self.assertNotEqual(quantizer_1_w, quantizer_2_w, msg_w)
-
-    def _check_layers_exclusion(self, new_nn: MPS, excluded: Iterable[str]):
-        """Check that layers in "excluded" have not be converted to PIT form"""
-        converted_layer_names = dict(new_nn.seed.named_modules())
-        for layer_name in excluded:
-            layer = converted_layer_names[layer_name]
-            # verify that the layer has not been converted to one of the NAS types
-            self.assertNotIsInstance(type(layer), MPSModule,
-                                     f"Layer {layer_name} should not be converted")
-
-    def _compare_exported(self, exported_mod: nn.Module, expected_mod: nn.Module):
-        """Compare two nn.Modules, where one has been imported and exported by MPS"""
-        for name, child in expected_mod.named_children():
-            new_child = cast(nn.Module, exported_mod._modules[name])
-            # self._compare_exported(child, new_child)
-            if isinstance(child, qnn.QuantConv2d):
-                self._check_conv2d(child, new_child)
-            if isinstance(child, qnn.QuantLinear):
-                self._check_linear(child, new_child)
-            if isinstance(child, qnn.QuantList):
-                self.assertIsInstance(new_child, qnn.QuantList, "Wrong layer type")
-                new_child = cast(qnn.QuantList, new_child)
-                for layer, new_layer in zip(child, new_child):
-                    if isinstance(layer, qnn.QuantConv2d):
-                        self._check_conv2d(layer, new_layer)
-                    if isinstance(layer, qnn.QuantLinear):
-                        self._check_linear(layer, new_layer)
-
-    def _check_conv2d(self, child, new_child):
-        """Collection of checks on QuantConv2d"""
-        self.assertIsInstance(new_child, qnn.QuantConv2d, "Wrong layer type")
-        # Check layer geometry
-        self.assertTrue(child.in_channels == new_child.in_channels)
-        self.assertTrue(child.out_channels == new_child.out_channels)
-        self.assertTrue(child.kernel_size == new_child.kernel_size)
-        self.assertTrue(child.stride == new_child.stride)
-        self.assertTrue(child.padding == new_child.padding)
-        self.assertTrue(child.dilation == new_child.dilation)
-        self.assertTrue(child.groups == new_child.groups)
-        self.assertTrue(child.padding_mode == new_child.padding_mode)
-        # Check qtz param
-        self.assertTrue(child.out_quantizer.precision == new_child.out_quantizer.precision)
-        self.assertTrue(child.w_quantizer.precision == new_child.w_quantizer.precision)
-
-    def _check_linear(self, child, new_child):
-        """Collection of checks on QuantLinear"""
-        self.assertIsInstance(new_child, qnn.QuantLinear, "Wrong layer type")
-        # Check layer geometry
-        self.assertTrue(child.in_features == new_child.in_features)
-        self.assertTrue(child.out_features == new_child.out_features)
-        # Check qtz param
-        if type(new_child.out_quantizer) != nn.Identity:
-            self.assertTrue(child.out_quantizer.precision == new_child.out_quantizer.precision)
-        self.assertTrue(child.w_quantizer.precision == new_child.w_quantizer.precision)
 
 
 if __name__ == '__main__':

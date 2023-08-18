@@ -161,48 +161,6 @@ class MPS(DNAS):
         self._cost_specification = cs
         self._cost_fn_map = self._create_cost_fn_map()
 
-    def binarize_alpha(self):
-        """Binarize the architecture coefficients by means of the argmax operator
-        """
-        for _, _, layer in self._unique_leaf_modules:
-            if isinstance(layer, MPSModule):
-                # HERE
-                for k, v in vars(self).items():
-                    # skips input quantiers which would affect another layer
-                    # skips bias quantizers which are a function of a/w quantizers
-                    # TODO: make this field-name-independent
-                    qtz = ['out_mps_quantizer', 'w_mps_quantizer']
-                    if k in qtz and isinstance(v, (MPSBaseQtz,)):
-                        alpha_prec = v.alpha
-                        max_index = alpha_prec.argmax(dim=0)
-                        argmaxed_alpha = torch.zeros(alpha_prec.shape, device=alpha_prec.device)
-
-                        # if len(argmaxed_alpha.shape) > 1:
-                        if isinstance(v, (MPSPerChannelQtz,)):
-                            for channel_index in range(argmaxed_alpha.shape[-1]):
-                                argmaxed_alpha[max_index[channel_index], channel_index] = 1
-                        elif isinstance(v, (MPSPerLayerQtz,)):
-                            # TODO: check
-                            argmaxed_alpha[max_index.reshape(-1)[0]] = 1
-                        else:
-                            raise ValueError("Unsupported MPS quantization")
-                        v.theta_alpha = argmaxed_alpha
-
-    def freeze_alpha(self):
-        """Freeze the alpha coefficients disabling the gradient computation.
-        Useful for fine-tuning the model without changing its architecture
-        """
-        for _, _, layer in self._unique_leaf_modules:
-            if isinstance(layer, MPSModule):
-                # HERE
-                for k, v in vars(self).items():
-                    # skips input quantiers which would affect another layer
-                    # skips bias quantizers which are a function of a/w quantizers
-                    # TODO: make this field-name-independent
-                    qtz = ['out_mps_quantizer', 'w_mps_quantizer']
-                    if k in qtz and isinstance(v, (MPSBaseQtz,)):
-                        v.alpha.requires_grad = False
-
     def update_softmax_options(
             self,
             temperature: Optional[float] = None,
