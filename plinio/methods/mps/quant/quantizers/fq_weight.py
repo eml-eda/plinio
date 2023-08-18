@@ -74,8 +74,8 @@ class FQWeight(Quantizer):
             (self.n_s,) + (1,) * len(input.shape[1:]))
         input_scaled = input / exp_scale_param
         # Quantize
-        input_q = FQ_Quant_STE.apply(input_scaled,
-                                     self.quant_bins)
+        input_q = FQQuantSTE.apply(input_scaled,
+                                   self.quant_bins)
         self._scale = exp_scale_param / self.quant_bins
         if self.dequantize:
             return input_q * exp_scale_param
@@ -144,7 +144,7 @@ class FQWeight(Quantizer):
         return msg
 
 
-class FQ_Quant_STE(torch.autograd.Function):
+class FQQuantSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, n):
         # Hardtanh

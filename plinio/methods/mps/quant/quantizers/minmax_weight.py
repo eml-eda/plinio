@@ -43,10 +43,10 @@ class MinMaxWeight(Quantizer):
                  dequantize: bool = True):
         super(MinMaxWeight, self).__init__(precision, dequantize)
         if symmetric:
-            self.qtz_func = MinMax_Sym_STE if symmetric else MinMax_Asym_STE
+            self.qtz_func = MinMaxSymSTE if symmetric else MinMaxAsymSTE
             self.compute_min_max = self._compute_min_max_sym
         else:
-            self.qtz_func = MinMax_Asym_STE
+            self.qtz_func = MinMaxAsymSTE
             self.compute_min_max = self._compute_min_max_asym
         self.ch_max = torch.Tensor(cout)
         self.ch_min = torch.Tensor(cout)
@@ -167,7 +167,7 @@ class MinMaxWeight(Quantizer):
         return msg
 
 
-class MinMax_Asym_STE(torch.autograd.Function):
+class MinMaxAsymSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, ch_min, ch_max, precision, dequantize):
         return _min_max_quantize(x, ch_min, ch_max, precision, dequantize)
@@ -177,7 +177,7 @@ class MinMax_Asym_STE(torch.autograd.Function):
         return grad_output, None, None, None, None
 
 
-class MinMax_Sym_STE(torch.autograd.Function):
+class MinMaxSymSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, ch_min, ch_max, precision, dequantize):
         return _min_max_quantize(x, ch_min, ch_max, precision, dequantize)

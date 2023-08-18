@@ -62,8 +62,8 @@ class QuantizerBias(Quantizer):
         :rtype: torch.Tensor
         """
         self._scale = s_a * s_w
-        scaled_inp = Quantize_Bias_STE.apply(input, self.scale)
-        output = Round_STE.apply(scaled_inp)
+        scaled_inp = QuantizeBiasSTE.apply(input, self.scale)
+        output = RoundSTE.apply(scaled_inp)
 
         if self.dequantize:
             output = self.scale * output
@@ -131,7 +131,7 @@ class QuantizerBias(Quantizer):
         return msg
 
 
-class Quantize_Bias_STE(torch.autograd.Function):
+class QuantizeBiasSTE(torch.autograd.Function):
     """A torch autograd function defining the bias quantization, which is supported also in the
     case of 0-bit precision in the weights"""
     @staticmethod
@@ -147,7 +147,7 @@ class Quantize_Bias_STE(torch.autograd.Function):
         return grad_output, None
 
 
-class Round_STE(torch.autograd.Function):
+class RoundSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
         return torch.round(x)

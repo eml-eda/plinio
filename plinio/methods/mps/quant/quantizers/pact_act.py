@@ -57,7 +57,7 @@ class PACTAct(Quantizer):
         :return: the output fake-quantized activations tensor
         :rtype: torch.Tensor
         """
-        input_q = PACT_Act_STE.apply(input,
+        input_q = PACTActSTE.apply(input,
                                      self.precision,
                                      self.clip_val,
                                      self.dequantize)
@@ -127,7 +127,7 @@ class PACTAct(Quantizer):
         return msg
 
 
-class PACT_Act_STE(torch.autograd.Function):
+class PACTActSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, precision, clip_val, dequantize):
         ctx.save_for_backward(input, clip_val)
@@ -156,7 +156,7 @@ class PACT_Act_STE(torch.autograd.Function):
         return grad_input, None, grad_alpha, None
 
 
-class PACT_Act_Signed(Quantizer):
+class PACTActSigned(Quantizer):
     """A nn.Module implementing the PACT (PArametrized Clipping Activation)
     quantization strategy for activations.
     More details can be found at: https://openreview.net/forum?id=By5ugjyCb
@@ -176,7 +176,7 @@ class PACT_Act_Signed(Quantizer):
                  init_clip_val_sup: float = 6.,
                  init_clip_val_inf: float = -6.,
                  dequantize: bool = True):
-        super(PACT_Act_Signed, self).__init__(precision, dequantize)
+        super(PACTActSigned, self).__init__(precision, dequantize)
         self.clip_val_sup = nn.Parameter(torch.Tensor([init_clip_val_sup]), requires_grad=True)
         self.clip_val_inf = nn.Parameter(torch.Tensor([init_clip_val_inf]), requires_grad=True)
 
@@ -191,7 +191,7 @@ class PACT_Act_Signed(Quantizer):
         :return: the output fake-quantized activations tensor
         :rtype: torch.Tensor
         """
-        input_q = PACT_Act_Signed_STE.apply(input,
+        input_q = PACTActSignedSTE.apply(input,
                                             self.precision,
                                             self.clip_val_sup,
                                             self.clip_val_inf,
@@ -279,7 +279,7 @@ class PACT_Act_Signed(Quantizer):
         self._dequantize = val
 
 
-class PACT_Act_Signed_STE(torch.autograd.Function):
+class PACTActSignedSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, precision, clip_val_sup, clip_val_inf, dequantize):
         ctx.save_for_backward(input, clip_val_sup, clip_val_inf)
