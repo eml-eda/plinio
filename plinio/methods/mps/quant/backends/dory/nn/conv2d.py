@@ -78,9 +78,6 @@ class DORYConv2d(nn.Conv2d, DORYModule):
             self.weight.copy_(int_weight)
 
         # Compute self.scale_fact and self.shift
-        # TODO: to avoid to ignore linter warning refactor s_w and s_a
-        # to be simply s (or similar name) and put it as a property
-        # in the abstract Quantizer class
         self.s_w = self.w_quantizer.scale
         self.s_x = self.in_quantizer.scale
         if type(self.out_quantizer) != nn.Identity:

@@ -295,7 +295,7 @@ class PIT(DNAS):
         for lname, _, layer in self._unique_leaf_modules:
             if isinstance(layer, PITModule):
                 # get original layer type from PITModule type
-                # TODO: make this more readable
+                # didnt' find a more readable way to implement this compactly
                 t = list(pit_layer_map.keys())[list(pit_layer_map.values()).index(type(layer))]
                 # equally unreadable alternative
                 # t = layer.__class__.__bases__[0]

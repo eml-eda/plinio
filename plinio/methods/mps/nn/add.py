@@ -191,8 +191,7 @@ class MPSAdd(nn.Module, MPSModule):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but MPSodule never have sub-layers TODO: check if true
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]

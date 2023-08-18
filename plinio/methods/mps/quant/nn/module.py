@@ -31,12 +31,11 @@ class QuantModule:
     def __init__(self):
         raise NotImplementedError("Calling init on base abstract QuantModule class")
 
-    # TODO: this function needs to be implemented, currently instances of QuantX classes
-    # are only created when converting from a MPS model
+    # TODO: this function needs to be implemented for all sub-classes, currently instances of
+    # QuantX classes are only created when converting from a MPS model
     @staticmethod
     @abstractmethod
     def autoimport():
-        """ TODO: implement """
         raise NotImplementedError("Trying to import layer using the base abstract class")
 
     @staticmethod
@@ -73,8 +72,7 @@ class QuantModule:
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but QuantModule never have sub-layers TODO: check if true
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
@@ -85,8 +83,7 @@ class QuantModule:
     def quant_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
         """Returns an iterator over the quantization parameters of this layer
 
-        :param recurse: kept for uniformity with pytorch API,
-        but QuantModule never have sub-layers TODO: check if true
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]

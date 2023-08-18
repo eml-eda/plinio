@@ -105,8 +105,7 @@ class PACTAct(Quantizer):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but Quantizer never have sub-layers TODO: check if true
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the quantization parameters of this layer
         :rtype: Iterator[nn.Parameter]
@@ -240,8 +239,7 @@ class PACTActSigned(Quantizer):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but Quantizer never have sub-layers TODO: check if true
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the quantization parameters of this layer
         :rtype: Iterator[nn.Parameter]

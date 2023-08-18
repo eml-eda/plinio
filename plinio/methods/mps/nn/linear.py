@@ -172,8 +172,6 @@ class MPSLinear(nn.Linear, MPSModule):
                     new_lin.weight.copy_(new_weights)
                     if submodule.bias is not None:
                         new_lin.bias.copy_(submodule.bias[mask])
-                        submodule.mixprec_b_quantizer = cast(MPSBiasQtz,
-                                                             submodule.mixprec_b_quantizer)
                         # re-create bias quantizer using correct number of channels
                         # TODO: DP: shouldn't we also recreate the w_quantizer with fewer channels?
                         b_quantizer_class = submodule.b_mps_quantizer.quantizer
@@ -287,8 +285,7 @@ class MPSLinear(nn.Linear, MPSModule):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but MPSModule never have sub-layers TODO: check if true
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]

@@ -146,8 +146,8 @@ class PITLinear(nn.Linear, PITModule):
                     args=(n,)
                 )
                 n.replace_all_uses_with(new_node)
-                # TODO: previous row replaces also the input to the BN with the BN itself.
-                # The following line fixes it. Is there a cleaner way to do this?
+                # The previous line replaces also the input to the BN with the BN itself.
+                # The following line fixes it. Not sure if there's a cleaner way to do this?
                 new_node.replace_input_with(new_node, n)
         return
 

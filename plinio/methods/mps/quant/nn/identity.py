@@ -50,11 +50,8 @@ class QuantIdentity(nn.Identity, QuantModule):
         out = self.out_quantizer(input)
         return out
 
-    # TODO: this function needs to be implemented, currently instances of this class
-    # are only created when converting from a MPS model
     @staticmethod
     def autoimport() -> Optional[Quantizer]:
-        """ TODO: implement """
         raise NotImplementedError
 
     @staticmethod
@@ -97,8 +94,7 @@ class QuantIdentity(nn.Identity, QuantModule):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but QuantModule never have sub-layers TODO: check if true
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]

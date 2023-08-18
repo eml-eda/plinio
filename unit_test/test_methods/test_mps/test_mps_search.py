@@ -281,9 +281,9 @@ class TestMPSSearch(unittest.TestCase):
         """Check that the network weights are changing with a combined loss
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = ToyAdd_2D()
-        batch_size = 5
+        batch_size = 16
         lambda_param = 0.0005
-        n_steps = 100
+        n_steps = 40
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape)
         criterion = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(mixprec_net.parameters())

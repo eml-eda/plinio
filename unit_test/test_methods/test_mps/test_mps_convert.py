@@ -25,7 +25,7 @@ from plinio.methods import MPS
 from plinio.methods.mps.nn import MPSConv2d, MPSType, MPSLinear, MPSIdentity
 import plinio.methods.mps.quant.nn as qnn
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyAdd_2D, \
-    SimpleMPSNN, SimpleExportedNN2D, SimpleNN2D_NoBN
+    SimpleMPSNN, SimpleExportedNN2D, SimpleExportedNN2D_ch, SimpleNN2D_NoBN
 from unit_test.test_methods.test_mps.utils import compare_prepared, \
         check_target_layers, check_shared_quantizers, check_add_quant_prop, \
         check_layers_exclusion, compare_exported
@@ -146,18 +146,6 @@ class TestMPSConvert(unittest.TestCase):
         )
         check_add_quant_prop(self, new_nn, add_quant_prop_rules)
 
-        # TODO: cat is not supported
-        # nn_ut = ToyMultiPath2_2D()
-        # new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-        #                  w_mixprec_type=MixPrecType.PER_CHANNEL)
-        # self._compare_prepared(nn_ut, new_nn.seed)
-        # self._check_target_layers(new_nn, exp_tgt=6)
-        # shared_quantizer_rules = (
-        #     ('conv0', 'conv1', True),   # inputs to add
-        #     ('conv2', 'conv3', True),  # concat over channels
-        # )
-        # self._check_shared_quantizers(new_nn, shared_quantizer_rules)
-
     def test_exclude_types_simple_layer(self):
         """Test the conversion of a Toy model while excluding conv2d layers
         with PER_LAYER weight mixed-precision (default)"""
@@ -182,46 +170,28 @@ class TestMPSConvert(unittest.TestCase):
         excluded = ('conv0', 'conv1', 'conv2', 'conv3', 'conv4', 'conv5')
         check_layers_exclusion(self, new_nn, excluded)
 
-    # TODO: not supported at the moment
-    # def test_exclude_names_simple_layer(self):
-    #     """Test the conversion of a Toy model while excluding layers by name
-    #     with PER_LAYER weight mixed-precision (default)"""
-    #     nn_ut = ToyMultiPath1_2D()
-    #     excluded = ('conv0', 'conv4')
-    #     new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
-    #     # excluding conv0 and conv4, there are 5 convertible conv2d and linear layers left
-    #     self._check_target_layers(new_nn, exp_tgt=5)
-    #     self._check_layers_exclusion(new_nn, excluded)
+    def test_exclude_names_simple_layer(self):
+        """Test the conversion of a Toy model while excluding layers by name
+        with PER_LAYER weight mixed-precision (default)"""
+        nn_ut = ToyMultiPath1_2D()
+        excluded = ('conv0', 'conv4')
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
+        # excluding conv0 and conv4, there are 4 convertible conv2d layers left,
+        # 1 MPSLinear, 3 MPSAdd, and the input quantizer
+        check_target_layers(self, new_nn, exp_tgt=9)
+        check_layers_exclusion(self, new_nn, excluded)
 
-    #     # TODO: the following part of the test fails during registration of input
-    #     # quantizer in the specific case of this network that shares the input with
-    #     # multiple layers.
-    #     nn_ut = ToyMultiPath2_2D()
-    #     new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
-    #     # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
-    #     self._check_target_layers(new_nn, exp_tgt=4)
-    #     self._check_layers_exclusion(new_nn, excluded)
-
-    # TODO: not supported at the moment
-    # def test_exclude_names_simple_channel(self):
-    #     """Test the conversion of a Toy model while excluding layers by name
-    #     with PER_CHANNEL weight mixed-precision"""
-    #     nn_ut = ToyMultiPath1_2D()
-    #     excluded = ('conv0', 'conv4')
-    #     new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-    #                      w_mixprec_type=MixPrecType.PER_CHANNEL, exclude_names=excluded)
-    #     # excluding conv0 and conv4, there are 5 convertible conv2d and linear layers left
-    #     self._check_target_layers(new_nn, exp_tgt=5)
-    #     self._check_layers_exclusion(new_nn, excluded)
-
-    #     # TODO: the following part of the test fails during registration of input
-    #     # quantizer in the specific case of this network that shares the input with
-    #     # multiple layers.
-    #     nn_ut = ToyMultiPath2_2D()
-    #     new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape, exclude_names=excluded)
-    #     # excluding conv0 and conv4, there are 4 convertible conv1d  and linear layers left
-    #     self._check_target_layers(new_nn, exp_tgt=4)
-    #     self._check_layers_exclusion(new_nn, excluded)
+    def test_exclude_names_simple_channel(self):
+        """Test the conversion of a Toy model while excluding layers by name
+        with PER_CHANNEL weight mixed-precision"""
+        nn_ut = ToyMultiPath1_2D()
+        excluded = ('conv0', 'conv4')
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     w_search_type=MPSType.PER_CHANNEL, exclude_names=excluded)
+        # excluding conv0 and conv4, there are 4 convertible conv2d layers left,
+        # 1 MPSLinear, 3 MPSAdd, and the input quantizer
+        check_target_layers(self, new_nn, exp_tgt=9)
+        check_layers_exclusion(self, new_nn, excluded)
 
     def test_import_simple_layer(self):
         """Test the conversion of a simple sequential model that already contains a MPS layer
@@ -258,36 +228,34 @@ class TestMPSConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN2D()
         compare_exported(self, exported_nn, expected_exported_nn)
 
-    # TODO: Not supported at the moment
-    # def test_export_initial_simple_channel(self):
-    #     """Test the export of a simple sequential model, just after import
-    #     with PER_CHANNEL weight mixed-precision"""
-    #     nn_ut = SimpleNN2D()
-    #     new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-    #                      w_mixprec_type=MixPrecType.PER_CHANNEL,
-    #                      activation_precisions=(8,), weight_precisions=(2, 4, 8))
-    #     # Force selection of different precisions for different channels in the net
-    #     new_alpha = [
-    #         [1, 0, 0] * 10 + [0, 0],  # 10 ch
-    #         [0, 1, 0] * 10 + [0, 0],  # 10 ch
-    #         [0, 0, 1] * 10 + [1, 1]  # 12 ch
-    #     ]
-    #     new_alpha_t = nn.Parameter(torch.Tensor(new_alpha))
-    #     conv0 = cast(MixPrec_Conv2d, new_nn.seed.conv0)
-    #     conv0.mixprec_w_quantizer.alpha = new_alpha_t
-    #     # Force precision selection for the final linear layer
-    #     new_alpha = [
-    #         [0, 0, 0],  # 0 ch
-    #         [0, 1, 0],  # 1 ch
-    #         [1, 0, 1]  # 2 ch
-    #     ]
-    #     new_alpha_t = nn.Parameter(torch.Tensor(new_alpha))
-    #     fc = cast(MixPrec_Conv2d, new_nn.seed.fc)
-    #     fc.mixprec_w_quantizer.alpha = new_alpha_t
-    #     # Export
-    #     exported_nn = new_nn.arch_export()
-    #     expected_exported_nn = SimpleExportedNN2D_ch()
-    #     self._compare_exported(exported_nn, expected_exported_nn)
+    def test_export_initial_simple_channel(self):
+        """test the export of a simple sequential model, just after import
+        with per_channel weight mixed-precision"""
+        nn_ut = SimpleNN2D()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     a_precisions=(8,), w_precisions=(2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
+        # force selection of different precisions for different channels in the net
+        new_alpha = [
+            [1, 0, 0] * 10 + [0, 0],  # 10 ch
+            [0, 1, 0] * 10 + [0, 0],  # 10 ch
+            [0, 0, 1] * 10 + [1, 1]  # 12 ch
+        ]
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        conv0 = cast(MPSConv2d, new_nn.seed.conv0)
+        conv0.w_mps_quantizer.alpha = new_alpha_t
+        # force precision selection for the final linear layer
+        new_alpha = [
+            [0, 0, 0],  # 0 ch
+            [0, 1, 0],  # 1 ch
+            [1, 0, 1]  # 2 ch
+        ]
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        fc = cast(MPSLinear, new_nn.seed.fc)
+        fc.w_mps_quantizer.alpha = new_alpha_t
+        exported_nn = new_nn.arch_export()
+        expected_exported_nn = SimpleExportedNN2D_ch(bias=False)
+        compare_exported(self, exported_nn, expected_exported_nn)
 
     def test_export_initial_cuda_layer(self):
         """Test the export of a simple sequential model, just after import using
@@ -313,50 +281,48 @@ class TestMPSConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN2D().to(device)
         compare_exported(self, exported_nn, expected_exported_nn)
 
-    # TODO: Not supported at the moment
-    # def test_export_initial_cuda_channel(self):
-    #     """Test the export of a simple sequential model, just after import using
-    #     GPU (if available) with PER_CHANNEL weight mixed-precision"""
-    #     # Check CUDA availability
-    #     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    #     print("Training on:", device)
-    #     nn_ut = SimpleNN2D().to(device)
-    #     # Dummy inference
-    #     with torch.no_grad():
-    #         x = torch.rand((1,) + nn_ut.input_shape).to(device)
-    #         nn_ut(x)
-    #     new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-    #                      w_mixprec_type=MixPrecType.PER_CHANNEL,
-    #                      activation_precisions=(8,), weight_precisions=(2, 4, 8))
-    #     new_nn = new_nn.to(device)
-    #     # Dummy inference
-    #     with torch.no_grad():
-    #         new_nn(x)
-    #     # Force selection of different precisions for different channels in the net
-    #     new_alpha = [
-    #         [1, 0, 0] * 10 + [0, 0],  # 10 ch
-    #         [0, 1, 0] * 10 + [0, 0],  # 10 ch
-    #         [0, 0, 1] * 10 + [1, 1]  # 12 ch
-    #     ]
-    #     new_alpha_t = nn.Parameter(torch.tensor(new_alpha, device=device, dtype=torch.float))
-    #     conv0 = cast(MixPrec_Conv2d, new_nn.seed.conv0)
-    #     conv0.mixprec_w_quantizer.alpha = new_alpha_t
-    #     # Force precision selection for the final linear layer
-    #     new_alpha = [
-    #         [0, 0, 0],  # 0 ch
-    #         [0, 1, 0],  # 1 ch
-    #         [1, 0, 1]  # 2 ch
-    #     ]
-    #     new_alpha_t = nn.Parameter(torch.tensor(new_alpha, device=device, dtype=torch.float))
-    #     fc = cast(MixPrec_Conv2d, new_nn.seed.fc)
-    #     fc.mixprec_w_quantizer.alpha = new_alpha_t
-    #     # Export
-    #     exported_nn = new_nn.arch_export().to(device)
-    #     # Dummy inference
-    #     with torch.no_grad():
-    #         exported_nn(x)
-    #     expected_exported_nn = SimpleExportedNN2D_ch().to(device)
-    #     self._compare_exported(exported_nn, expected_exported_nn)
+    def test_export_initial_cuda_channel(self):
+        """Test the export of a simple sequential model, just after import using
+        GPU (if available) with PER_CHANNEL weight mixed-precision"""
+        # Check CUDA availability
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        print("Training on:", device)
+        nn_ut = SimpleNN2D().to(device)
+        x = torch.rand((1,) + nn_ut.input_shape).to(device)
+        # dummy inference
+        with torch.no_grad():
+            nn_ut(x)
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     a_precisions=(8,), w_precisions=(2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
+        new_nn = new_nn.to(device)
+        # dummy inference
+        with torch.no_grad():
+            new_nn(x)
+        # force selection of different precisions for different channels in the net
+        new_alpha = [
+            [1, 0, 0] * 10 + [0, 0],  # 10 ch
+            [0, 1, 0] * 10 + [0, 0],  # 10 ch
+            [0, 0, 1] * 10 + [1, 1]  # 12 ch
+        ]
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        conv0 = cast(MPSConv2d, new_nn.seed.conv0)
+        conv0.w_mps_quantizer.alpha = new_alpha_t
+        # force precision selection for the final linear layer
+        new_alpha = [
+            [0, 0, 0],  # 0 ch
+            [0, 1, 0],  # 1 ch
+            [1, 0, 1]  # 2 ch
+        ]
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        fc = cast(MPSLinear, new_nn.seed.fc)
+        fc.w_mps_quantizer.alpha = new_alpha_t
+        exported_nn = new_nn.arch_export().to(device)
+        # dummy inference
+        with torch.no_grad():
+            exported_nn(x)
+        expected_exported_nn = SimpleExportedNN2D_ch().to(device)
+        compare_exported(self, exported_nn, expected_exported_nn)
 
     def test_export_initial_nobn_layer(self):
         """Test the export of a simple sequential model with no bn, just after import
@@ -368,17 +334,34 @@ class TestMPSConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN2D(bias=False)
         compare_exported(self, exported_nn, expected_exported_nn)
 
-    # TODO: Not supported at the moment
-    # def test_export_initial_nobn_channel(self):
-    #     """Test the export of a simple sequential model with no bn, just after import
-    #     with PER_LAYER weight mixed-precision (default)"""
-    #     nn_ut = SimpleNN2D_NoBN()
-    #     new_nn = MixPrec(nn_ut, input_shape=nn_ut.input_shape,
-    #                      activation_precisions=(8,), weight_precisions=(4, 8),
-    #                      w_mixprec_type=MixPrecType.PER_CHANNEL)
-    #     exported_nn = new_nn.arch_export()
-    #     expected_exported_nn = SimpleExportedNN2D_NoBias_ch()
-    #     self._compare_exported(exported_nn, expected_exported_nn)
+    def test_export_initial_nobn_channel(self):
+        """Test the export of a simple sequential model with no bn, just after import
+        with PER_LAYER weight mixed-precision (default)"""
+        nn_ut = SimpleNN2D_NoBN()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     a_precisions=(8,), w_precisions=(2, 4, 8),
+                     w_search_type=MPSType.PER_CHANNEL)
+        # force selection of different precisions for different channels in the net
+        new_alpha = [
+            [1, 0, 0] * 10 + [0, 0],  # 10 ch
+            [0, 1, 0] * 10 + [0, 0],  # 10 ch
+            [0, 0, 1] * 10 + [1, 1]  # 12 ch
+        ]
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        conv0 = cast(MPSConv2d, new_nn.seed.conv0)
+        conv0.w_mps_quantizer.alpha = new_alpha_t
+        # force precision selection for the final linear layer
+        new_alpha = [
+            [0, 0, 0],  # 0 ch
+            [0, 1, 0],  # 1 ch
+            [1, 0, 1]  # 2 ch
+        ]
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        fc = cast(MPSLinear, new_nn.seed.fc)
+        fc.w_mps_quantizer.alpha = new_alpha_t
+        exported_nn = new_nn.arch_export()
+        expected_exported_nn = SimpleExportedNN2D_ch(bias=False)
+        compare_exported(self, exported_nn, expected_exported_nn)
 
     def test_export_with_alpha(self):
         """Test the conversion of a simple model after forcing the nas/quant

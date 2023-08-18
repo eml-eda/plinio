@@ -144,7 +144,7 @@ class SimpleExportedNN2D_ch(nn.Module):
                 nn.Linear(57 * (input_shape[-1] // 2 // 2)**2, num_classes - 2),
                 in_quantizer=conv1_out_a_qtz,
                 out_quantizer=fc_out_a_qtz,
-                w_quantizer=MinMaxWeight(precision=8, cout=num_classes - 2),
+                w_quantizer=MinMaxWeight(precision=4, cout=num_classes - 2),
                 b_quantizer=QuantizerBias(precision=32, cout=num_classes - 2),
             ),
         ])

@@ -39,7 +39,6 @@ class DORYAnnotator:
                  onnxfilepath: Path):
         """This part will be common to every backend, while _annotate is the actual
         backend-specific annotation.
-        TODO: build abstract and generic classes for annotator and exporter
         """
         # Load onnx
         onnxproto = onnx.load(str(onnxfilepath))
@@ -128,7 +127,7 @@ class DORYAnnotator:
                 if is_requant_add:
                     add_bits = self._requantization_bits
                 else:
-                    add_bits = 32  # TODO: where to gather this info?
+                    add_bits = 32  # TODO: hardwired, can we extract this info from somewhere?
                 annotations.append(onnx_helper.make_attribute(key='add_bits',
                                                               value=add_bits))
 

@@ -17,10 +17,11 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Iterator, Tuple, List
+from typing import Iterator, Tuple, List, Optional
 import torch
 import torch.fx as fx
 import torch.nn as nn
+from ..quantizers import Quantizer
 from ..backends import Backend, backend_factory
 from .module import QuantModule
 
@@ -35,7 +36,7 @@ class QuantList(nn.ModuleList, QuantModule):
     def __init__(self,
                  nn_list: List[nn.Module]):
         super(QuantList, self).__init__(nn_list)
-        # self.nn_list = nn_list
+        self.nn_list = nn_list
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the quantized layer collection. The layers share
@@ -48,11 +49,14 @@ class QuantList(nn.ModuleList, QuantModule):
         :rtype: torch.Tensor
         """
         out = []
-        for layer in self:
+        for layer in self.nn_list:
             out.append(layer(input))
-        # output = torch.stack(out, dim=0)
         output = torch.cat(out, dim=1)
         return output
+
+    @staticmethod
+    def autoimport() -> Optional[Quantizer]:
+        raise NotImplementedError
 
     @staticmethod
     def export(n: fx.Node,
@@ -82,12 +86,11 @@ class QuantList(nn.ModuleList, QuantModule):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API
+        :param recurse: recurse to sub-modules
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
         """
-        # TODO: Check
         prfx = prefix
         prfx += "." if len(prefix) > 0 else ""
         for name, submod in self.named_modules():

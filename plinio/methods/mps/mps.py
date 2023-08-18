@@ -26,7 +26,7 @@ from plinio.cost import CostSpec, CostFn, params_bit
 from plinio.graph.inspection import shapes_dict
 from .graph import convert, mps_layer_map
 from .nn.module import MPSModule
-from .nn.qtz import MPSType, MPSBaseQtz, MPSPerLayerQtz, MPSPerChannelQtz
+from .nn.qtz import MPSType
 
 from .quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
@@ -300,12 +300,12 @@ class MPS(DNAS):
         for lname, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
                 # get original layer type from MPSModule type
-                # TODO: not all MPSModules have a corresponding nn.Module. Notable cases
+                # Note: not all MPSModules have a corresponding nn.Module. Notable cases
                 # are MPSIdentity and MPSAdd. For now, we skip those because CostSpecs require
                 # a nn.Module as "pattern". Will be fixed in a future release. This is why
                 # we have a try/except here
                 try:
-                    # TODO: make this more readable
+                    # didnt' find a more readable way to implement this compactly
                     t = list(mps_layer_map.keys())[list(mps_layer_map.values()).index(type(layer))]
                     # equally unreadable alternative
                     # t = layer.__class__.__bases__[0]

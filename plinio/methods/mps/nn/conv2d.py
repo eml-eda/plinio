@@ -298,8 +298,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
 
         :param prefix: prefix to prepend to all parameter names.
         :type prefix: str
-        :param recurse: kept for uniformity with pytorch API,
-        but MixPrecModule never have sub-layers TODO: check if true
+        :param recurse: recures to sub-modules
         :type recurse: bool
         :return: an iterator over the architectural parameters of this layer
         :rtype: Iterator[nn.Parameter]
