@@ -155,34 +155,6 @@ class TestMPSConvert(unittest.TestCase):
         # )
         # self._check_shared_quantizers(new_nn, shared_quantizer_rules)
 
-    def test_autoimport_bias_quantizer_pointer(self):
-        """Test that each bias quantizer points to the proper weight and act quantizers.
-        The bias quantizer need info about act and weight quantization to proper set its
-        scale-factor.
-        PER_CHANNEL weight mixed-precision"""
-        nn_ut = ToyMultiPath1_2D()
-        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     w_precisions=(0, 2, 4, 8),
-                     w_search_type=MPSType.PER_CHANNEL)
-        self._compare_prepared(nn_ut, new_nn.seed)
-        self._check_target_layers(new_nn, exp_tgt=11)
-        shared_quantizer_rules_a = (
-            ('conv0.b_mps_quantizer', 'x_input_quantizer', True),
-            ('conv5.b_mps_quantizer', 'add_[conv0, conv1]_quant', True),
-            ('fc.b_mps_quantizer', 'add_2_[add_1, conv4]_quant', True),
-            ('conv0.b_mps_quantizer', 'conv5.b_mps_quantizer',
-             False),  # two far aways layers must not share
-        )
-        self._check_shared_quantizers(new_nn, shared_quantizer_rules_a, act_or_w='act')
-        shared_quantizer_rules_w = (
-            ('conv0.b_mps_quantizer', 'conv0', True),
-            ('conv5.b_mps_quantizer', 'conv5', True),
-            ('fc.b_mps_quantizer', 'fc', True),
-            ('conv0.b_mps_quantizer', 'conv5.b_mps_quantizer',
-             False),  # two far aways layers must not share
-        )
-        self._check_shared_quantizers(new_nn, shared_quantizer_rules_w, act_or_w='w')
-
     def test_exclude_types_simple_layer(self):
         """Test the conversion of a Toy model while excluding conv2d layers
         with PER_LAYER weight mixed-precision (default)"""
@@ -674,16 +646,8 @@ class TestMPSConvert(unittest.TestCase):
             quantizer_1_a, quantizer_2_a = None, None
             quantizer_1_w, quantizer_2_w = None, None
             if act_or_w == 'act' or act_or_w == 'both':
-                # special case for bias quantizers, whose act quantizer is called
-                # "in_mps_quantizer" rather than "out_mps_quantizer"
-                if 'b_mps_quantizer' in layer_1:
-                    quantizer_1_a = converted_layer_names[layer_1].in_mps_quantizer
-                else:
-                    quantizer_1_a = converted_layer_names[layer_1].out_mps_quantizer
-                if 'b_mps_quantizer' in layer_2:
-                    quantizer_2_a = converted_layer_names[layer_2].in_mps_quantizer
-                else:
-                    quantizer_2_a = converted_layer_names[layer_2].out_mps_quantizer
+                quantizer_1_a = converted_layer_names[layer_1].out_mps_quantizer
+                quantizer_2_a = converted_layer_names[layer_2].out_mps_quantizer
             if act_or_w == 'w' or act_or_w == 'both':
                 quantizer_1_w = converted_layer_names[layer_1].w_mps_quantizer
                 quantizer_2_w = converted_layer_names[layer_2].w_mps_quantizer

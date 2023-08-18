@@ -21,7 +21,7 @@ from typing import Dict, Any, Iterator, Tuple, cast, Union, Optional
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..quant.quantizers import Quantizer
+from ..quant.quantizers import Quantizer, DummyQuantizer
 from ..quant.nn import QuantIdentity
 from .module import MPSModule
 from .qtz import MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
@@ -40,8 +40,9 @@ class MPSIdentity(nn.Identity, MPSModule):
                  out_mps_quantizer: MPSPerLayerQtz):
         super(MPSIdentity, self).__init__()
         self.out_mps_quantizer = out_mps_quantizer
-        # this will be overwritten later when we process the model graph
+        # these two lines will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(1)
+        self.in_mps_quantizer = MPSPerLayerQtz((32,), DummyQuantizer)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -249,22 +250,3 @@ class MPSIdentity(nn.Identity, MPSModule):
         """
         calc.register(self)
         self._input_features_calculator = calc
-
-    @property
-    def in_mps_quantizer(self) -> MPSPerLayerQtz:
-        """Returns the `MPSQtzLayer` for input activations calculation
-
-        :return: the `MPSQtzLayer` instance that computes mixprec quantized
-        versions of the input activations
-        :rtype: MPSQtzLayer
-        """
-        return self._in_mps_quantizer
-
-    def set_in_mps_quantizer(self, qtz: MPSPerLayerQtz):
-        """Set the `MPSQtzLayer` for input activations calculation
-
-        :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
-        versions of the input activations
-        :type qtz: MPSQtzLayer
-        """
-        self._in_mps_quantizer = qtz

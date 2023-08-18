@@ -173,28 +173,3 @@ class MPSModule:
         """
         for name, param in self.named_nas_parameters(recurse=recurse):
             yield param
-
-    @property
-    @abstractmethod
-    def in_mps_quantizer(self) -> MPSPerLayerQtz:
-        """Returns the `MPSQtzLayer` for input activations calculation
-
-        :return: the `MPSQtzLayer` instance that computes mixprec quantized
-        versions of the input activations
-        :rtype: MPSQtzLayer
-        """
-        raise NotImplementedError(
-                "Trying to get input activations quantizer on base abstract MPSModule class")
-
-    @abstractmethod
-    def set_in_mps_quantizer(self, qtz: MPSPerLayerQtz):
-        """Set the `MPSQtzLayer` for input activations calculation
-
-        :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
-        versions of the input activations
-        :type qtz: MPSQtzLayer
-        """
-        # Note that we cannot use a proper Python setter because qtz inherits from nn.Module
-        # so the setter would be ignored by PyTorch (we tried...)
-        raise NotImplementedError(
-                "Trying to set input activations quantizer on base abstract MPSModule class")

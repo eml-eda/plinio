@@ -372,7 +372,6 @@ def autoimport_node(n: fx.Node,
     cout = n.meta['tensor_meta'].shape[1]
     b_quantizer_kwargs['cout'] = cout
     b_mps_quantizer = MPSBiasQtz(b_quantizer,
-                                 w_mps_quantizer,
                                  quantizer_kwargs=b_quantizer_kwargs)
     module_type.autoimport(n,
                            mod,
@@ -512,7 +511,7 @@ def register_in_mps_quantizers(mod: fx.GraphModule):
             while not is_inherited_layer(prev_n, mod, (MPSModule,)):
                 prev_n = prev_n.meta['input_features_set_by']
             prev_submod = mod.get_submodule(str(prev_n.target))
-            sub_mod.set_in_mps_quantizer(cast(MPSPerLayerQtz, prev_submod.out_mps_quantizer))
+            sub_mod.in_mps_quantizer = cast(MPSPerLayerQtz, prev_submod.out_mps_quantizer)
 
 
 def mps_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeaturesCalculator]:

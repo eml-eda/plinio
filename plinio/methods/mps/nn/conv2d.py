@@ -21,7 +21,7 @@ from typing import Dict, Any, Iterator, Tuple, cast, Union, List, Optional
 import torch
 import torch.fx as fx
 import torch.nn as nn
-from ..quant.quantizers import Quantizer
+from ..quant.quantizers import Quantizer, DummyQuantizer
 from ..quant.nn import QuantConv2d, QuantList
 from .module import MPSModule
 from .qtz import MPSType, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
@@ -73,8 +73,9 @@ class MPSConv2d(nn.Conv2d, MPSModule):
             self.b_mps_quantizer = b_mps_quantizer
         else:
             self.b_mps_quantizer = lambda *args: None  # Do Nothing
-        # this will be overwritten later when we process the model graph
+        # these two lines will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(conv.in_channels)
+        self.in_mps_quantizer = MPSPerLayerQtz((32,), DummyQuantizer)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -92,7 +93,9 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         # Quantization of weight and bias
         q_w = self.w_mps_quantizer(self.weight)
-        q_b = self.b_mps_quantizer(self.bias)
+        q_b = self.b_mps_quantizer(self.bias,
+                                   self.in_mps_quantizer.effective_scale,
+                                   self.w_mps_quantizer.effective_scale)
         # Linear operation
         out = self._conv_forward(input, q_w, q_b)
         # Quantization of output
@@ -457,23 +460,3 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         calc.register(self)
         self._input_features_calculator = calc
-
-    @property
-    def in_mps_quantizer(self) -> MPSPerLayerQtz:
-        """Returns the `MPSQtzLayer` for input activations calculation
-
-        :return: the `MPSQtzLayer` instance that computes mixprec quantized
-        versions of the input activations
-        :rtype: MPSQtzLayer
-        """
-        return self._in_mps_quantizer
-
-    def set_in_mps_quantizer(self, qtz: MPSPerLayerQtz):
-        """Set the `MPSQtzLayer` for input activations calculation
-
-        :param qtz: the `MPSQtzLayer` instance that computes mixprec quantized
-        versions of the input activations
-        :type qtz: MPSQtzLayer
-        """
-        self._in_mps_quantizer = qtz
-        self.b_mps_quantizer.in_mps_quantizer = qtz

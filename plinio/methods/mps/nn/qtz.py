@@ -374,36 +374,25 @@ class MPSPerLayerQtz(MPSBaseQtz):
 class MPSBiasQtz(nn.Module):
     """A nn.Module implementing mixed-precision quantization searchable
     operation of the bias vector provided as input.
-    This module includes trainable NAS parameters which are shared with the
-    `w_mps_quantizer` in order to select the proper corresponding quantizer.
+
+    Just a wrapper around a bias quantizer
 
     :param quantizer: bias quantizer
     :type quantizer: Quantizer
-    :param w_mps_quantizer: mixprec weight quantizer, it is used to gather info
-    about weight scale factor
-    :type w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz]
-    :param in_mps_quantizer: mixprec activation quantizer, it is used to gather info
-    about act scale factor. Optional argument, is used only if the user defines
-    the network placing MixPrec modules manually.
-    :type in_mps_quantizer: Optional[MPSPerLayerQtz]
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
     :type quantizer_kwargs: Dict, optional
     """
     def __init__(self,
                  quantizer: Type[Quantizer],
-                 w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
-                 in_mps_quantizer: Optional[MPSPerLayerQtz] = None,
                  quantizer_kwargs: Dict = {},
                  ):
         super(MPSBiasQtz, self).__init__()
         self.quantizer = quantizer
         self.quantizer_kwargs = quantizer_kwargs
-        # may be overwritten later by the enclosing MPSModule
-        self.in_mps_quantizer = in_mps_quantizer
-        self.w_mps_quantizer = w_mps_quantizer
         self.qtz_func = quantizer(**quantizer_kwargs)
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, scale_a: torch.Tensor,
+                scale_w: torch.Tensor) -> torch.Tensor:
         """The forward function
 
         :param input: the input float tensor
@@ -411,8 +400,5 @@ class MPSBiasQtz(nn.Module):
         :return: the output fake-quantized with searchable precision tensor
         :rtype: torch.Tensor
         """
-        in_mps_quantizer = cast(MPSPerLayerQtz, self.in_mps_quantizer)
-        y = self.qtz_func(input,
-                          in_mps_quantizer.effective_scale,
-                          self.w_mps_quantizer.effective_scale)
+        y = self.qtz_func(input, scale_a, scale_w)
         return y

@@ -19,11 +19,7 @@ class SimpleMPSNN(nn.Module):
                                              MinMaxWeight,
                                              {'cout': 32})
         mixprec_b_quantizer = MPSBiasQtz(QuantizerBias,
-                                         mixprec_w_quantizer,
-                                         in_mps_quantizer=mixprec_a_quantizer,
                                          quantizer_kwargs={'precision': 32, 'cout': 32})
-        # TODO: DP: this seems wrong. the bias quantizer is getting the out_a
-        # quantizer but should be getting the in_a quantizer
         self.conv0 = MPSConv2d(nn.Conv2d(3, 32, (3, 3), padding='same'),
                                mixprec_a_quantizer,
                                mixprec_w_quantizer,
