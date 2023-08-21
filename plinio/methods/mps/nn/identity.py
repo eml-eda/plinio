@@ -31,8 +31,6 @@ from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesC
 class MPSIdentity(nn.Identity, MPSModule):
     """A nn.Module implementing an Identity layer with mixed-precision search support
 
-    :param precisions: different bitwitdth alternatives among which perform search
-    :type precisions: Tuple[int, ...]
     :param out_mps_quantizer: activation MPS quantizer
     :type out_mps_quantizer: MPSQtzLayer
     """
@@ -74,9 +72,9 @@ class MPSIdentity(nn.Identity, MPSModule):
         :type mod: fx.GraphModule
         :param out_mps_quantizer: The MPS quantizer to be used for activations
         :type out_mps_quantizer: MPSQtzLayer
-        :param w_mps_quantizer: The MPS quantizer to be used for weights (ignored for identity)
+        :param w_mps_quantizer: The MPS quantizer to be used for weights (ignored for this module)
         :type w_mps_quantizer: Union[MPSQtzLayer, MPSQtzChannel]
-        :param b_mps_quantizer: The MPS quantizer to be used for biases (ignored for identity)
+        :param b_mps_quantizer: The MPS quantizer to be used for biases (ignored for this module)
         :type b_mps_quantizer: MPSBiasQtz
         :raises TypeError: if the input fx.Node is not of the correct type
         """
