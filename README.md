@@ -31,9 +31,9 @@ If you use PLiNIO to optimize your model, please acknowledge our paper: https://
 # Optimization Methods
 
 At the current state, the following optimization strategies are supported:
-- ***[SuperNet](plinio/methods/supernet/README.md)***, a coarse-grained DNAS for layer selection inspired by [DARTS](https://arxiv.org/abs/1806.09055).
-- ***[PIT](plinio/methods/pit/README.md)***, a fine-grained DNAS for layer geometry optimization (channel pruning, filter size pruning, dilation increase).
-- ***[MPS](plinio/methods/mps/README.md)***, a differentiable Mixed-Precision Search algorithm which extends [EdMIPS](https://arxiv.org/abs/2004.05795) to support channel-wise precision optimization and joint pruning and MPS.
+- **[SuperNet](plinio/methods/supernet/README.md)**, a coarse-grained DNAS for layer selection inspired by [DARTS](https://arxiv.org/abs/1806.09055).
+- **[PIT](plinio/methods/pit/README.md)**, a fine-grained DNAS for layer geometry optimization (channel pruning, filter size pruning, dilation increase).
+- **[MPS](plinio/methods/mps/README.md)**, a differentiable Mixed-Precision Search algorithm which extends [EdMIPS](https://arxiv.org/abs/2004.05795) to support channel-wise precision optimization and joint pruning and MPS.
 
 In the code snippet above, `Method()` should be replaced with one of the supported optimization methods' names. More information on each optimization can be found in the dedicated pages.
 

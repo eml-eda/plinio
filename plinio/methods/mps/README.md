@@ -1,63 +1,68 @@
-# Mixed Precision Assignement (Experimental)
+# MPS - Mixed Precision Search
 
 ## Overview
-`plinio.mixprec` offers a DNAS-based tool to automatically explore and assign the quantization precision to different parts of the provided network. In particular, `plinio.mixprec` is able to explore and assign independent precisions to *weights* and *activations* of convolutional layers.
+`plinio.mps` implements a gradient-based tool to automatically explore and assign an integer quantization precision to different parts of a DNN. In particular, `plinio.mps` is able to explore and assign independent precisions to *weights* and *activations* of convolutional and linear layers.
 
-`plinio.mixprec` implements two different schemes:
+The precision assignnment in `plinio.mps` can have two granularity levels:
 
-1. **Per-Layer** Mixed-Precision Search. Is the default scheme, supported for both activations and weights. With Per-Layer scheme an indipendent precision is selected for **all* activations and **all* weights of a convolutional layer.
-2. **Per-Channel** Mixed-Precision Search. Currently supported **only for weights**. With Per-Channel scheme an indipendent precision is selected for **each* different **output channel* of the weight tensor of a convolutional layer.
+1. **Per-Layer**: the default scheme, supported for both activations and weights. This scheme assigns a single precision to the *entire* activations and weights tensors of each layer.
+2. **Per-Channel**: currently supported **only for weights**. With this scheme, an indipendent precision is selected for **each output channel** of the weight tensor of a convolutional layer. Importantly, this second scheme also supports using **0-bit precision** for some of the channels, thus implementing a joint channel-pruning and MPS scheme.
 
-In order to gain more technical details about the algorithm, please refer to our publication [Channel-wise Mixed-precision Assignment for DNN Inference on Constrained Edge Nodes
+For the technical details on this optimization algorithm, please refer to our publication: [Channel-wise Mixed-precision Assignment for DNN Inference on Constrained Edge Nodes
 ](https://ieeexplore.ieee.org/abstract/document/9969373).
 
-**N.B., the method is still experimental and poorly tested.
-Additionaly, only the Per-Layer scheme is currently supported**
+**Important:**: currently, the `export()` API for exporting the final optimized model crashes for the per-channel assignment scheme. This will be fixed in a future release.
 
 ## Basic Usage
-To optimize your model with `plinio.mixprec` you will need in most situations only **three additional steps** with respect to a normal pytorch training loop:
-1. Import the `MixPrec` conversion module and use it to automatically convert your `model` in an optimizable format. In its basic usage, `MixPrec` requires as arguments:
-    - the `model` to be optimized
-    - the `input_shape` of an imput tensor (without batch-size)
-    - the tuple of `activation_precisions` that we want to explore
-    - the tuple of `weight_precisions` that we want to explore
-    - the `w_mixprec_type`, i.e., the mixprec scheme that we want ot use for weights. It could be `MixPrecType.PER_LAYER` or `MixPrecType.PER_CHANNEL` (default: `MixPrecType.PER_LAYER`)
-    - the `regularizer` to be used (consult [supported regularizers](#supported-regularizers) to know the different alternatives) which dictates the metric that will be optimized.
-    ```python
-    from plinio.methods import MixPrec
-    a_prec = (2, 4, 8)
-    w_prec = (2, 4, 8)
-    mixprec_model = MixPrec(model,
-                            input_shape=input_shape,
-                            activation_precisions=a_prec,
-                            weight_precisions=w_prec,
-                            regularizer='size')
-    ```
-2. Inside the training loop compute regularization-loss and add it to task-loss to optimize the two quantities together. N.B., we suggest to control the relative balance between the two losses by multiplying a scalar `strength` value to the regularization loss.
-    ```python
-    strength = 1e-6  # depends on user specific requirements
-    for epoch in range(N_EPOCHS):
-        for sample, target in data:
-            output = mixprec_model(sample)
-            task_loss = criterion(output, target)
-            reg_loss = strength * mixprec_model.get_regularization_loss()
-            loss = task_loss + reg_loss
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-    ```
-3. Finally export the optimized model. After conversion we suggest to perform some additional epochs of fine-tuning on the `exported_model`.
-    ```python
-    exported_model = mixprec_model.arch_export()
-    ```
+To optimize a DNN with `plinio.mps`, the minimum requirement is to add **three additional steps** to a normal PyTorch training loop:
 
-## Supported Regularizers
-At the current state the following regularization strategies are supported:
-- **Size**: this strategy tries to reduce the total number of parameters of the target layers. It can be used by specificying the argument `regularizer` of `MixPrec()` with the string `'size'`.
-- **MACs**: this strategy tries to reduce the total number of operations of the target layers. It can be used by specificying the argument `regularizer` of `MixPrec()` with the string `'macs'`.
+1. Import the `MPS` class and use it to automatically convert your `model` in an optimizable format. In its basic usage, the `MPS` constructor requires the following arguments:
+    - the `model` to be optimized
+    - The `input_shape` of an input tensor (without batch-size), or alternatively, an `input_example`, i.e., a single input tensor. Those are required for internal shape propagation.
+    - the tuple of activation bit-widths (`a_precisions`) that should be considered as possible alternatives during the optimization.
+    - the tuple of weight bit-widths (`w_precisions`) that should be considered as possible alternatives during the optimization.
+    - the selected precision assignment scheme for the weights (`w_search_type`),  which can be either `MPSType.PER_LAYER` or `MPSType.PER_CHANNEL` (default: `MPSType.PER_LAYER`)
+    - The `cost` model(s) to be used. See [cost models](../../cost/README.md) for details on the available cost models.
+
+```python
+from plinio.methods import MPS, MPSType
+model = MPS(model,
+            input_shape=input_shape,
+            a_precisions=(2, 4, 8),
+            w_precisions=(2, 4, 8),
+            w_search_type=MPSType.PER_LAYER,
+            cost=params_bit)
+```
+
+2. In the training loop, compute the model cost and add it to the standard task-dependent loss to co-optimize the two quantities. Since the value ranges of the two terms might be very different depending on your selected DNN and task, it is important to control the relative balance between the two loss terms by means of a scalar `strength` value:
+
+```python
+strength = 1e-6  # depends on user specific requirements
+for epoch in range(N_EPOCHS):
+    for sample, target in data:
+        output = model(sample)
+        task_loss = criterion(output, target)
+        loss = task_loss + strength * model.cost
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+```
+
+3. Finally export the optimized model. export the optimized model. After conversion, you normally want to perform some additional epochs of fine-tuning on the exported `model`.
+
+```python
+model = model.export()
+```
 
 ## Supported Layers
 At the current state the optimization of the following layers is supported:
-|Layer   |
-|:-:|
-| Conv2d  |
+
+|Layer   | Hyper-Parameters  |
+|:-:|:-:|
+| Conv2d  | Weights Precision, Activations Precision |
+| Linear  | Weights Precision, Activation Precision |
+
+
+## Known Limitations
+
+TBD

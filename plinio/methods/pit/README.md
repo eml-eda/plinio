@@ -96,3 +96,7 @@ At the current state the optimization of the following layers is supported with 
 | Conv1d  | Output-Channels, Kernel-Size, Dilation |
 | Conv2d  | Output-Channels  |
 | Linear  | Output-Features  |
+
+## Known Limitations
+
+TBD
