@@ -184,7 +184,7 @@ class MPS(DNAS):
             if isinstance(layer, MPSModule):
                 layer.update_softmax_options(temperature, hard, gumbel, disable_sampling)
 
-    def arch_export(self):
+    def export(self):
         """Export the architecture found by the NAS as a `quant.nn` module
 
         The returned model will have the trained weights found during the search filled in, but
@@ -196,7 +196,7 @@ class MPS(DNAS):
         mod, _, _ = convert(self.seed, self._input_example, 'export')
         return mod
 
-    def arch_summary(self) -> Dict[str, Dict[str, Any]]:
+    def summary(self) -> Dict[str, Dict[str, Any]]:
         """Generates a dictionary representation of the precision-assignment found by the NAS.
         Only optimized layers are reported
 
@@ -326,5 +326,5 @@ class MPS(DNAS):
         its precision-assignement
         :rtype: str
         """
-        arch = self.arch_summary()
+        arch = self.summary()
         return str(arch)

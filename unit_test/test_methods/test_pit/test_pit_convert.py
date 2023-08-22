@@ -211,7 +211,7 @@ class TestPITConvert(unittest.TestCase):
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         check_batchnorm_folding(self, nn_ut, new_nn.seed)
         check_batchnorm_memory(self, new_nn.seed, ('dw_conv', 'pw_conv', 'fc1'))
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         check_batchnorm_unfolding(self, new_nn.seed, exported_nn)
 
     def test_batchnorm_fusion_illegal(self):
@@ -241,21 +241,21 @@ class TestPITConvert(unittest.TestCase):
         """Test the export of a simple sequential model, just after import"""
         nn_ut = SimpleNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         compare_identical(self, nn_ut, exported_nn)
 
     def test_export_initial_advanced(self):
         """Test the conversion of a ResNet-like model, just after import"""
         nn_ut = TCResNet14(self.tc_resnet_config)
         new_nn = PIT(nn_ut, input_shape=(6, 50))
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         compare_identical(self, nn_ut, exported_nn)
 
     def test_export_initial_depthwise(self):
         """Test the conversion of a model with depthwise convolutions, just after import"""
         nn_ut = DSCNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         compare_identical(self, nn_ut, exported_nn)
 
     def test_export_with_masks(self):
@@ -274,7 +274,7 @@ class TestPITConvert(unittest.TestCase):
             torch.tensor([1, ] * 55 + [0, 1], dtype=torch.float))
         conv1.dilation_masker.gamma = nn.parameter.Parameter(
             torch.tensor([0, 0, 1], dtype=torch.float))
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
 
         for name, child in exported_nn.named_children():
             if name == 'conv0':
@@ -326,7 +326,7 @@ class TestPITConvert(unittest.TestCase):
         # Force masking of dilation
         tcn1.dilation_masker.gamma = nn.parameter.Parameter(
             torch.tensor([0, 1, 1, 1], dtype=torch.float))
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
 
         # block1.tcn1
         block1 = cast(nn.Module, cast(nn.Module, tcn.network)._modules['1'])
@@ -340,7 +340,7 @@ class TestPITConvert(unittest.TestCase):
         # Force masking of dilation
         tcn1.dilation_masker.gamma = nn.parameter.Parameter(
             torch.tensor([1, 1, 1, 1], dtype=torch.float))
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
 
         # Checks on 'tcn.network.0.tcn1'
         _, mod = cast(Tuple, next(
@@ -398,7 +398,7 @@ class TestPITConvert(unittest.TestCase):
         conv1.out_features_masker.alpha = nn.parameter.Parameter(
             torch.tensor([1, 1, 0, 1] * 16, dtype=torch.float))
 
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
 
         for name, child in exported_nn.named_children():
             if name == 'conv1':
@@ -422,7 +422,7 @@ class TestPITConvert(unittest.TestCase):
         """Test the summary report for a simple sequential model"""
         nn_ut = SimpleNN()
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
-        summary = new_nn.arch_summary()
+        summary = new_nn.summary()
         self.assertEqual(summary['conv0']['in_features'], 3, "Wrong in features summary")
         self.assertEqual(summary['conv0']['out_features'], 32, "Wrong out features summary")
         self.assertEqual(summary['conv0']['kernel_size'], (3,), "Wrong kernel size summary")

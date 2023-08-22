@@ -99,7 +99,7 @@ class TestSuperNet(unittest.TestCase):
         self.assertTrue(out1.shape == out2.shape, "Different output shapes")
 
     def test_kws_pitsn_export(self):
-        """Test the arch_export() function and the integrity of the exported model
+        """Test the export() function and the integrity of the exported model
             by forwarding a dummy input and checking that the output has the same
             shape of the output of the original model
         """
@@ -112,7 +112,7 @@ class TestSuperNet(unittest.TestCase):
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out1 = sn_model(dummy_inp)
         sn_model.get_cost()
-        exp = sn_model.arch_export()
+        exp = sn_model.export()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out2 = exp(dummy_inp)
         self.assertTrue(out1.shape == out2.shape, "Different output shapes")
@@ -131,7 +131,7 @@ class TestSuperNet(unittest.TestCase):
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out1 = sn_model(dummy_inp)
         sn_model.get_cost()
-        exp = sn_model.arch_export()
+        exp = sn_model.export()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out2 = exp(dummy_inp)
         self.assertTrue(out1.shape == out2.shape, "Different output shapes")
@@ -150,7 +150,7 @@ class TestSuperNet(unittest.TestCase):
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out1 = sn_model(dummy_inp)
         sn_model.get_cost()
-        exp = sn_model.arch_export()
+        exp = sn_model.export()
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         out2 = exp(dummy_inp)
         self.assertTrue(out1.shape == out2.shape, "Different output shapes")
@@ -163,7 +163,7 @@ class TestSuperNet(unittest.TestCase):
         in_height = 64
         model = StandardSNModule()
         sn_model = SuperNet(model, input_shape=(ch_in, in_width, in_height))
-        sn_model.arch_summary()
+        sn_model.summary()
 
     def test_pitsn_icv(self):
         """Test the correct computation of icv loss

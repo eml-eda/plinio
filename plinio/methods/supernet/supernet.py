@@ -101,7 +101,7 @@ class SuperNet(DNAS):
                 if hard is not None:
                     layer.hard_softmax = hard
 
-    def arch_export(self) -> nn.Module:
+    def export(self) -> nn.Module:
         """Export the architecture found by the NAS as a 'nn.Module'
         It replaces each PITSuperNetModule found in the model with a single layer.
 
@@ -112,7 +112,7 @@ class SuperNet(DNAS):
         model, _, _ = convert(model, self._input_example, 'export')
         return model
 
-    def arch_summary(self) -> Dict[str, Dict[str, Any]]:
+    def summary(self) -> Dict[str, Dict[str, Any]]:
         """Generates a dictionary representation of the architecture found by the NAS.
         Only optimized layers are reported
 
@@ -201,5 +201,5 @@ class SuperNet(DNAS):
         :return: a str representation of the current architecture
         :rtype: str
         """
-        arch = self.arch_summary()
+        arch = self.summary()
         return str(arch)

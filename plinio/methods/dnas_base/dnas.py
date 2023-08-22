@@ -79,6 +79,27 @@ class DNAS(nn.Module):
         """
         return self.get_cost(None)
 
+    @abstractmethod
+    def export(self) -> nn.Module:
+        """Export the architecture found by the NAS as a 'nn.Module'
+
+        :raises NotImplementedError: on the base DNAS class
+        :return: the architecture found by the NAS
+        :rtype: nn.Module
+        """
+        raise NotImplementedError("Trying to export optimized model on the base DNAS class")
+
+    @abstractmethod
+    def summary(self) -> Dict[str, Dict[str, Any]]:
+        """Generates a dictionary representation of the architecture found by the NAS.
+        Only optimized layers are reported
+
+        :raises NotImplementedError: on the base DNAS class
+        :return: a dictionary representation of the architecture found by the NAS
+        :rtype: Dict[str, Dict[str, Any]]
+        """
+        raise NotImplementedError("Trying to get model summary on the base DNAS class")
+
     def get_cost(self, name: Optional[str] = None) -> torch.Tensor:
         """Returns the value of the model cost metric named "name".
         Only allowed alternative in case of multiple cost metrics.

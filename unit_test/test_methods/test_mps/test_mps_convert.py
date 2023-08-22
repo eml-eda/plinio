@@ -224,7 +224,7 @@ class TestMPSConvert(unittest.TestCase):
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      a_precisions=(8,), w_precisions=(4, 8))
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         expected_exported_nn = SimpleExportedNN2D()
         compare_exported(self, exported_nn, expected_exported_nn)
 
@@ -253,7 +253,7 @@ class TestMPSConvert(unittest.TestCase):
         new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
         fc = cast(MPSLinear, new_nn.seed.fc)
         fc.w_mps_quantizer.alpha = new_alpha_t
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         expected_exported_nn = SimpleExportedNN2D_ch(bias=False)
         compare_exported(self, exported_nn, expected_exported_nn)
 
@@ -273,7 +273,7 @@ class TestMPSConvert(unittest.TestCase):
         # Dummy inference
         with torch.no_grad():
             new_nn(x)
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         exported_nn = exported_nn.to(device)
         # Dummy inference
         with torch.no_grad():
@@ -317,7 +317,7 @@ class TestMPSConvert(unittest.TestCase):
         new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
         fc = cast(MPSLinear, new_nn.seed.fc)
         fc.w_mps_quantizer.alpha = new_alpha_t
-        exported_nn = new_nn.arch_export().to(device)
+        exported_nn = new_nn.export().to(device)
         # dummy inference
         with torch.no_grad():
             exported_nn(x)
@@ -330,7 +330,7 @@ class TestMPSConvert(unittest.TestCase):
         nn_ut = SimpleNN2D_NoBN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
                      a_precisions=(8,), w_precisions=(4, 8))
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         expected_exported_nn = SimpleExportedNN2D(bias=False)
         compare_exported(self, exported_nn, expected_exported_nn)
 
@@ -359,7 +359,7 @@ class TestMPSConvert(unittest.TestCase):
         new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
         fc = cast(MPSLinear, new_nn.seed.fc)
         fc.w_mps_quantizer.alpha = new_alpha_t
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         expected_exported_nn = SimpleExportedNN2D_ch(bias=False)
         compare_exported(self, exported_nn, expected_exported_nn)
 
@@ -385,7 +385,7 @@ class TestMPSConvert(unittest.TestCase):
         conv1.w_mps_quantizer.alpha = nn.parameter.Parameter(
             torch.tensor([1.5, 0.2, 1.9], dtype=torch.float))
 
-        exported_nn = new_nn.arch_export()
+        exported_nn = new_nn.export()
         # Dummy fwd to fill scale-factors values
         dummy_inp = torch.rand((2,) + nn_ut.input_shape)
         with torch.no_grad():

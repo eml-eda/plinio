@@ -52,7 +52,7 @@ class TestMPSConvert(unittest.TestCase):
             out_mixprec = mixprec_nn(dummy_inp)
 
         # Convert to (fake) quantized model
-        quantized_nn = mixprec_nn.arch_export()
+        quantized_nn = mixprec_nn.export()
         # Dummy inference
         with torch.no_grad():
             out_quant = quantized_nn(dummy_inp)
@@ -93,7 +93,7 @@ class TestMPSConvert(unittest.TestCase):
             out_mixprec = mixprec_nn(dummy_inp)
 
         # Convert to (fake) quantized model
-        quantized_nn = mixprec_nn.arch_export()
+        quantized_nn = mixprec_nn.export()
         # Dummy inference
         with torch.no_grad():
             out_quant = quantized_nn(dummy_inp)
@@ -135,7 +135,7 @@ class TestMPSConvert(unittest.TestCase):
             out_mixprec = mixprec_nn(dummy_inp)
 
         # Convert to (fake) quantized model
-        quantized_nn = mixprec_nn.arch_export()
+        quantized_nn = mixprec_nn.export()
         # Dummy inference
         with torch.no_grad():
             out_quant = quantized_nn(dummy_inp)

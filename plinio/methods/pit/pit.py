@@ -193,7 +193,7 @@ class PIT(DNAS):
                 layer.train_dilation = value  # type: ignore
         self._train_dilation = value
 
-    def arch_export(self, add_bn=True):
+    def export(self, add_bn=True):
         """Export the architecture found by the NAS as a `nn.Module`
 
         The returned model will have the trained weights found during the search filled in, but
@@ -215,7 +215,7 @@ class PIT(DNAS):
 
         return mod
 
-    def arch_summary(self) -> Dict[str, Dict[str, Any]]:
+    def summary(self) -> Dict[str, Dict[str, Any]]:
         """Generates a dictionary representation of the architecture found by the NAS.
         Only optimized layers are reported
 
@@ -310,5 +310,5 @@ class PIT(DNAS):
         :return: a str representation of the current architecture
         :rtype: str
         """
-        arch = self.arch_summary()
+        arch = self.summary()
         return str(arch)
