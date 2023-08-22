@@ -189,6 +189,10 @@ class MPSIdentity(nn.Identity, MPSModule):
         for name, param in self.out_mps_quantizer.named_parameters(
                 prfx + "out_mps_quantizer", recurse):
             yield name, param
+        # we also return the input quantizer, since possible duplicates are removed at mps.py level
+        for name, param in self.in_mps_quantizer.named_parameters(
+                prfx + "in_mps_quantizer", recurse):
+            yield name, param
 
     @property
     def selected_out_precision(self) -> int:

@@ -18,5 +18,6 @@
 # *----------------------------------------------------------------------------*
 
 from .mps import MPS
+from .nn.qtz import MPSType
 
-__all__ = ['MPS']
+__all__ = ['MPS', 'MPSType']

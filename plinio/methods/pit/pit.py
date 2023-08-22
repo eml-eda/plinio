@@ -248,7 +248,7 @@ class PIT(DNAS):
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname
-                for name, param in layer.named_nas_parameters(prefix=lname, recurse=recurse):
+                for name, param in layer.named_nas_parameters(prefix=prfx, recurse=recurse):
                     # avoid duplicates (e.g. shared channels masks)
                     if param not in included:
                         included.add(param)
@@ -266,9 +266,9 @@ class PIT(DNAS):
         :return: an iterator over the inner network parameters
         :rtype: Iterator[nn.Parameter]
         """
-        exclude = set(_[0] for _ in self.named_nas_parameters())
-        for name, param in self.named_parameters():
-            if name not in exclude:
+        exclude = set(_[1] for _ in self.named_nas_parameters())
+        for name, param in self.named_parameters(prefix=prefix, recurse=recurse):
+            if param not in exclude:
                 yield name, param
 
     def _get_single_cost(self, cost_spec: CostSpec,

@@ -246,12 +246,12 @@ class MPS(DNAS):
         :rtype: Iterator[nn.Parameter]
         """
         included = set()
-        for lname, _, layer in self._unique_leaf_modules:
+        for lname, layer in self.named_modules():
             if isinstance(layer, MPSModule):
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname
-                for name, param in layer.named_nas_parameters(prefix=lname, recurse=recurse):
+                for name, param in layer.named_nas_parameters(prefix=prfx, recurse=recurse):
                     # avoid duplicates (e.g. shared params)
                     if param not in included:
                         included.add(param)
@@ -269,9 +269,9 @@ class MPS(DNAS):
         :return: an iterator over the inner network parameters
         :rtype: Iterator[nn.Parameter]
         """
-        exclude = set(_[0] for _ in self.named_nas_parameters())
+        exclude = set(_[1] for _ in self.named_nas_parameters())
         for name, param in self.named_parameters(prefix=prefix, recurse=recurse):
-            if name not in exclude:
+            if param not in exclude:
                 yield name, param
 
     def _get_single_cost(self, cost_spec: CostSpec,

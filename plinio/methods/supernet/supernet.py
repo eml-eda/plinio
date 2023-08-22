@@ -1,4 +1,4 @@
-from typing import Union, Tuple, Any, Iterator, Dict, Optional
+from typing import Union, Tuple, Any, Iterator, Dict, Optional, cast
 import torch
 import torch.nn as nn
 from plinio.methods.dnas_base import DNAS
@@ -138,15 +138,18 @@ class SuperNet(DNAS):
         :return: an iterator over the architectural parameters of the NAS
         :rtype: Iterator[nn.Parameter]
         """
-        for name, _, layer in self._unique_leaf_modules:
+        included = set()
+        for lname, layer in self.named_modules():
             if isinstance(layer, SuperNetCombiner):
+                layer = cast(SuperNetCombiner, layer)
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
-                prfx += name
-                prfx += "." if len(prfx) > 0 else ""
-                for name, param in layer.named_nas_parameters():
-                    prfx = prfx + name
-                    yield prfx, param
+                prfx += lname
+                for name, param in layer.named_nas_parameters(prefix=prfx, recurse=recurse):
+                    # avoid duplicates (e.g. shared channels masks)
+                    if param not in included:
+                        included.add(param)
+                        yield name, param
 
     def named_net_parameters(
             self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
@@ -160,10 +163,9 @@ class SuperNet(DNAS):
         :return: an iterator over the inner network parameters
         :rtype: Iterator[nn.Parameter]
         """
-        exclude = set(_[0] for _ in self.named_nas_parameters())
-
-        for name, param in self.seed.named_parameters():
-            if name not in exclude:
+        exclude = set(_[1] for _ in self.named_nas_parameters())
+        for name, param in self.named_parameters(prefix=prefix, recurse=recurse):
+            if param not in exclude:
                 yield name, param
 
     def _get_single_cost(self, cost_spec: CostSpec,

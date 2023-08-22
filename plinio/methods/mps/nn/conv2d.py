@@ -311,6 +311,10 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         for name, param in self.w_mps_quantizer.named_parameters(
                 prfx + "w_mps_quantizer", recurse):
             yield name, param
+        # we also return the input quantizer, since possible duplicates are removed at mps.py level
+        for name, param in self.in_mps_quantizer.named_parameters(
+                prfx + "in_mps_quantizer", recurse):
+            yield name, param
         # no bias MPS quantizer since it is sharing the parameters of the act and weights
 
     @property
