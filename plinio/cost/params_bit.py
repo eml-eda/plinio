@@ -26,8 +26,8 @@ def _params_bit_conv1d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     w_precision = spec['w_precision']
-    w_format = spec['w_format']
-    assert w_format == int, "Model only supports integer quantization"
+    # w_format = spec['w_format']
+    # assert w_format == int, "Model only supports integer quantization"
     # cost = cout * (cin * k + 1) * w_precision
     cost = cout * (cin * k) * w_precision
     return cost
@@ -38,8 +38,8 @@ def _params_bit_conv2d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     w_precision = spec['w_precision']
-    w_format = spec['w_format']
-    assert w_format == int, "Model only supports integer quantization"
+    # w_format = spec['w_format']
+    # assert w_format == int, "Model only supports integer quantization"
     # cost = cout * (cin * k[0] * k[1] + 1) * w_precision
     cost = cout * (cin * k[0] * k[1]) * w_precision
     return cost
@@ -49,8 +49,8 @@ def _params_bit_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
     w_precision = spec['w_precision']
-    w_format = spec['w_format']
-    assert w_format == int, "Model only supports integer quantization"
+    # w_format = spec['w_format']
+    # assert w_format == int, "Model only supports integer quantization"
     # cost = cin * (k + 1) * w_precision
     cost = cin * (k) * w_precision
     return cost
@@ -60,8 +60,8 @@ def _params_bit_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
     w_precision = spec['w_precision']
-    w_format = spec['w_format']
-    assert w_format == int, "Model only supports integer quantization"
+    # w_format = spec['w_format']
+    # assert w_format == int, "Model only supports integer quantization"
     # cost = cin * (k[0] * k[1] + 1) * w_precision
     cost = cin * (k[0] * k[1]) * w_precision
     return cost
@@ -71,8 +71,8 @@ def _params_bit_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
     w_precision = spec['w_precision']
-    w_format = spec['w_format']
-    assert w_format == int, "Model only supports integer quantization"
+    # w_format = spec['w_format']
+    # assert w_format == int, "Model only supports integer quantization"
     # cost = cout * (cin + 1) * w_precision
     cost = cout * (cin) * w_precision
     return cost
