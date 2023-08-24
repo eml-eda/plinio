@@ -54,7 +54,7 @@ class TestMPSSearch(unittest.TestCase):
         exp_size_fc = (980 * 2) * eff_w_prec
         exp_size_net = 2 * exp_size_conv1 + exp_size_conv2 + exp_size_fc
         self.assertAlmostEqual(float(mixprec_net.cost),
-                               exp_size_net, 0, "Wrong net size ")
+                               float(exp_size_net), 0, "Wrong net size ")
         # check that get_cost() and cost give the same result
         self.assertEqual(float(mixprec_net.get_cost()),
                          float(mixprec_net.cost),

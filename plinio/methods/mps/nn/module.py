@@ -137,12 +137,12 @@ class MPSModule:
         return {}
 
     @abstractmethod
-    def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
+    def get_modified_vars(self) -> Dict[str, Any]:
         """Method that returns the modified vars(self) dictionary for the instance, for each
         combination of supported precision, used for cost computation
 
         :return: an iterator over the modified vars(self) data structures
-        :rtype: Iterator[Dict[str, Any]]
+        :rtype: Dict[str, Any]
         """
         raise NotImplementedError("Calling get_modified_vars on base abstract MPSModule class")
 

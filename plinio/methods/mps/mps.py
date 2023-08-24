@@ -282,10 +282,10 @@ class MPS(DNAS):
         for lname, node, layer in target_list:
             if isinstance(layer, MPSModule):
                 # a list of layer parameters for each combination of supported precision
-                v_iterator = layer.get_modified_vars()
-                for v in v_iterator:
-                    v.update(shapes_dict(node))
-                    cost = cost + cost_fn_map[lname](v)
+                v = layer.get_modified_vars()
+                v.update(shapes_dict(node))
+                # TODO: replace torch.sum() with configurable reduce_fn to support ODiMO
+                cost = cost + torch.sum(cost_fn_map[lname](v), dim=None)
             elif self.full_cost:
                 # TODO: this is constant and can be pre-computed for efficiency
                 # TODO: should we add default bitwidth and format for non-MPS layers or not?

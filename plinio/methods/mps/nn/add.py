@@ -95,23 +95,22 @@ class MPSAdd(MPSIdentity):
         )
         mod.add_submodule(str(n.target), new_submodule)
 
-    def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
+    def get_modified_vars(self) -> Dict[str, Any]:
         """Method that returns the modified vars(self) dictionary for the instance, for each
         combination of supported precision, used for cost computation
 
         :return: an iterator over the modified vars(self) data structures
-        :rtype: Iterator[Dict[str, Any]]
+        :rtype: Dict[str, Any]
         """
-        for i, a_prec in enumerate(cast(torch.Tensor, self.in_mps_quantizer.precisions)):
-            v = dict(vars(self))
-            v['in_precision'] = a_prec
-            v['in_format'] = int
-            # downscale the input_channels times the probability of using that
-            # input precision
-            # TODO: detach to be double-checked
-            v['in_channels'] = (self.input_features_calculator.features.detach() *
-                                self.in_mps_quantizer.theta_alpha[i])
-            # TODO: verify that it's correct to use out_features_eff here, differently from
-            # conv/linear layers.
-            v['out_channels'] = self.out_features_eff
-            yield v
+        v = dict(vars(self))
+        v['in_precision'] = self.in_mps_quantizer.precisions
+        v['in_format'] = int
+        # downscale the input_channels times the probability of using that
+        # input precision
+        # TODO: detach to be double-checked
+        v['in_channels'] = (self.input_features_calculator.features.detach() *
+                            self.in_mps_quantizer.theta_alpha)
+        # TODO: verify that it's correct to use out_features_eff here, differently from
+        # conv/linear layers.
+        v['out_channels'] = self.out_features_eff
+        return v

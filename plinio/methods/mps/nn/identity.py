@@ -149,29 +149,27 @@ class MPSIdentity(nn.Identity, MPSModule):
             'out_params': out_params
         }
 
-    def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
+    def get_modified_vars(self) -> Dict[str, Any]:
         """Method that returns the modified vars(self) dictionary for the instance, for each
         combination of supported precision, used for cost computation
 
         :return: an iterator over the modified vars(self) data structures
-        :rtype: Iterator[Dict[str, Any]]
+        :rtype: Dict[str, Any]
         """
-        for i, a_prec in enumerate(cast(torch.Tensor, self.out_mps_quantizer.precisions)):
-            v = dict(vars(self))
-            v['out_precision'] = a_prec
-            v['out_format'] = int
-            # TODO: detach to be double-checked
-            v['in_channels'] = self.input_features_calculator.features.detach()
-            # conv/linear layers.
-            # downscale the output_channels times the probability of using that
-            # output precision
-            # TODO: verify that it's correct to use out_features_eff here, differently from
-            # conv/linear
-            # TODO: this is the only layer using out_precision/out_format (as opposed to
-            # in_precision/in_format) at the moment
-            v['out_channels'] = (self.out_features_eff *
-                                 self.out_mps_quantizer.theta_alpha[i])
-            yield v
+        v = dict(vars(self))
+        v['out_precision'] = self.out_mps_quantizer.precisions
+        v['out_format'] = int
+        # TODO: detach to be double-checked
+        v['in_channels'] = self.input_features_calculator.features.detach()
+        # conv/linear layers.
+        # downscale the output_channels times the probability of using that
+        # output precision
+        # TODO: verify that it's correct to use out_features_eff here, differently from
+        # conv/linear
+        # TODO: this is the only layer using out_precision/out_format (as opposed to
+        # in_precision/in_format) at the moment
+        v['out_channels'] = (self.out_features_eff * self.out_mps_quantizer.theta_alpha)
+        return v
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:

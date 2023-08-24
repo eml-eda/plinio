@@ -26,7 +26,7 @@ CostFn = Callable[[PatternSpec], torch.Tensor]
 
 
 def cost_spec_zero_fn(_):
-    return 0.0
+    return torch.tensor(0.0)
 
 
 def cost_spec_fail_fn(x):

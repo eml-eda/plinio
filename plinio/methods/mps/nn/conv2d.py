@@ -260,36 +260,34 @@ class MPSConv2d(nn.Conv2d, MPSModule):
             'w_params': w_params
         }
 
-    def get_modified_vars(self) -> Iterator[Dict[str, Any]]:
+    def get_modified_vars(self) -> Dict[str, Any]:
         """Method that returns the modified vars(self) dictionary for the instance, for each
         combination of supported precision, used for cost computation
 
         :return: an iterator over the modified vars(self) data structures
-        :rtype: Iterator[Dict[str, Any]]
+        :rtype: Dict[str, Any]
         """
-        for i, a_prec in enumerate(cast(torch.Tensor, self.in_mps_quantizer.precisions)):
-            for j, w_prec in enumerate(cast(torch.Tensor, self.w_mps_quantizer.precisions)):
-                v = dict(vars(self))
-                v['in_precision'] = a_prec
-                v['in_format'] = int
-                v['w_precision'] = w_prec
-                v['w_format'] = int
-                # downscale the input_channels times the probability of using that
-                # input precision
-                # TODO: detach to be double-checked
-                v['in_channels'] = (self.input_features_calculator.features.detach() *
-                                    self.in_mps_quantizer.theta_alpha[i])
-                # same with weights precision and output channels, but distinguish the two types
-                # of quantizer
-                if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
-                    v['out_channels'] = (self.out_channels *
-                                         self.w_mps_quantizer.theta_alpha[j])
-                elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
-                    v['out_channels'] = self.w_mps_quantizer.theta_alpha[j, :].sum()
-                else:
-                    msg = f'Supported mixed-precision types: {list(MPSType)}'
-                    raise ValueError(msg)
-                yield v
+        v = dict(vars(self))
+        v['in_precision'] = self.in_mps_quantizer.precisions
+        v['in_format'] = int
+        v['w_precision'] = self.w_mps_quantizer.precisions
+        v['w_format'] = int
+        # downscale the input_channels times the probability of using that
+        # input precision
+        # TODO: detach to be double-checked
+        v['in_channels'] = (self.input_features_calculator.features.detach() *
+                            self.in_mps_quantizer.theta_alpha)
+        # same with weights precision and output channels, but distinguish the two types
+        # of quantizer
+        if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
+            v['out_channels'] = (self.out_channels *
+                                 self.w_mps_quantizer.theta_alpha)
+        elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
+            v['out_channels'] = self.w_mps_quantizer.theta_alpha.sum(dim=1)
+        else:
+            msg = f'Supported mixed-precision types: {list(MPSType)}'
+            raise ValueError(msg)
+        return v
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
