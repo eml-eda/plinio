@@ -267,8 +267,8 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         :return: an iterator over the modified vars(self) data structures
         :rtype: Iterator[Dict[str, Any]]
         """
-        for i, a_prec in enumerate(self.in_mps_quantizer.precisions):
-            for j, w_prec in enumerate(self.w_mps_quantizer.precisions):
+        for i, a_prec in enumerate(cast(torch.Tensor, self.in_mps_quantizer.precisions)):
+            for j, w_prec in enumerate(cast(torch.Tensor, self.w_mps_quantizer.precisions)):
                 v = dict(vars(self))
                 v['in_precision'] = a_prec
                 v['in_format'] = int

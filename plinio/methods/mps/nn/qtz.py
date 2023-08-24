@@ -19,7 +19,7 @@
 
 from abc import abstractmethod
 from enum import Enum, auto
-from typing import Dict, Tuple, Type, cast, Optional, Union
+from typing import Dict, Tuple, Type, cast, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -63,7 +63,7 @@ class MPSBaseQtz(nn.Module):
         super(MPSBaseQtz, self).__init__()
         if len(precisions) != len(set(precisions)):
             raise ValueError("Precisions cannot be repeated")
-        self.precisions = torch.tensor(precisions)
+        self.register_buffer('precisions', torch.tensor(precisions, dtype=torch.float))
         self.quantizer = quantizer
         self.quantizer_kwargs = quantizer_kwargs
         # create individual quantizers
@@ -72,6 +72,8 @@ class MPSBaseQtz(nn.Module):
             qtz = quantizer(p, **quantizer_kwargs)
             qtz = cast(nn.Module, qtz)
             self.qtz_funcs.append(qtz)
+        # create buffer for temperature tensor
+        self.register_buffer('temperature', torch.tensor(softmax_temperature, dtype=torch.float))
         # set the sampling options
         self.update_softmax_options(
                 temperature=softmax_temperature,

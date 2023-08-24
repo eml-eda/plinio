@@ -219,7 +219,7 @@ class DNAS(nn.Module):
         if shape is not None:
             try:
                 # create a "fake" minibatch of 1 input for shape prop
-                example = torch.stack([torch.rand(shape)] * 1, 0)
+                example = torch.stack([torch.rand(shape)] * 1, 0).to(self._device)
                 return example
             except TypeError:
                 msg = ('If the provided `input_shape` is not a simple tuple '

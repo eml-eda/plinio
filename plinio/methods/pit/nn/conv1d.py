@@ -83,7 +83,9 @@ class PITConv1d(nn.Conv1d, PITModule):
         self.binarization_threshold = binarization_threshold
         self.discrete_cost = discrete_cost
         self.following_bn_args: Optional[Dict[str, Any]] = None
-        self._beta_norm, self._gamma_norm = self._generate_norm_constants()
+        _beta_norm, _gamma_norm = self._generate_norm_constants()
+        self.register_buffer('_beta_norm', _beta_norm)
+        self.register_buffer('_gamma_norm', _gamma_norm)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the NAS-able layer.

@@ -156,7 +156,7 @@ class MPSIdentity(nn.Identity, MPSModule):
         :return: an iterator over the modified vars(self) data structures
         :rtype: Iterator[Dict[str, Any]]
         """
-        for i, a_prec in enumerate(self.out_mps_quantizer.precisions):
+        for i, a_prec in enumerate(cast(torch.Tensor, self.out_mps_quantizer.precisions)):
             v = dict(vars(self))
             v['out_precision'] = a_prec
             v['out_format'] = int

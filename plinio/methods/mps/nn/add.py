@@ -18,7 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 import operator
-from typing import Dict, Any, Iterator, Union
+from typing import Dict, Any, Iterator, Union, cast
 import torch
 import torch.fx as fx
 from ..quant.nn import QuantIdentity
@@ -102,7 +102,7 @@ class MPSAdd(MPSIdentity):
         :return: an iterator over the modified vars(self) data structures
         :rtype: Iterator[Dict[str, Any]]
         """
-        for i, a_prec in enumerate(self.in_mps_quantizer.precisions):
+        for i, a_prec in enumerate(cast(torch.Tensor, self.in_mps_quantizer.precisions)):
             v = dict(vars(self))
             v['in_precision'] = a_prec
             v['in_format'] = int
