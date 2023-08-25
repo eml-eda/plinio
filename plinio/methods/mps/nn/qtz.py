@@ -80,10 +80,6 @@ class MPSBaseQtz(nn.Module):
                 hard=hard_softmax,
                 gumbel=gumbel_softmax,
                 disable_sampling=disable_sampling)
-        # create and initialize the parameters (placeholder for type-checking,
-        # rewritten by sub-classes)
-        self.alpha = torch.tensor(0)
-        self.theta_alpha = torch.tensor(0)
 
     @abstractmethod
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -106,7 +102,8 @@ class MPSBaseQtz(nn.Module):
         Samples the alpha coefficients using a standard SoftMax (with temperature).
         The corresponding normalized parameters (summing to 1) are stored in the theta_alpha buffer.
         """
-        self.theta_alpha = F.softmax(self.alpha / self.temperature.item(), dim=0)
+        self.theta_alpha = F.softmax(
+                cast(torch.Tensor, self.alpha) / self.temperature.item(), dim=0)
         if (self.hard_softmax) or (not self.training):
             self.theta_alpha = cast(torch.Tensor, STEArgmax.apply(self.theta_alpha))
 
@@ -117,7 +114,7 @@ class MPSBaseQtz(nn.Module):
         """
         if self.training:
             self.theta_alpha = F.gumbel_softmax(
-                logits=self.alpha,
+                logits=cast(torch.Tensor, self.alpha),
                 tau=self.temperature.item(),
                 hard=self.hard_softmax,
                 dim=0)
@@ -232,8 +229,8 @@ class MPSPerChannelQtz(MPSBaseQtz):
         max_precision = max(precisions)
         for i, p in enumerate(precisions):
             self.alpha.data[i, :].fill_(float(p) / max_precision)
-        self.theta_alpha = torch.ones((len(precisions), quantizer_kwargs['cout']),
-                                      dtype=torch.float32)
+        self.register_buffer('theta_alpha', torch.ones((len(precisions), quantizer_kwargs['cout']),
+                                                       dtype=torch.float32))
         # initial sampling
         with torch.no_grad():
             self.sample_alpha()
@@ -337,7 +334,7 @@ class MPSPerLayerQtz(MPSBaseQtz):
         max_precision = max(precisions)
         for i, p in enumerate(precisions):
             self.alpha.data[i].fill_(float(p) / max_precision)
-        self.theta_alpha = torch.ones((len(precisions),), dtype=torch.float32)
+        self.register_buffer('theta_alpha', torch.ones((len(precisions),), dtype=torch.float32))
         # initial sampling
         with torch.no_grad():
             self.sample_alpha()
