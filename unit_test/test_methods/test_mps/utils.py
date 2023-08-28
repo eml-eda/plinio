@@ -21,6 +21,7 @@ import unittest
 import torch.nn as nn
 from plinio.methods import MPS
 from plinio.methods.mps.nn import MPSConv2d, MPSModule
+from plinio.methods.mps.quant.quantizers import DummyQuantizer
 import plinio.methods.mps.quant.nn as qnn
 
 
@@ -186,7 +187,7 @@ def check_linear(test: unittest.TestCase, child, new_child):
     test.assertTrue(child.in_features == new_child.in_features)
     test.assertTrue(child.out_features == new_child.out_features)
     # Check qtz param
-    if type(new_child.out_quantizer) != nn.Identity:
+    if type(new_child.out_quantizer) != DummyQuantizer:
         test.assertTrue(child.out_quantizer.precision ==
                         new_child.out_quantizer.precision)
     test.assertTrue(child.w_quantizer.precision ==

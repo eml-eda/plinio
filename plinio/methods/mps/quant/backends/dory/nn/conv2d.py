@@ -21,7 +21,7 @@ from typing import Dict, Any, Optional, cast, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from plinio.methods.mps.quant.quantizers import Quantizer
+from plinio.methods.mps.quant.quantizers import Quantizer, DummyQuantizer
 from plinio.methods.mps.quant.backends.utils import binary_search
 from .module import DORYModule
 
@@ -80,7 +80,7 @@ class DORYConv2d(nn.Conv2d, DORYModule):
         # Compute self.scale_fact and self.shift
         self.s_w = self.w_quantizer.scale
         self.s_x = self.in_quantizer.scale
-        if type(self.out_quantizer) != nn.Identity:
+        if type(self.out_quantizer) != DummyQuantizer:
             self.s_y = self.out_quantizer.scale
             self.skip_requant = False
         else:

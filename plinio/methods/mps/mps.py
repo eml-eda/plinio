@@ -141,7 +141,7 @@ class MPS(DNAS):
             disable_shared_quantizers)
         self._cost_fn_map = self._create_cost_fn_map()
         self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
-        if not hard_softmax:
+        if not hard_softmax and 0 in w_precisions:
             self.compensate_weights_values()
         self.full_cost = full_cost
 

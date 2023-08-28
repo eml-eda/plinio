@@ -63,7 +63,9 @@ class MPSAdd(MPSIdentity):
             msg = f"Trying to generate MPSAdd from layer of type {type(n.target)}"
             raise TypeError(msg)
         new_submodule = MPSAdd(out_mps_quantizer)
-        name = str(n) + '_' + str(n.all_input_nodes) + '_quant'
+        name = str('add_')
+        name += str(n.all_input_nodes).replace('[', '').replace(']', '').replace(', ', '_')
+        name += '_quant'
         mod.add_submodule(name, new_submodule)
         with mod.graph.inserting_after(n):
             new_node = mod.graph.call_module(

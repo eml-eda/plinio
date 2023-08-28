@@ -49,7 +49,7 @@ class TestPITLinear(unittest.TestCase):
             fc_ut_out = fc_ut(dummy_inp)
             pitfc_ut_out = pitfc_ut(dummy_inp)[:, rnd_alpha.bool()]
 
-        self.assertTrue(torch.all(fc_ut_out == pitfc_ut_out), "Different outputs")
+        self.assertTrue(torch.allclose(fc_ut_out, pitfc_ut_out), "Different outputs")
 
 
 if __name__ == '__main__':

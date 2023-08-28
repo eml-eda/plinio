@@ -66,7 +66,7 @@ class MPSLinear(nn.Linear, MPSModule):
             self.b_mps_quantizer = lambda *args: None  # Do Nothing
         # these two lines will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
-        self.in_mps_quantizer = MPSPerLayerQtz((32,), DummyQuantizer)
+        self.in_mps_quantizer = MPSPerLayerQtz((-1,), DummyQuantizer)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.
@@ -229,7 +229,7 @@ class MPSLinear(nn.Linear, MPSModule):
                     theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i][0]
                 else:
                     theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i]
-                self.weight.data = self.weight.data / theta_alpha_rescaling
+        self.weight.data = self.weight.data / theta_alpha_rescaling
         return
 
     def summary(self) -> Dict[str, Any]:
@@ -337,12 +337,9 @@ class MPSLinear(nn.Linear, MPSModule):
         :return: the selected precision
         :rtype: Union[int, str]
         """
-        if type(self.out_mps_quantizer) != nn.Identity:
-            with torch.no_grad():
-                idx = int(torch.argmax(self.out_mps_quantizer.alpha))
-                return int(self.out_mps_quantizer.precisions[idx])
-        else:
-            return 'float'
+        with torch.no_grad():
+            idx = int(torch.argmax(self.out_mps_quantizer.alpha))
+            return int(self.out_mps_quantizer.precisions[idx])
 
     @property
     def selected_w_precision(self) -> Union[int, List[int]]:
@@ -385,15 +382,10 @@ class MPSLinear(nn.Linear, MPSModule):
         :return: the selected quantizer
         :rtype: Type[Quantizer]
         """
-        if type(self.out_mps_quantizer) != nn.Identity:
-            with torch.no_grad():
-                idx = int(torch.argmax(self.out_mps_quantizer.alpha))
-                qtz = self.out_mps_quantizer.qtz_funcs[idx]
-                qtz = cast(Quantizer, qtz)
-                return qtz
-        else:
-            # TODO: when is this case used? Output layer?
-            qtz = cast(Quantizer, self.out_mps_quantizer)
+        with torch.no_grad():
+            idx = int(torch.argmax(self.out_mps_quantizer.alpha))
+            qtz = self.out_mps_quantizer.qtz_funcs[idx]
+            qtz = cast(Quantizer, qtz)
             return qtz
 
     @property

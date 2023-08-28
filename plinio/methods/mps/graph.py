@@ -36,6 +36,7 @@ from plinio.graph.transformation import fuse_consecutive_layers
 from plinio.graph.features_calculation import ModAttrFeaturesCalculator
 from plinio.graph.utils import fx_to_nx_graph, NamedLeafModules
 from .nn.qtz import MPSType, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
+from .quant.quantizers import DummyQuantizer
 
 # add new supported layers here:
 mps_layer_map: Dict[Type[nn.Module], Type[MPSModule]] = {
@@ -266,21 +267,25 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
             if n in get_graph_outputs(mod.graph):
                 # distinguish the case in which the number of features must "frozen"
                 # i.e., the case of input-connected or output-connected components,
-                # this may overwrite a previously set "sq_w"
+                # this may overwrite previously set "sq_w" and "sq_a"
                 # In this case we simply remove the precision '0' from `weight_precisions`
                 # if present and if mixprec search is PER_CHANNEL
+                w_quantizer = curr_qinfo['w_quantizer']['quantizer']
+                w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
+                cout = n.meta['tensor_meta'].shape[1]
+                w_quantizer_kwargs['cout'] = cout
                 if w_search_type == MPSType.PER_CHANNEL:
                     new_weight_precisions = tuple(p for p in weight_precisions if p != 0)
-                    w_quantizer = curr_qinfo['w_quantizer']['quantizer']
-                    w_quantizer_kwargs = curr_qinfo['w_quantizer']['kwargs']
-                    cout = n.meta['tensor_meta'].shape[1]
-                    w_quantizer_kwargs['cout'] = cout
                     sq_w = MPSPerChannelQtz(new_weight_precisions,
                                             w_quantizer,
                                             w_quantizer_kwargs)
-                    # If `c` contains an output node the output quantizer is forced to be
-                    # an identity op
-                    sq_a = nn.Identity()  # Output is not quantized
+                elif w_search_type == MPSType.PER_LAYER:
+                    sq_w = MPSPerLayerQtz(weight_precisions,
+                                          w_quantizer,
+                                          w_quantizer_kwargs)
+                # If `c` contains an output node the output is not quantized
+                # precision ignored
+                sq_a = MPSPerLayerQtz((-1,), DummyQuantizer)
         for n in c:
             # if the flag 'disable_shared_quantizers' is set to True, then we can keep one quantizer
             # per connected component, which is the one defined in the previous for loop. Otherwise,

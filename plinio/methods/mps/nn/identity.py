@@ -40,7 +40,7 @@ class MPSIdentity(nn.Identity, MPSModule):
         self.out_mps_quantizer = out_mps_quantizer
         # these two lines will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(1)
-        self.in_mps_quantizer = MPSPerLayerQtz((32,), DummyQuantizer)
+        self.in_mps_quantizer = MPSPerLayerQtz((-1,), DummyQuantizer)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of the mixed-precision NAS-able layer.

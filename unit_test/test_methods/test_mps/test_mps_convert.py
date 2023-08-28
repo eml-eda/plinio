@@ -137,11 +137,11 @@ class TestMPSConvert(unittest.TestCase):
         )
         check_shared_quantizers(self, new_nn, shared_quantizer_rules)
         add_quant_prop_rules = (
-            ('conv0', 'add_[conv0, conv1]_quant',
+            ('conv0', 'add_conv0_conv1_quant',
              True),  # input to sum and sum output must share
-            ('conv4', 'add_2_[add_1, conv4]_quant',
-             True),  # input to sum and sum output must share
-            ('conv0', 'add_2_[add_1, conv4]_quant',
+            ('conv4', 'add_add_1_conv4_quant',
+             True),  # inputo s and sum output must share
+            ('conv0', 'add_add_1_conv4_quant',
              False),  # two far aways layers must not share
         )
         check_add_quant_prop(self, new_nn, add_quant_prop_rules)
