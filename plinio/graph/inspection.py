@@ -286,6 +286,8 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if isinstance(submodule, nn.AdaptiveAvgPool1d):
             return True
+        if isinstance(submodule, nn.AdaptiveAvgPool2d):
+            return True
         if isinstance(submodule, nn.Identity):
             return True
         if isinstance(submodule, nn.Conv1d) or isinstance(submodule, nn.Conv2d):

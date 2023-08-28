@@ -141,6 +141,8 @@ class MPS(DNAS):
             disable_shared_quantizers)
         self._cost_fn_map = self._create_cost_fn_map()
         self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
+        if not hard_softmax:
+            self.compensate_weights_values()
         self.full_cost = full_cost
 
     def forward(self, *args: Any) -> torch.Tensor:
@@ -183,6 +185,13 @@ class MPS(DNAS):
         for _, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
                 layer.update_softmax_options(temperature, hard, gumbel, disable_sampling)
+
+    def compensate_weights_values(self):
+        """Modify the initial weight values of MPSModules compensating the possible presence of
+        0-bit among the weights precisions"""
+        for _, _, layer in self._unique_leaf_modules:
+            if isinstance(layer, MPSModule):
+                layer.compensate_weights_values()
 
     def export(self):
         """Export the architecture found by the NAS as a `quant.nn` module

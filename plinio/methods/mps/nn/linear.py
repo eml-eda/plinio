@@ -218,6 +218,20 @@ class MPSLinear(nn.Linear, MPSModule):
         self.w_mps_quantizer.update_softmax_options(
                 temperature, hard, gumbel, disable_sampling)
 
+    def compensate_weights_values(self):
+        """Modify the initial weight values of MPSModules compensating the possible presence of
+        0-bit among the weights precisions
+        """
+        theta_alpha_rescaling = 0.0
+        for i, precision in enumerate(cast(torch.Tensor, self.w_mps_quantizer.precisions)):
+            if precision != 0:
+                if isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
+                    theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i][0]
+                else:
+                    theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i]
+                self.weight.data = self.weight.data / theta_alpha_rescaling
+        return
+
     def summary(self) -> Dict[str, Any]:
         """Export a dictionary with the optimized layer hyperparameters
 

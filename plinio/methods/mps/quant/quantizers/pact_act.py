@@ -58,9 +58,9 @@ class PACTAct(Quantizer):
         :rtype: torch.Tensor
         """
         input_q = PACTActSTE.apply(input,
-                                     self.precision,
-                                     self.clip_val,
-                                     self.dequantize)
+                                   self.precision,
+                                   self.clip_val,
+                                   self.dequantize)
         return input_q
 
     @staticmethod
@@ -130,7 +130,7 @@ class PACTActSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, precision, clip_val, dequantize):
         ctx.save_for_backward(input, clip_val)
-        scale_factor = (2**precision - 1) / clip_val.data[0]
+        scale_factor = (2**precision - 1) / (clip_val.data[0] + 1e-3)
         output = torch.clamp(input, 0, clip_val.data[0])
         output = torch.floor(scale_factor * output)
         if dequantize:
@@ -191,10 +191,10 @@ class PACTActSigned(Quantizer):
         :rtype: torch.Tensor
         """
         input_q = PACTActSignedSTE.apply(input,
-                                            self.precision,
-                                            self.clip_val_sup,
-                                            self.clip_val_inf,
-                                            self.dequantize)
+                                         self.precision,
+                                         self.clip_val_sup,
+                                         self.clip_val_inf,
+                                         self.dequantize)
         return input_q
 
     @staticmethod
@@ -281,7 +281,7 @@ class PACTActSignedSTE(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, precision, clip_val_sup, clip_val_inf, dequantize):
         ctx.save_for_backward(input, clip_val_sup, clip_val_inf)
-        scale_factor = (2**precision - 1) / (clip_val_sup.data[0] - clip_val_inf.data[0])
+        scale_factor = (2**precision - 1) / (clip_val_sup.data[0] - clip_val_inf.data[0] + 1e-3)
         output = torch.clamp(input, clip_val_inf.data[0], clip_val_sup.data[0])
         output = torch.floor(scale_factor * output)
         if dequantize:

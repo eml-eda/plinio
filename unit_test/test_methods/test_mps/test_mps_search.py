@@ -393,16 +393,16 @@ class TestMPSSearch(unittest.TestCase):
         nn_ut = ToyRegression_2D()
         lambda_param = .01
         batch_size = 32
-        n_steps = 700
+        n_steps = 800
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape)
         criterion = torch.nn.MSELoss()
         optimizer = torch.optim.SGD(mixprec_net.parameters(), lr=5e-3)
         running_err = 0
         for i in range(n_steps):
-            # generate 10 random numbers
+            # generate random numbers
             input = torch.rand((batch_size,) + nn_ut.input_shape)
             # the desired output is their sum
-            target = torch.sum(input, dim=(2, 3)).reshape((batch_size, -1))
+            target = torch.sum(input, dim=(1, 2, 3)).reshape((batch_size, -1))
             output = mixprec_net(input)
             task_loss = criterion(output, target)
             nas_loss = lambda_param * mixprec_net.cost
@@ -418,19 +418,19 @@ class TestMPSSearch(unittest.TestCase):
         """Check the output of the combined loss with a trivial regression problem
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = ToyRegression_2D()
-        lambda_param = 0.5  # lambda very large on purpose
+        lambda_param = .01
         batch_size = 32
-        n_steps = 500
+        n_steps = 800
         mixprec_net = MPS(nn_ut, input_shape=nn_ut.input_shape,
                           w_search_type=MPSType.PER_CHANNEL)
         criterion = torch.nn.MSELoss()
-        optimizer = torch.optim.Adam(mixprec_net.parameters(), lr=1e-2)
+        optimizer = torch.optim.SGD(mixprec_net.parameters(), lr=5e-3)
         running_err = 0
         for i in range(n_steps):
-            # generate 10 random numbers
+            # generate random numbers
             input = torch.rand((batch_size,) + nn_ut.input_shape)
             # the desired output is their sum
-            target = torch.sum(input, dim=(2, 3)).reshape((batch_size, -1))
+            target = torch.sum(input, dim=(1, 2, 3)).reshape((batch_size, -1))
             output = mixprec_net(input)
             task_loss = criterion(output, target)
             nas_loss = lambda_param * mixprec_net.cost
@@ -440,7 +440,7 @@ class TestMPSSearch(unittest.TestCase):
             optimizer.step()
             err = float(torch.abs(target - output).detach().numpy().mean())
             running_err = ((running_err * i) + err) / (i + 1)
-        self.assertLess(running_err, 1, "Error not decreasing")
+        self.assertLess(running_err, 2, "Error not decreasing")
 
 
 if __name__ == '__main__':

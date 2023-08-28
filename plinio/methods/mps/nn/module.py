@@ -54,6 +54,13 @@ class MPSModule:
         # does nothing on the base class (overridden by sub-classes)
         return
 
+    def compensate_weights_values(self):
+        """Modify the initial weight values of MPSModules compensating the possible presence of
+        0-bit among the weights precisions
+        """
+        # does nothing on the base class (overridden by sub-classes)
+        return
+
     @property
     @abstractmethod
     def input_features_calculator(self) -> FeaturesCalculator:
