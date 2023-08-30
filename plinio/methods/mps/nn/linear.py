@@ -27,6 +27,7 @@ from ..quant.nn import QuantLinear, QuantList
 from .module import MPSModule
 from .qtz import MPSType, MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz, MPSBaseQtz
 from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
+from plinio.cost import CostFn
 
 
 class MPSLinear(nn.Linear, MPSModule):
@@ -261,34 +262,54 @@ class MPSLinear(nn.Linear, MPSModule):
             'w_params': w_params
         }
 
-    def get_modified_vars(self) -> Dict[str, Any]:
-        """Method that returns the modified vars(self) dictionary for the instance, for each
-        combination of supported precision, used for cost computation
+    def get_cost(self, cost_fn: CostFn, out_shape: Dict[str, Any]) -> torch.Tensor:
+        """Method that returns the MPSModule cost, given a cost function and
+        the layer's "fixed" hyperparameters
 
-        :return: an iterator over the modified vars(self) data structures
-        :rtype: Dict[str, Any]
+        Allows to flexibly handle multiple combinations of weights/act precisions
+
+        :param cost_fn: the scalar cost function for a single w/a prec combination
+        :type cost_fn: CostFn
+        :param out_shape: the output shape information
+        :type out_shape: Dict[str, Any]
+        :return: the layer cost for each combination of precisions
+        :rtype: torch.Tensor
         """
-        v = dict(vars(self))
-        v['in_precision'] = self.in_mps_quantizer.precisions
-        v['in_format'] = int
-        v['w_precision'] = self.w_mps_quantizer.precisions
-        v['w_format'] = int
-        # downscale the input_channels times the probability of using that
-        # input precision
-        # TODO: detach to be double-checked
-        v['in_features'] = (self.input_features_calculator.features.detach() *
-                            self.in_mps_quantizer.theta_alpha)
-        # same with weights precision and output channels, but distinguish the two types
-        # of quantizer
+
         if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
-            v['out_features'] = (self.out_features *
-                                 self.w_mps_quantizer.theta_alpha)
+            w_theta_alpha_array = self.w_mps_quantizer.theta_alpha
         elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
-            v['out_features'] = self.w_mps_quantizer.theta_alpha.sum(dim=1)
+            w_theta_alpha_array = self.w_mps_quantizer.theta_alpha.mean(dim=1)
         else:
             msg = f'Supported mixed-precision types: {list(MPSType)}'
             raise ValueError(msg)
-        return v
+
+        def vect_fn_outer(in_prec, in_theta_alpha):
+
+            def vect_fn_inner(w_prec, w_theta_alpha):
+                v = vars(self)
+                v.update(out_shape)
+                v['in_format'] = int
+                v['w_format'] = int
+                # TODO: detach to be double-checked
+                v['in_channels'] = self.input_features_calculator.features.detach()
+                v['in_precision'] = in_prec
+                v['w_precision'] = w_prec
+                return w_theta_alpha * cost_fn(v)
+
+            vect_fn_inner = torch.vmap(vect_fn_inner)
+
+            return in_theta_alpha * vect_fn_inner(
+                    self.w_mps_quantizer.precisions,
+                    w_theta_alpha_array
+                    )
+
+        vect_fn_outer = torch.vmap(vect_fn_outer)
+        cost = vect_fn_outer(
+                self.in_mps_quantizer.precisions,
+                self.in_mps_quantizer.theta_alpha
+                )
+        return cost
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:

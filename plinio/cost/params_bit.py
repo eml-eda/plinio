@@ -25,11 +25,10 @@ def _params_bit_conv1d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    w_precision = spec['w_precision']
+    w_prec = spec['w_precision']
     # w_format = spec['w_format']
     # assert w_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin * k + 1) * w_precision
-    cost = k * (cout * w_precision).outer(cin)
+    cost = k * cin * cout * w_prec
     return cost
 
 
@@ -37,30 +36,44 @@ def _params_bit_conv2d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    w_precision = spec['w_precision']
+    w_prec = spec['w_precision']
     # w_format = spec['w_format']
     # assert w_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin * k[0] * k[1] + 1) * w_precision
-    cost = k[0] * k[1] * (cout * w_precision).outer(cin)
+    cost = k[0] * k[1] * cin * cout * w_prec
     return cost
 
 
 def _params_bit_conv1d_dw(spec):
-    raise NotImplementedError("Missing model for conv1d DW")
+    # There's a small caveat when using this model with the MPS NAS, between putting
+    # cin (effective channels) or cout (actual channels) in the expression below.
+    # The correct thing is using cout, but this is leaking information from the NAS
+    # internals to the cost model. So this should be probably fixed (TODO)
+    cout = spec['out_channels']
+    k = spec['kernel_size']
+    w_prec = spec['w_precision']
+    cost = k * cout * w_prec
+    return cost
 
 
 def _params_bit_conv2d_dw(spec):
-    raise NotImplementedError("Missing model for conv2d DW")
+    # There's a small caveat when using this model with the MPS NAS, between putting
+    # cin (effective channels) or cout (actual channels) in the expression below.
+    # The correct thing is using cout, but this is leaking information from the NAS
+    # internals to the cost model. So this should be probably fixed (TODO)
+    cout = spec['out_channels']
+    k = spec['kernel_size']
+    w_prec = spec['w_precision']
+    cost = k[0] * k[1] * cout * w_prec
+    return cost
 
 
 def _params_bit_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    w_precision = spec['w_precision']
+    w_prec = spec['w_precision']
     # w_format = spec['w_format']
     # assert w_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin + 1) * w_precision
-    cost = (cout * w_precision).outer(cin)
+    cost = cout * cin * w_prec
     return cost
 
 

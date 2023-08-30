@@ -26,6 +26,7 @@ from ..quant.nn import QuantIdentity
 from .module import MPSModule
 from .qtz import MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
 from plinio.graph.features_calculation import ConstFeaturesCalculator, FeaturesCalculator
+from plinio.cost import CostFn
 
 
 class MPSIdentity(nn.Identity, MPSModule):
@@ -149,27 +150,22 @@ class MPSIdentity(nn.Identity, MPSModule):
             'out_params': out_params
         }
 
-    def get_modified_vars(self) -> Dict[str, Any]:
-        """Method that returns the modified vars(self) dictionary for the instance, for each
-        combination of supported precision, used for cost computation
+    def get_cost(self, cost_fn: CostFn, out_shape: Dict[str, Any]) -> torch.Tensor:
+        """Method that returns the MPSModule cost, given a cost function and
+        the layer's "fixed" hyperparameters
 
-        :return: an iterator over the modified vars(self) data structures
-        :rtype: Dict[str, Any]
+        Allows to flexibly handle multiple combinations of weights/act precisions
+
+        :param cost_fn: the scalar cost function for a single w/a prec combination
+        :type cost_fn: CostFn
+        :param out_shape: the output shape information
+        :type out_shape: Dict[str, Any]
+        :return: the layer cost for each combination of precisions
+        :rtype: torch.Tensor
         """
-        v = dict(vars(self))
-        v['out_precision'] = self.out_mps_quantizer.precisions
-        v['out_format'] = int
-        # TODO: detach to be double-checked
-        v['in_channels'] = self.input_features_calculator.features.detach()
-        # conv/linear layers.
-        # downscale the output_channels times the probability of using that
-        # output precision
-        # TODO: verify that it's correct to use out_features_eff here, differently from
-        # conv/linear
-        # TODO: this is the only layer using out_precision/out_format (as opposed to
-        # in_precision/in_format) at the moment
-        v['out_channels'] = (self.out_features_eff * self.out_mps_quantizer.theta_alpha)
-        return v
+        # TODO: cost now fixed to 0 for speed, but when used as input quantization,
+        # MPSIdentity might actually have a non-negligible cost.
+        return torch.tensor(0.0)
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:

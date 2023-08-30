@@ -290,11 +290,9 @@ class MPS(DNAS):
         target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
         for lname, node, layer in target_list:
             if isinstance(layer, MPSModule):
-                # a list of layer parameters for each combination of supported precision
-                v = layer.get_modified_vars()
-                v.update(shapes_dict(node))
                 # TODO: replace torch.sum() with configurable reduce_fn to support ODiMO
-                cost = cost + torch.sum(cost_fn_map[lname](v), dim=None)
+                l_cost = layer.get_cost(cost_fn_map[lname], shapes_dict(node))
+                cost = cost + torch.sum(l_cost)
             elif self.full_cost:
                 # TODO: this is constant and can be pre-computed for efficiency
                 # TODO: should we add default bitwidth and format for non-MPS layers or not?

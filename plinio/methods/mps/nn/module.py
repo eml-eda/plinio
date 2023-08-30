@@ -19,10 +19,12 @@
 
 from abc import abstractmethod
 from typing import Dict, Any, Iterator, Tuple, Union, Optional
+import torch
 import torch.fx as fx
 import torch.nn as nn
 from .qtz import MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
 from plinio.graph.features_calculation import FeaturesCalculator
+from plinio.cost import CostFn
 
 
 class MPSModule:
@@ -144,12 +146,18 @@ class MPSModule:
         return {}
 
     @abstractmethod
-    def get_modified_vars(self) -> Dict[str, Any]:
-        """Method that returns the modified vars(self) dictionary for the instance, for each
-        combination of supported precision, used for cost computation
+    def get_cost(self, cost_fn: CostFn, out_shape: Dict[str, Any]) -> torch.Tensor:
+        """Method that returns the MPSModule cost, given a cost function and
+        the layer's "fixed" hyperparameters
 
-        :return: an iterator over the modified vars(self) data structures
-        :rtype: Dict[str, Any]
+        Allows to flexibly handle multiple combinations of weights/act precisions
+
+        :param cost_fn: the scalar cost function for a single w/a prec combination
+        :type cost_fn: CostFn
+        :param out_shape: the output shape information
+        :type out_shape: Dict[str, Any]
+        :return: the layer cost for each combination of precisions
+        :rtype: torch.Tensor
         """
         raise NotImplementedError("Calling get_modified_vars on base abstract MPSModule class")
 

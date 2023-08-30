@@ -26,12 +26,12 @@ def _ops_bit_conv1d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    w_precision = spec['w_precision']
-    in_precision = spec['in_precision']
+    w_prec = spec['w_precision']
+    in_prec = spec['in_precision']
     # w_format = spec['w_format']
     # in_format = spec['in_format']
     # assert w_format == int and in_format == int, "Model only supports integer quantization"
-    cost = k * (cout * w_precision).outer(cin * in_precision) * out_shape[2]
+    cost = k * cin * cout * w_prec * in_prec * out_shape[2]
     return cost
 
 
@@ -40,32 +40,52 @@ def _ops_bit_conv2d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    w_precision = spec['w_precision']
-    in_precision = spec['in_precision']
+    w_prec = spec['w_precision']
+    in_prec = spec['in_precision']
     # w_format = spec['w_format']
     # in_format = spec['in_format']
-    cost = k[0] * k[1] * (cout * w_precision).outer (cin * in_precision) * out_shape[2] * out_shape[3]
+    # assert w_format == int and in_format == int, "Model only supports integer quantization"
+    cost = k[0] * k[1] * cin * cout * w_prec * in_prec * out_shape[2] * out_shape[3]
     return cost
 
 
 def _ops_bit_conv1d_dw(spec):
-    raise NotImplementedError("Missing model for conv1d DW")
+    cout = spec['out_channels']
+    k = spec['kernel_size']
+    out_shape = spec['output_shape']
+    w_prec = spec['w_precision']
+    in_prec = spec['in_precision']
+    # There's a small caveat when using this model with the MPS NAS, between putting
+    # cin (effective channels) or cout (actual channels) in the expression below.
+    # The correct thing is using cout, but this is leaking information from the NAS
+    # internals to the cost model. So this should be probably fixed (TODO)
+    cost = k * cout * w_prec * in_prec * out_shape[2]
+    return cost
 
 
 def _ops_bit_conv2d_dw(spec):
-    raise NotImplementedError("Missing model for conv2d DW")
+    cout = spec['out_channels']
+    k = spec['kernel_size']
+    out_shape = spec['output_shape']
+    w_prec = spec['w_precision']
+    in_prec = spec['in_precision']
+    # There's a small caveat when using this model with the MPS NAS, between putting
+    # cin (effective channels) or cout (actual channels) in the expression below.
+    # The correct thing is using cout, but this is leaking information from the NAS
+    # internals to the cost model. So this should be probably fixed (TODO)
+    cost = k[0] * k[1] * cout * w_prec * in_prec * out_shape[2] * out_shape[3]
+    return cost
 
 
 def _ops_bit_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    w_precision = spec['w_precision']
-    in_precision = spec['in_precision']
+    w_prec = spec['w_precision']
+    in_prec = spec['in_precision']
     # w_format = spec['w_format']
     # in_format = spec['in_format']
     # assert w_format == int and in_format == int, "Model only supports integer quantization"
-    # cost = cout * (cin + 1) * w_precision * in_precision
-    cost = (cout * w_precision).outer(cin * in_precision)
+    cost = cin * cout * w_prec * in_prec
     return cost
 
 
