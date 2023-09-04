@@ -66,7 +66,7 @@ def _ops_linear_generic(spec):
     return cost
 
 
-ops = CostSpec(shared=True, default_behavior='zero')
+ops = CostSpec(shared=False, default_behavior='zero')
 ops[Conv1dGeneric] = _ops_conv1d_generic
 ops[Conv2dGeneric] = _ops_conv2d_generic
 ops[Conv1dDW] = _ops_conv1d_dw

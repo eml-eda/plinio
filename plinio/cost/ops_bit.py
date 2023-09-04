@@ -89,7 +89,7 @@ def _ops_bit_linear(spec):
     return cost
 
 
-ops_bit = CostSpec(shared=True, default_behavior='zero')
+ops_bit = CostSpec(shared=False, default_behavior='zero')
 ops_bit[Conv1dGeneric] = _ops_bit_conv1d_generic
 ops_bit[Conv2dGeneric] = _ops_bit_conv2d_generic
 ops_bit[Conv1dDW] = _ops_bit_conv1d_dw

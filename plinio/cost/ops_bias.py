@@ -66,7 +66,7 @@ def _ops_linear_generic(spec):
     return cost
 
 
-ops_bias = CostSpec(shared=True, default_behavior='zero')
+ops_bias = CostSpec(shared=False, default_behavior='zero')
 ops_bias[Conv1dGeneric] = _ops_conv1d_generic
 ops_bias[Conv2dGeneric] = _ops_conv2d_generic
 ops_bias[Conv1dDW] = _ops_conv1d_dw
