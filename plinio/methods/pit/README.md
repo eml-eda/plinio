@@ -72,7 +72,7 @@ pit_net = PIT(net, exclude_types=exclude_types)
 ```
 
 ### Optimize only specific layers
-Conversely, it may happens that a user only wants to optimize few specific layers of their DNN. In this case, we give the possibility to the user to directly define and use the optimizable version of such layers in their DNN definition code.  In particular, the user can directly instantiate layers defined in `plinio.methods.pit.nn` as drop-in replacement for standard `nn.Module` sub-classes. For example:
+Conversely, it may happen that a user only wants to optimize few specific layers of their DNN. In this case, we give the possibility to the user to directly define and use the optimizable version of such layers in their DNN definition code.  In particular, the user can directly instantiate layers defined in `plinio.methods.pit.nn` as drop-in replacement for standard `nn.Module` sub-classes. For example:
 
 ```python
 from plinio.methods.pit.nn import PITConv1d
