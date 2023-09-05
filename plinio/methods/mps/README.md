@@ -3,7 +3,7 @@
 ## Overview
 `plinio.mps` implements a gradient-based tool to automatically explore and assign an integer quantization precision to different parts of a DNN. In particular, `plinio.mps` is able to explore and assign independent precisions to *weights* and *activations* of convolutional and linear layers.
 
-The precision assignnment in `plinio.mps` can have two granularity levels:
+The precision assignment in `plinio.mps` can have two granularity levels:
 
 1. **Per-Layer**: the default scheme, supported for both activations and weights. This scheme assigns a single precision to the *entire* activations and weights tensors of each layer.
 2. **Per-Channel**: currently supported **only for weights**. With this scheme, an indipendent precision is selected for **each output channel** of the weight tensor of a convolutional layer. Importantly, this second scheme also supports using **0-bit precision** for some of the channels, thus implementing a joint channel-pruning and MPS scheme.

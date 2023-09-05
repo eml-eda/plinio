@@ -39,7 +39,7 @@ In the code snippet above, `Method()` should be replaced with one of the support
 
 # Hardware Cost Models
 
-PLiNIO focuses on **hardware-awareness** and acurate cost modeling.
+PLiNIO focuses on **hardware-awareness** and accurate cost modeling.
 Its main use case is finding DNNs that are not only accurate, but also efficient in terms of one or more cost metrics, or that respect user-defined cost constraints. Besides common hardware-independent cost metrics (n. of parameters and n. of OPs per inference), PLiNIO also provides more advanced models that account for specific HW platforms' spatial parallelism, dataflow, etc.
 
 Both generic and HW-specific cost models are defined in the `plinio.cost` sub-package, and the library is designed to easily allow users to extend it with custom models for their hardware. More information can be found [here](plinio/cost/README.md).
