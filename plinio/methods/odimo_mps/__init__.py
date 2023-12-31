@@ -1,5 +1,5 @@
 # *----------------------------------------------------------------------------*
-# * Copyright (C) 2023 Politecnico di Torino, Italy                            *
+# * Copyright (C) 2022 Politecnico di Torino, Italy                            *
 # * SPDX-License-Identifier: Apache-2.0                                        *
 # *                                                                            *
 # * Licensed under the Apache License, Version 2.0 (the "License");            *
@@ -16,15 +16,8 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .cost_spec import CostFn, CostSpec, PatternSpec
-from .params import params
-from .params_bias import params_bias
-from .params_bit import params_bit
-from .ops import ops
-from .ops_bias import ops_bias
-from .ops_bit import ops_bit
-from .diana_latency import diana_latency
 
-__all__ = ['CostFn', 'CostSpec', 'PatternSpec',
-           'params', 'params_bias', 'params_bit',
-           'ops', 'ops_bias', 'ops_bit', 'diana_latency']
+from .odimo_mps import ODiMO_MPS
+from ..mps.nn.qtz import MPSType
+
+__all__ = ['ODiMO_MPS', 'MPSType']

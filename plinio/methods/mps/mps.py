@@ -17,7 +17,8 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Any, Tuple, Type, Iterable, Dict, Iterator, Union, Optional
+from typing import Any, Tuple, Type, Iterable, Dict, Iterator, Union, Optional, \
+        Callable
 import torch
 import torch.nn as nn
 
@@ -63,7 +64,7 @@ class MPS(DNAS):
 
     :param model: the inner nn.Module instance optimized by the NAS
     :type model: nn.Module
-    :param cost: the cost models(s) used by the NAS, defaults to the number of params.
+    :param cost: the cost models(s) used by the NAS, defaults to the number of bits for params
     :type cost: Union[CostSpec, Dict[str, CostSpec]]
     :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
@@ -78,7 +79,7 @@ class MPS(DNAS):
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
     :type w_search_type: MPSType
     :param qinfo: dict containing desired quantizers for act, weight and bias
-    and their arguments excluding the precision precision
+    and their arguments excluding the precision
     :type qinfo: Dict
     :param qinfo_input_quanizer: optional dict containing desired quantizers for the network input
     and its arguments excluding the precision precision, defaults to None
@@ -95,16 +96,27 @@ class MPS(DNAS):
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS,
     defaults to ()
     :type exclude_types: Iterable[Type[nn.Module]], optional
-    :raises ValueError: when called with an unsupported regularizer
     :param temperature: the default sampling temperature (for SoftMax/Gumbel SoftMax)
     :type temperature: float, defaults to 1
-    :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SoftMax
+    :param gumbel_softmax: use Gumbel SoftMax for sampling, instead of a normal SoftMax,
+    defaults to False
     :type gumbel_softmax: bool, optional
-    :param hard_softmax: use hard (discretized) SoftMax sampling
+    :param hard_softmax: use hard (discretized) SoftMax sampling, 
+    defaults to False
     :type hard_softmax: bool, optional
     :param disable_sampling: do not perform any update of the alpha coefficients,
-    thus using the saved ones. Useful to perform fine-tuning of the saved model.
+    thus using the saved ones. Useful to perform fine-tuning of the saved model,
+    defaults to False.
     :type disable_sampling: bool, optional
+    :param disable_shared_quantizers: do not implement quantizer sharing. Useful
+    to obtain upper bounds on the achievable performance,
+    defaults to False.
+    :type disable_shared_quantizers: bool, optional
+    :param cost_reduction_fn: function to reduce the array of costs of a multi-precision
+    layer to a single scalar. Customizable to implement more advanced DNAS methods such
+    as ODiMO, (see methods/odimo_mps)
+    defaults to torch.sum
+    :type cost_reduction_fn: Callable, optional
     """
     def __init__(
             self,
@@ -125,7 +137,8 @@ class MPS(DNAS):
             gumbel_softmax: bool = False,
             hard_softmax: bool = False,
             disable_sampling: bool = False,
-            disable_shared_quantizers: bool = False):
+            disable_shared_quantizers: bool = False,
+            cost_reduction_fn: Callable = torch.sum):
         super(MPS, self).__init__(model, cost, input_example, input_shape)
         self.seed, self._leaf_modules, self._unique_leaf_modules = convert(
             model,
@@ -139,6 +152,7 @@ class MPS(DNAS):
             exclude_names,
             exclude_types,
             disable_shared_quantizers)
+        self._cost_reduction_fn = cost_reduction_fn
         self._cost_fn_map = self._create_cost_fn_map()
         self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
         if not hard_softmax and 0 in w_precisions:
@@ -290,9 +304,8 @@ class MPS(DNAS):
         target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
         for lname, node, layer in target_list:
             if isinstance(layer, MPSModule):
-                # TODO: replace torch.sum() with configurable reduce_fn to support ODiMO
                 l_cost = layer.get_cost(cost_fn_map[lname], shapes_dict(node))
-                cost = cost + torch.sum(l_cost)
+                cost = cost + self._cost_reduction_fn(l_cost)
             elif self.full_cost:
                 # TODO: this is constant and can be pre-computed for efficiency
                 # TODO: should we add default bitwidth and format for non-MPS layers or not?
