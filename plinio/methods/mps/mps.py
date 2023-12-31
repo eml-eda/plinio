@@ -31,26 +31,26 @@ from .nn.qtz import MPSType
 
 from .quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
+"""Data structure including quantizer information for each layer/input, as well as defaults
+for all other layers/inputs"""
 DEFAULT_QINFO = {
-    'a_quantizer': {
-        'quantizer': PACTAct,
-        'kwargs': {},
-    },
-    'w_quantizer': {
-        'quantizer': MinMaxWeight,
-        'kwargs': {},
-    },
-    'b_quantizer': {
-        'quantizer': QuantizerBias,
-        'kwargs': {
-            'precision': 32,
+    'layer_default': {
+        'a_quantizer': {
+            'quantizer': PACTAct,
+            'kwargs': {},
+        },
+        'w_quantizer': {
+            'quantizer': MinMaxWeight,
+            'kwargs': {},
+        },
+        'b_quantizer': {
+            'quantizer': QuantizerBias,
+            'kwargs': {
+                'precision': 32,
+            },
         },
     },
-}
-
-
-DEFAULT_QINFO_INPUT_QUANTIZER = {
-    'a_quantizer': {
+    'input_default': {
         'quantizer': PACTAct,
         'kwargs': {
             'init_clip_val': 1
@@ -81,9 +81,6 @@ class MPS(DNAS):
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the precision
     :type qinfo: Dict
-    :param qinfo_input_quanizer: optional dict containing desired quantizers for the network input
-    and its arguments excluding the precision precision, defaults to None
-    :type qinfo: Dict, optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
@@ -128,7 +125,6 @@ class MPS(DNAS):
             w_precisions: Tuple[int, ...] = (2, 4, 8),
             w_search_type: MPSType = MPSType.PER_LAYER,
             qinfo: Dict = DEFAULT_QINFO,
-            qinfo_input_quantizer: Optional[Dict] = DEFAULT_QINFO_INPUT_QUANTIZER,
             autoconvert_layers: bool = True,
             full_cost: bool = False,
             exclude_names: Iterable[str] = (),
@@ -148,7 +144,6 @@ class MPS(DNAS):
             w_precisions,
             w_search_type,
             qinfo,
-            qinfo_input_quantizer,
             exclude_names,
             exclude_types,
             disable_shared_quantizers)

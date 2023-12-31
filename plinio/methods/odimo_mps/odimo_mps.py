@@ -28,25 +28,23 @@ from plinio.cost import CostSpec, diana_latency
 from ..mps.quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
 ODIMO_MPS_DEFAULT_QINFO = {
-    'a_quantizer': {
-        'quantizer': PACTAct,
-        'kwargs': {},
-    },
-    'w_quantizer': {
-        'quantizer': MinMaxWeight,
-        'kwargs': {},
-    },
-    'b_quantizer': {
-        'quantizer': QuantizerBias,
-        'kwargs': {
-            'precision': 32,
+    'layer_default': {
+        'a_quantizer': {
+            'quantizer': PACTAct,
+            'kwargs': {},
+        },
+        'w_quantizer': {
+            'quantizer': MinMaxWeight,
+            'kwargs': {},
+        },
+        'b_quantizer': {
+            'quantizer': QuantizerBias,
+            'kwargs': {
+                'precision': 32,
+            },
         },
     },
-}
-
-
-ODIMO_MPS_DEFAULT_QINFO_INPUT_QUANTIZER = {
-    'a_quantizer': {
+    'input_default': {
         'quantizer': PACTAct,
         'kwargs': {
             'init_clip_val': 1
@@ -79,9 +77,6 @@ class ODiMO_MPS(MPS):
     :param qinfo: dict containing desired quantizers for act, weight and bias
     and their arguments excluding the precision precision
     :type qinfo: Dict
-    :param qinfo_input_quanizer: optional dict containing desired quantizers for the network input
-    and its arguments excluding the precision, defaults to None
-    :type qinfo: Dict, optional
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
     :type autoconvert_layers: bool, optional
@@ -117,7 +112,6 @@ class ODiMO_MPS(MPS):
             a_precisions: Tuple[int, ...] = (2, 4, 8),
             w_precisions: Tuple[int, ...] = (2, 4, 8),
             qinfo: Dict = ODIMO_MPS_DEFAULT_QINFO,
-            qinfo_input_quantizer: Optional[Dict] = ODIMO_MPS_DEFAULT_QINFO_INPUT_QUANTIZER,
             autoconvert_layers: bool = True,
             full_cost: bool = False,
             exclude_names: Iterable[str] = (),
@@ -136,7 +130,6 @@ class ODiMO_MPS(MPS):
                 w_precisions=w_precisions,
                 w_search_type=MPSType.PER_CHANNEL,  # ODiMO works with per-channel search
                 qinfo=qinfo,
-                qinfo_input_quantizer=qinfo_input_quantizer,
                 autoconvert_layers=autoconvert_layers,
                 full_cost=full_cost,
                 exclude_names=exclude_names,
