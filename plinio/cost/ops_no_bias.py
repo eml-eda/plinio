@@ -31,7 +31,7 @@ def _ops_conv1d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    cost = cin * cout * k
+    cost = cin * cout * k[0]
     cost = cost * out_shape[2]
     return cost
 
@@ -50,7 +50,7 @@ def _ops_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    cost = cin * k
+    cost = cin * k[0]
     cost = cost * out_shape[2]
     return cost
 

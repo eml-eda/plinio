@@ -350,7 +350,7 @@ class PITConv1d(nn.Conv1d, PITModule):
         v = dict(vars(self))
         v['in_channels'] = self.input_features_calculator.features
         v['out_channels'] = self.out_features_eff
-        v['kernel_size'] = self.k_eff
+        v['kernel_size'] = (self.k_eff,)
         # currently we don't know how to compute the "current dilation" in a differentiable way
         # during a search, so we set this to None to force cost models to fail if they use this
         # parameter

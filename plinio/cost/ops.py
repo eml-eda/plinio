@@ -26,7 +26,7 @@ def _ops_conv1d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    cost = cout * (cin * k + 1)
+    cost = cout * (cin * k[0] + (1 if spec['_parameters']['bias'] is not None else 0))
     cost = cost * out_shape[2]
     return cost
 
@@ -36,7 +36,7 @@ def _ops_conv2d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    cost = cout * (cin * k[0] * k[1] + 1)
+    cost = cout * (cin * k[0] * k[1] + (1 if spec['_parameters']['bias'] is not None else 0))
     cost = cost * out_shape[2] * out_shape[3]
     return cost
 
@@ -45,7 +45,7 @@ def _ops_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    cost = cin * (k + 1)
+    cost = cin * (k[0] + (1 if spec['_parameters']['bias'] is not None else 0))
     cost = cost * out_shape[2]
     return cost
 
@@ -54,7 +54,7 @@ def _ops_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
     out_shape = spec['output_shape']
-    cost = cin * (k[0] * k[1] + 1)
+    cost = cin * (k[0] * k[1] + (1 if spec['_parameters']['bias'] is not None else 0))
     cost = cost * out_shape[2] * out_shape[3]
     return cost
 
@@ -62,7 +62,7 @@ def _ops_conv2d_dw(spec):
 def _ops_linear_generic(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    cost = cout * (cin + 1)
+    cost = cout * (cin + (1 if spec['_parameters']['bias'] is not None else 0))
     return cost
 
 
