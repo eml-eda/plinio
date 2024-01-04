@@ -16,10 +16,9 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from .dnas_base import DNAS
-from .pit import PIT
-from .supernet import SuperNet
-from .mps import MPS
-from .odimo_mps import ODiMO_MPS
 
-__all__ = ['DNAS', 'PIT', 'SuperNet', 'MPS', 'ODiMO_MPS']
+from .base_regularizer import BaseRegularizer
+from .duccio import DUCCIO
+
+__all__ = ['BaseRegularizer', 'DUCCIO']
+

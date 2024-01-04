@@ -43,6 +43,7 @@ ODIMO_MPS_DEFAULT_QINFO = {
         'bias': {
             'quantizer': QuantizerBias,
             'kwargs': {
+                 # we do not optimize the bias precision, so it is fixed in the quantizer kwargs
                 'precision': 32,
             },
         },
@@ -131,8 +132,6 @@ class ODiMO_MPS(MPS):
             cost: Union[CostSpec, Dict[str, CostSpec]] = diana_latency,
             input_example: Optional[Any] = None,
             input_shape: Optional[Tuple[int, ...]] = None,
-            a_precisions: Tuple[int, ...] = (2, 4, 8),
-            w_precisions: Tuple[int, ...] = (2, 4, 8),
             qinfo: Dict = ODIMO_MPS_DEFAULT_QINFO,
             autoconvert_layers: bool = True,
             full_cost: bool = False,
@@ -148,8 +147,6 @@ class ODiMO_MPS(MPS):
                 cost=cost,
                 input_example=input_example,
                 input_shape=input_shape,
-                a_precisions=a_precisions,
-                w_precisions=w_precisions,
                 w_search_type=MPSType.PER_CHANNEL,  # ODiMO works with per-channel search
                 qinfo=qinfo,
                 autoconvert_layers=autoconvert_layers,

@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from .odimo_mps import ODiMO_MPS
+from .odimo_mps import ODiMO_MPS, get_default_qinfo
 from ..mps.nn.qtz import MPSType
 
-__all__ = ['ODiMO_MPS', 'MPSType']
+__all__ = ['ODiMO_MPS', 'MPSType', 'get_default_qinfo']

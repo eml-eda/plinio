@@ -49,6 +49,7 @@ DEFAULT_QINFO = {
         'bias': {
             'quantizer': QuantizerBias,
             'kwargs': {
+                 # we do not optimize the bias precision, so it is fixed in the quantizer kwargs
                 'precision': 32,
             },
         },
