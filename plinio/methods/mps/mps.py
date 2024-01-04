@@ -33,6 +33,8 @@ from .quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
 """Data structure including quantizer information for each layer/input, as well as defaults
 for all other layers/inputs"""
+# TODO: we might add also the precisions to search for each layer/input here, to make the tool
+# more flexible
 DEFAULT_QINFO = {
     'layer_default': {
         'a_quantizer': {

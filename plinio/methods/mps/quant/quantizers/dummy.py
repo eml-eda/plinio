@@ -29,7 +29,7 @@ class DummyQuantizer(Quantizer):
     input quantizer when creating MPSModule layers, then replaced when processing
     the DNN graph. Implements an identity operation
     """
-    def __init__(self, precision: int):
+    def __init__(self, precision: int, **kwargs):
         # the precision parameter is required by the super-class, but will be
         # ignored in this sub-class.
         super(DummyQuantizer, self).__init__(precision, True)

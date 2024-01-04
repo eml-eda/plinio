@@ -49,7 +49,7 @@ class FQWeight(Quantizer):
         self.quant_bins = 2**(self.precision - 1) - 1
         self.cout = cout
         self.ch_wise = ch_wise
-        self.train_scale_param
+        self.train_scale_param = train_scale_param
 
         # Trainable scale param
         self.n_s = cout if ch_wise else 1

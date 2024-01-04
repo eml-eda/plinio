@@ -22,8 +22,11 @@ import unittest
 import torch
 import torch.nn as nn
 from plinio.methods import MPS
+from plinio.methods.mps import DEFAULT_QINFO
 from plinio.methods.mps.nn import MPSConv2d, MPSType, MPSLinear, MPSIdentity
+from plinio.methods.mps.nn.qtz import MPSBaseQtz
 import plinio.methods.mps.quant.nn as qnn
+from plinio.methods.mps.quant.quantizers import FQWeight, MinMaxWeight, DummyQuantizer, PACTAct
 from unit_test.models import SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyAdd_2D, \
     SimpleMPSNN, SimpleExportedNN2D, SimpleExportedNN2D_ch, SimpleNN2D_NoBN
 from unit_test.test_methods.test_mps.utils import compare_prepared, \
@@ -547,6 +550,39 @@ class TestMPSConvert(unittest.TestCase):
         fc = cast(MPSLinear, mixprec_net.seed.fc)
         self.assertEqual(fc.input_features_calculator.features.item(),
                          conv1.out_features_eff.item() * 10 * 10)
+
+
+    def test_qinfo_layer(self):
+        nn_ut = SimpleNN2D()
+        my_qinfo = DEFAULT_QINFO.copy()
+        my_qinfo['conv0'] = my_qinfo['layer_default'].copy()
+        my_qinfo['conv0']['w_quantizer'] = my_qinfo['layer_default']['w_quantizer'].copy()
+        my_qinfo['conv0']['w_quantizer']['quantizer'] = FQWeight
+        my_qinfo['conv1'] = my_qinfo['layer_default'].copy()
+        my_qinfo['conv1']['a_quantizer'] = my_qinfo['layer_default']['a_quantizer'].copy()
+        my_qinfo['conv1']['a_quantizer']['quantizer'] = DummyQuantizer
+        my_qinfo['layer_default']['w_quantizer']['quantizer'] = MinMaxWeight
+        my_qinfo['layer_default']['a_quantizer']['quantizer'] = PACTAct
+        mixprec_net = MPS(nn_ut,
+                          input_shape=nn_ut.input_shape,
+                          a_precisions=(2, 4, 8),
+                          w_precisions=(2, 4, 8),
+                          w_search_type=MPSType.PER_CHANNEL,
+                          qinfo=my_qinfo)
+        # verify that the specified quantizer changed
+        conv0_w_qtz = cast(MPSBaseQtz, cast(MPSConv2d, mixprec_net.seed.conv0).w_mps_quantizer).quantizer
+        self.assertIs(conv0_w_qtz, FQWeight, "Wrong weight quantizer type")
+        # verify that the other quantizers remained at default
+        conv1_w_qtz = cast(MPSBaseQtz, cast(MPSConv2d, mixprec_net.seed.conv1).w_mps_quantizer).quantizer
+        self.assertIs(conv1_w_qtz, MinMaxWeight, "Wrong weight quantizer type")
+        fc_w_qtz = cast(MPSBaseQtz, cast(MPSLinear, mixprec_net.seed.fc).w_mps_quantizer).quantizer
+        self.assertIs(fc_w_qtz, MinMaxWeight, "Wrong weight quantizer type")
+        # verify that the specified quantizer changed
+        conv1_a_qtz = cast(MPSBaseQtz, cast(MPSConv2d, mixprec_net.seed.conv1).out_mps_quantizer).quantizer
+        self.assertIs(conv1_a_qtz, DummyQuantizer, "Wrong activation quantizer type")
+        # verify that the other quantizers remained at default (final linear has no activation quantization so it's not checked
+        conv0_a_qtz = cast(MPSBaseQtz, cast(MPSConv2d, mixprec_net.seed.conv0).out_mps_quantizer).quantizer
+        self.assertIs(conv0_a_qtz, PACTAct, "Wrong weight quantizer type")
 
 
 if __name__ == '__main__':
