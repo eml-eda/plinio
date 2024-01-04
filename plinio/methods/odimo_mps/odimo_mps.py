@@ -18,6 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from typing import Any, Tuple, Type, Iterable, Dict, Union, Optional, Callable
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -29,15 +30,17 @@ from ..mps.quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
 ODIMO_MPS_DEFAULT_QINFO = {
     'layer_default': {
-        'a_quantizer': {
+        'output': {
             'quantizer': PACTAct,
+            'search_precision': (2, 4, 8),
             'kwargs': {},
         },
-        'w_quantizer': {
+        'weight': {
             'quantizer': MinMaxWeight,
+            'search_precision': (2, 4, 8),
             'kwargs': {},
         },
-        'b_quantizer': {
+        'bias': {
             'quantizer': QuantizerBias,
             'kwargs': {
                 'precision': 32,
@@ -46,11 +49,30 @@ ODIMO_MPS_DEFAULT_QINFO = {
     },
     'input_default': {
         'quantizer': PACTAct,
+        'search_precision': (2, 4, 8),
         'kwargs': {
             'init_clip_val': 1
         },
     }
 }
+
+def get_default_qinfo(
+        w_precision: Tuple[int,...] = (2, 4, 8),
+        a_precision: Tuple[int,...] = (2, 4, 8)) -> Dict[str, Dict[str, Any]]:
+    """Function that returns the default quantization information for the NAS
+
+    :param w_precision: the list of bitwidths to be considered for weights
+    :type w_precision: Tuple[int,...]
+    :param a_precision: the list of bitwidths to be considered for activations
+    :type a_precision: Tuple[int,...]
+    :return: the default quantization information for the NAS
+    :rtype: Dict[str, Dict[str, Any]]
+    """
+    d = copy.deepcopy(ODIMO_MPS_DEFAULT_QINFO)
+    d['input_default']['search_precision'] = a_precision
+    d['layer_default']['output']['search_precision'] = a_precision
+    d['layer_default']['weight']['search_precision'] = w_precision
+    return d
 
 def odimo_mps_latency_reduction(costs):
     """Function that computes the aggregated latency of a multi-precision convolution assuming that the

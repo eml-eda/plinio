@@ -19,17 +19,17 @@ To optimize a DNN with `plinio.mps`, the minimum requirement is to add **three a
 1. Import the `MPS` class and use it to automatically convert your `model` in an optimizable format. In its basic usage, the `MPS` constructor requires the following arguments:
     - the `model` to be optimized
     - The `input_shape` of an input tensor (without batch-size), or alternatively, an `input_example`, i.e., a single input tensor. Those are required for internal shape propagation.
-    - the tuple of activation bit-widths (`a_precisions`) that should be considered as possible alternatives during the optimization.
-    - the tuple of weight bit-widths (`w_precisions`) that should be considered as possible alternatives during the optimization.
-    - the selected precision assignment scheme for the weights (`w_search_type`),  which can be either `MPSType.PER_LAYER` or `MPSType.PER_CHANNEL` (default: `MPSType.PER_LAYER`)
+    - A `qinfo` dictionary, containing information about the quantization scheme to be used by the NAS, including the precision values to be considered in the search, as well as the type of quantizer, and additional optional parameters. The exposed `get_default_qinfo()` function can be used to quickly get some good defaults, while customizing the search precision (for all layers) through two tuples of integers passed as parameters. Alternatively, the dictionary can be modified by hand to specify more advanced quantization schemes.
+    - The selected precision assignment scheme for the weights (`w_search_type`),  which can be either `MPSType.PER_LAYER` or `MPSType.PER_CHANNEL` (default: `MPSType.PER_LAYER`)
     - The `cost` model(s) to be used. See [cost models](../../cost/README.md) for details on the available cost models.
 
 ```python
-from plinio.methods import MPS, MPSType
+from plinio.methods.mps import MPS, MPSType, get_default_qinfo
 model = MPS(model,
             input_shape=input_shape,
-            a_precisions=(2, 4, 8),
-            w_precisions=(2, 4, 8),
+            qinfo=get_default_qinfo(
+                w_precision=(2, 4, 8),
+                a_precision=(2, 4, 8)),
             w_search_type=MPSType.PER_LAYER,
             cost=params_bit)
 ```

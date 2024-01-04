@@ -19,6 +19,7 @@
 
 from typing import Any, Tuple, Type, Iterable, Dict, Iterator, Union, Optional, \
         Callable
+import copy
 import torch
 import torch.nn as nn
 
@@ -33,19 +34,19 @@ from .quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 
 """Data structure including quantizer information for each layer/input, as well as defaults
 for all other layers/inputs"""
-# TODO: we might add also the precisions to search for each layer/input here, to make the tool
-# more flexible
 DEFAULT_QINFO = {
     'layer_default': {
-        'a_quantizer': {
+        'output': {
             'quantizer': PACTAct,
+            'search_precision': (2, 4, 8),
             'kwargs': {},
         },
-        'w_quantizer': {
+        'weight': {
             'quantizer': MinMaxWeight,
+            'search_precision': (2, 4, 8),
             'kwargs': {},
         },
-        'b_quantizer': {
+        'bias': {
             'quantizer': QuantizerBias,
             'kwargs': {
                 'precision': 32,
@@ -54,11 +55,30 @@ DEFAULT_QINFO = {
     },
     'input_default': {
         'quantizer': PACTAct,
+        'search_precision': (2, 4, 8),
         'kwargs': {
             'init_clip_val': 1
         },
     }
 }
+
+def get_default_qinfo(
+        w_precision: Tuple[int,...] = (2, 4, 8),
+        a_precision: Tuple[int,...] = (2, 4, 8)) -> Dict[str, Dict[str, Any]]:
+    """Function that returns the default quantization information for the NAS
+
+    :param w_precision: the list of bitwidths to be considered for weights
+    :type w_precision: Tuple[int,...]
+    :param a_precision: the list of bitwidths to be considered for activations
+    :type a_precision: Tuple[int,...]
+    :return: the default quantization information for the NAS
+    :rtype: Dict[str, Dict[str, Any]]
+    """
+    d = copy.deepcopy(DEFAULT_QINFO)
+    d['input_default']['search_precision'] = a_precision
+    d['layer_default']['output']['search_precision'] = a_precision
+    d['layer_default']['weight']['search_precision'] = w_precision
+    return d
 
 
 class MPS(DNAS):
@@ -71,17 +91,11 @@ class MPS(DNAS):
     :param input_shape: the shape of an input tensor, without batch size, required for symbolic
     tracing
     :type input_shape: Tuple[int, ...]
-    :param a_precisions: the possible activations' precisions assigment to be explored
-    by the NAS
-    :type a_precisions: Iterable[int]
-    :param w_precisions: the possible weights' precisions assigment to be explored
-    by the NAS
-    :type w_precisions: Iterable[int]
     :param w_search_type: the mixed precision strategy to be used for weigth
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
     :type w_search_type: MPSType
-    :param qinfo: dict containing desired quantizers for act, weight and bias
-    and their arguments excluding the precision
+    :param qinfo: dict containing desired quantizers for activations, weights and biases,
+    and their arguments excluding the precision values to be considered by the NAS.
     :type qinfo: Dict
     :param autoconvert_layers: should the constructor try to autoconvert NAS-able layers,
     defaults to True
@@ -123,8 +137,6 @@ class MPS(DNAS):
             cost: Union[CostSpec, Dict[str, CostSpec]] = params_bit,
             input_example: Optional[Any] = None,
             input_shape: Optional[Tuple[int, ...]] = None,
-            a_precisions: Tuple[int, ...] = (2, 4, 8),
-            w_precisions: Tuple[int, ...] = (2, 4, 8),
             w_search_type: MPSType = MPSType.PER_LAYER,
             qinfo: Dict = DEFAULT_QINFO,
             autoconvert_layers: bool = True,
@@ -142,8 +154,6 @@ class MPS(DNAS):
             model,
             self._input_example,
             'autoimport' if autoconvert_layers else 'import',
-            a_precisions,
-            w_precisions,
             w_search_type,
             qinfo,
             exclude_names,
@@ -152,7 +162,7 @@ class MPS(DNAS):
         self._cost_reduction_fn = cost_reduction_fn
         self._cost_fn_map = self._create_cost_fn_map()
         self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
-        if not hard_softmax and 0 in w_precisions:
+        if not hard_softmax:
             self.compensate_weights_values()
         self.full_cost = full_cost
 
@@ -199,7 +209,7 @@ class MPS(DNAS):
 
     def compensate_weights_values(self):
         """Modify the initial weight values of MPSModules compensating the possible presence of
-        0-bit among the weights precisions"""
+        0-bit among the weights precision"""
         for _, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
                 layer.compensate_weights_values()

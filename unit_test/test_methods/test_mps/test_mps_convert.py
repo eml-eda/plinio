@@ -22,7 +22,7 @@ import unittest
 import torch
 import torch.nn as nn
 from plinio.methods import MPS
-from plinio.methods.mps import DEFAULT_QINFO
+from plinio.methods.mps import get_default_qinfo
 from plinio.methods.mps.nn import MPSConv2d, MPSType, MPSLinear, MPSIdentity
 from plinio.methods.mps.nn.qtz import MPSBaseQtz
 import plinio.methods.mps.quant.nn as qnn
@@ -50,7 +50,7 @@ class TestMPSConvert(unittest.TestCase):
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     w_precisions=(0, 2, 4, 8),
+                     qinfo=get_default_qinfo(w_precision=(0, 2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
         compare_prepared(self, nn_ut, new_nn.seed)
         check_target_layers(self, new_nn, exp_tgt=4)
@@ -59,18 +59,18 @@ class TestMPSConvert(unittest.TestCase):
         """Test the removal of the 0 precision search for the last fc layer"""
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     w_precisions=(0, 2, 4, 8),
+                     qinfo=get_default_qinfo(w_precision=(0, 2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
         compare_prepared(self, nn_ut, new_nn.seed)
         check_target_layers(self, new_nn, exp_tgt=4)
-        fc_prec = cast(MPSLinear, new_nn.seed.fc).w_mps_quantizer.precisions
+        fc_prec = cast(MPSLinear, new_nn.seed.fc).w_mps_quantizer.precision
         self.assertTrue(0 not in fc_prec, '0 prec not removed by last fc layer')
 
     def test_autoimport_inp_quant_insertion(self):
         """Test the insertion of the input quantizer"""
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     w_precisions=(0, 2, 4, 8),
+                     qinfo=get_default_qinfo(w_precision=(0, 2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
         compare_prepared(self, nn_ut, new_nn.seed)
         check_target_layers(self, new_nn, exp_tgt=4)
@@ -92,7 +92,7 @@ class TestMPSConvert(unittest.TestCase):
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = DSCNN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     w_precisions=(0, 2, 4, 8),
+                     qinfo=get_default_qinfo(w_precision=(0, 2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
         compare_prepared(self, nn_ut, new_nn.seed)
         check_target_layers(self, new_nn, exp_tgt=15)
@@ -127,7 +127,7 @@ class TestMPSConvert(unittest.TestCase):
         with PER_CHANNEL weight mixed-precision"""
         nn_ut = ToyMultiPath1_2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     w_precisions=(0, 2, 4, 8),
+                     qinfo=get_default_qinfo(w_precision=(0, 2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
         compare_prepared(self, nn_ut, new_nn.seed)
         check_target_layers(self, new_nn, exp_tgt=11)
@@ -165,7 +165,7 @@ class TestMPSConvert(unittest.TestCase):
         with PER_CHANNEL weight mixed-precision (default)"""
         nn_ut = ToyMultiPath1_2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     w_precisions=(0, 2, 4, 8),
+                     qinfo=get_default_qinfo(w_precision=(0, 2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL, exclude_types=(nn.Conv2d,))
         # excluding Conv2D, we are left with: input quantizer (MPSIdentity), 3 MPSAdd, and one
         # MPSLinear
@@ -226,7 +226,7 @@ class TestMPSConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     a_precisions=(8,), w_precisions=(4, 8))
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(4, 8)))
         exported_nn = new_nn.export()
         expected_exported_nn = SimpleExportedNN2D()
         compare_exported(self, exported_nn, expected_exported_nn)
@@ -236,9 +236,9 @@ class TestMPSConvert(unittest.TestCase):
         with per_channel weight mixed-precision"""
         nn_ut = SimpleNN2D()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     a_precisions=(8,), w_precisions=(2, 4, 8),
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
-        # force selection of different precisions for different channels in the net
+        # force selection of different precision for different channels in the net
         new_alpha = [
             [1, 0, 0] * 10 + [0, 0],  # 10 ch
             [0, 1, 0] * 10 + [0, 0],  # 10 ch
@@ -271,7 +271,7 @@ class TestMPSConvert(unittest.TestCase):
             x = torch.rand((1,) + nn_ut.input_shape).to(device)
             nn_ut(x)
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     a_precisions=(8,), w_precisions=(4, 8))
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(4, 8)))
         new_nn = new_nn.to(device)
         # Dummy inference
         with torch.no_grad():
@@ -296,13 +296,13 @@ class TestMPSConvert(unittest.TestCase):
         with torch.no_grad():
             nn_ut(x)
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     a_precisions=(8,), w_precisions=(2, 4, 8),
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
         new_nn = new_nn.to(device)
         # dummy inference
         with torch.no_grad():
             new_nn(x)
-        # force selection of different precisions for different channels in the net
+        # force selection of different precision for different channels in the net
         new_alpha = [
             [1, 0, 0] * 10 + [0, 0],  # 10 ch
             [0, 1, 0] * 10 + [0, 0],  # 10 ch
@@ -332,7 +332,7 @@ class TestMPSConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D_NoBN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     a_precisions=(8,), w_precisions=(4, 8))
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(4, 8)))
         exported_nn = new_nn.export()
         expected_exported_nn = SimpleExportedNN2D(bias=False)
         compare_exported(self, exported_nn, expected_exported_nn)
@@ -342,9 +342,9 @@ class TestMPSConvert(unittest.TestCase):
         with PER_LAYER weight mixed-precision (default)"""
         nn_ut = SimpleNN2D_NoBN()
         new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
-                     a_precisions=(8,), w_precisions=(2, 4, 8),
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(2, 4, 8)),
                      w_search_type=MPSType.PER_CHANNEL)
-        # force selection of different precisions for different channels in the net
+        # force selection of different precision for different channels in the net
         new_alpha = [
             [1, 0, 0] * 10 + [0, 0],  # 10 ch
             [0, 1, 0] * 10 + [0, 0],  # 10 ch
@@ -407,8 +407,8 @@ class TestMPSConvert(unittest.TestCase):
                                  "Wrong act qtz clip_val")
                 self.assertEqual(child.w_quantizer.precision, 8, "Wrong weight precision")
 
-    def test_repeated_precisions(self):
-        """Check that if the weights or the activation precisions used for the model's
+    def test_repeated_precision(self):
+        """Check that if the weights or the activation precision used for the model's
         initialization contain duplicates then an exception is raised"""
         net = ToyAdd_2D()
         input_shape = net.input_shape
@@ -420,30 +420,26 @@ class TestMPSConvert(unittest.TestCase):
         with self.assertRaises(ValueError):
             _ = MPS(net,
                     input_shape=input_shape,
-                    a_precisions=prec,
-                    w_precisions=repeated_prec,
+                    qinfo=get_default_qinfo(a_precision=prec, w_precision=repeated_prec),
                     w_search_type=MPSType.PER_CHANNEL)
 
         with self.assertRaises(ValueError):
             MPS(net,
                 input_shape=input_shape,
-                a_precisions=repeated_prec,
-                w_precisions=prec,
+                qinfo=get_default_qinfo(a_precision=repeated_prec, w_precision=prec),
                 w_search_type=MPSType.PER_CHANNEL)
 
         # case (2): the mixed-precision scheme for the weigths is PER_LAYER
         with self.assertRaises(ValueError):
             MPS(net,
                 input_shape=input_shape,
-                a_precisions=prec,
-                w_precisions=repeated_prec,
+                qinfo=get_default_qinfo(a_precision=prec, w_precision=repeated_prec),
                 w_search_type=MPSType.PER_LAYER)
 
         with self.assertRaises(ValueError):
             MPS(net,
                 input_shape=input_shape,
-                a_precisions=repeated_prec,
-                w_precisions=prec,
+                qinfo=get_default_qinfo(a_precision=repeated_prec, w_precision=prec),
                 w_search_type=MPSType.PER_LAYER)
 
     def test_out_features_eff(self):
@@ -466,8 +462,7 @@ class TestMPSConvert(unittest.TestCase):
         w_prec = (0, 2, 4, 8)
         mixprec_net = MPS(net,
                           input_shape=input_shape,
-                          a_precisions=a_prec,
-                          w_precisions=w_prec,
+                          qinfo=get_default_qinfo(a_precision=a_prec, w_precision=w_prec),
                           w_search_type=MPSType.PER_CHANNEL,
                           hard_softmax=True)
         for layer in mixprec_net.modules():  # force sampling of 8-bit precision
@@ -484,8 +479,7 @@ class TestMPSConvert(unittest.TestCase):
         w_prec = (2, 4, 0, 8)
         mixprec_net = MPS(net,
                           input_shape=input_shape,
-                          a_precisions=a_prec,
-                          w_precisions=w_prec,
+                          qinfo=get_default_qinfo(a_precision=a_prec, w_precision=w_prec),
                           w_search_type=MPSType.PER_CHANNEL,
                           hard_softmax=True)
         for layer in mixprec_net.modules():
@@ -510,8 +504,7 @@ class TestMPSConvert(unittest.TestCase):
         w_prec = (2, 4, 8)
         mixprec_net = MPS(net,
                           input_shape=input_shape,
-                          a_precisions=a_prec,
-                          w_precisions=w_prec,
+                          qinfo=get_default_qinfo(a_precision=a_prec, w_precision=w_prec),
                           w_search_type=MPSType.PER_CHANNEL,
                           hard_softmax=True)
         mixprec_net(x)
@@ -531,8 +524,7 @@ class TestMPSConvert(unittest.TestCase):
         w_prec = (0, 2, 4, 8)
         mixprec_net = MPS(net,
                           input_shape=input_shape,
-                          a_precisions=a_prec,
-                          w_precisions=w_prec,
+                          qinfo=get_default_qinfo(a_precision=a_prec, w_precision=w_prec),
                           w_search_type=MPSType.PER_CHANNEL,
                           hard_softmax=True)
 
@@ -554,19 +546,17 @@ class TestMPSConvert(unittest.TestCase):
 
     def test_qinfo_layer(self):
         nn_ut = SimpleNN2D()
-        my_qinfo = DEFAULT_QINFO.copy()
+        my_qinfo = get_default_qinfo()
         my_qinfo['conv0'] = my_qinfo['layer_default'].copy()
-        my_qinfo['conv0']['w_quantizer'] = my_qinfo['layer_default']['w_quantizer'].copy()
-        my_qinfo['conv0']['w_quantizer']['quantizer'] = FQWeight
+        my_qinfo['conv0']['weight'] = my_qinfo['layer_default']['weight'].copy()
+        my_qinfo['conv0']['weight']['quantizer'] = FQWeight
         my_qinfo['conv1'] = my_qinfo['layer_default'].copy()
-        my_qinfo['conv1']['a_quantizer'] = my_qinfo['layer_default']['a_quantizer'].copy()
-        my_qinfo['conv1']['a_quantizer']['quantizer'] = DummyQuantizer
-        my_qinfo['layer_default']['w_quantizer']['quantizer'] = MinMaxWeight
-        my_qinfo['layer_default']['a_quantizer']['quantizer'] = PACTAct
+        my_qinfo['conv1']['output'] = my_qinfo['layer_default']['output'].copy()
+        my_qinfo['conv1']['output']['quantizer'] = DummyQuantizer
+        my_qinfo['layer_default']['weight']['quantizer'] = MinMaxWeight
+        my_qinfo['layer_default']['output']['quantizer'] = PACTAct
         mixprec_net = MPS(nn_ut,
                           input_shape=nn_ut.input_shape,
-                          a_precisions=(2, 4, 8),
-                          w_precisions=(2, 4, 8),
                           w_search_type=MPSType.PER_CHANNEL,
                           qinfo=my_qinfo)
         # verify that the specified quantizer changed

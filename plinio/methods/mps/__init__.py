@@ -17,7 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .mps import MPS, DEFAULT_QINFO
+from .mps import MPS, get_default_qinfo
 from .nn.qtz import MPSType
 
-__all__ = ['MPS', 'DEFAULT_QINFO', 'MPSType']
+__all__ = ['MPS', 'get_default_qinfo', 'MPSType']

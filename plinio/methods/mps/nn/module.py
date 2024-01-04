@@ -58,7 +58,7 @@ class MPSModule:
 
     def compensate_weights_values(self):
         """Modify the initial weight values of MPSModules compensating the possible presence of
-        0-bit among the weights precisions
+        0-bit among the weights precision
         """
         # does nothing on the base class (overridden by sub-classes)
         return
@@ -150,13 +150,13 @@ class MPSModule:
         """Method that returns the MPSModule cost, given a cost function and
         the layer's "fixed" hyperparameters
 
-        Allows to flexibly handle multiple combinations of weights/act precisions
+        Allows to flexibly handle multiple combinations of weights/act precision
 
         :param cost_fn: the scalar cost function for a single w/a prec combination
         :type cost_fn: CostFn
         :param out_shape: the output shape information
         :type out_shape: Dict[str, Any]
-        :return: the layer cost for each combination of precisions
+        :return: the layer cost for each combination of precision
         :rtype: torch.Tensor
         """
         raise NotImplementedError("Calling get_modified_vars on base abstract MPSModule class")

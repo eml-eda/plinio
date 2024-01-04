@@ -102,13 +102,13 @@ class MPSAdd(MPSIdentity):
         """Method that returns the MPSModule cost, given a cost function and
         the layer's "fixed" hyperparameters
 
-        Allows to flexibly handle multiple combinations of weights/act precisions
+        Allows to flexibly handle multiple combinations of weights/act precision
 
         :param cost_fn: the scalar cost function for a single w/a prec combination
         :type cost_fn: CostFn
         :param out_shape: the output shape information
         :type out_shape: Dict[str, Any]
-        :return: the layer cost for each combination of precisions
+        :return: the layer cost for each combination of precision
         :rtype: torch.Tensor
         """
 
@@ -126,7 +126,7 @@ class MPSAdd(MPSIdentity):
 
         vect_fn = torch.vmap(vect_fn)
         cost = vect_fn(
-                self.in_mps_quantizer.precisions,
+                self.in_mps_quantizer.precision,
                 self.in_mps_quantizer.theta_alpha
                 )
         return cost

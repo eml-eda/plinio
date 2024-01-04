@@ -21,8 +21,7 @@ from pathlib import Path
 import unittest
 
 import torch
-from plinio.methods import MPS
-from plinio.methods.mps.nn import MPSType
+from plinio.methods.mps import MPS, get_default_qinfo, MPSType
 from plinio.methods.mps.quant.backends import Backend, integerize_arch
 from plinio.methods.mps.quant.backends.dory import DORYExporter
 from unit_test.models import ToySequentialFullyConv2d, ToySequentialConv2d, TutorialModel
@@ -42,8 +41,7 @@ class TestMPSConvert(unittest.TestCase):
         # Convert to mixprec searchable model
         mixprec_nn = MPS(nn_ut,
                          input_shape=nn_ut.input_shape,
-                         a_precisions=(8,),
-                         w_precisions=(8,),
+                         qinfo=get_default_qinfo(w_precision=(8,), a_precision=(8,)),
                          w_search_type=MPSType.PER_LAYER
                          )
         # Dummy inference
@@ -83,8 +81,7 @@ class TestMPSConvert(unittest.TestCase):
         # Convert to mixprec searchable model
         mixprec_nn = MPS(nn_ut,
                          input_shape=nn_ut.input_shape,
-                         a_precisions=(8,),
-                         w_precisions=(8,),
+                         qinfo=get_default_qinfo(w_precision=(8,), a_precision=(8,)),
                          w_search_type=MPSType.PER_LAYER
                          )
         # Dummy inference
@@ -125,8 +122,7 @@ class TestMPSConvert(unittest.TestCase):
         # Convert to mixprec searchable model
         mixprec_nn = MPS(nn_ut,
                          input_shape=nn_ut.input_shape,
-                         a_precisions=(8,),
-                         w_precisions=(8,),
+                         qinfo=get_default_qinfo(w_precision=(8,), a_precision=(8,)),
                          w_search_type=MPSType.PER_LAYER
                          )
         # Dummy inference

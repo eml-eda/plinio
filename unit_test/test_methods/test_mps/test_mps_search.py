@@ -21,7 +21,7 @@ from typing import cast
 import unittest
 import torch
 from plinio.cost import ops_bit, params_bit
-from plinio.methods import MPS
+from plinio.methods.mps import MPS, get_default_qinfo
 from plinio.methods.mps.nn import MPSConv2d, MPSType
 from unit_test.models import ToyAdd_2D, SimpleNN2D, ToyRegression_2D
 
@@ -41,8 +41,7 @@ class TestMPSSearch(unittest.TestCase):
         mixprec_net = MPS(net,
                           input_shape=input_shape,
                           cost=params_bit,
-                          a_precisions=a_prec,
-                          w_precisions=w_prec)
+                          qinfo=get_default_qinfo(w_precision=w_prec, a_precision=a_prec))
         # Check the total bits for the whole net
         # all computed using torch to ensure same numerical precision
         theta_alpha = torch.nn.functional.softmax(
@@ -202,8 +201,7 @@ class TestMPSSearch(unittest.TestCase):
         mixprec_net = MPS(nn_ut,
                           input_shape=nn_ut.input_shape,
                           cost=ops_bit,
-                          a_precisions=a_prec,
-                          w_precisions=w_prec)
+                          qinfo=get_default_qinfo(w_precision=w_prec, a_precision=a_prec))
         # we must use SGD to be sure we only consider gradients
         optimizer = torch.optim.SGD(mixprec_net.parameters(), lr=0.001)
         mixprec_net.eval()
@@ -250,8 +248,7 @@ class TestMPSSearch(unittest.TestCase):
                           input_shape=nn_ut.input_shape,
                           cost=ops_bit,
                           w_search_type=MPSType.PER_CHANNEL,
-                          a_precisions=a_prec,
-                          w_precisions=w_prec)
+                          qinfo=get_default_qinfo(w_precision=w_prec, a_precision=a_prec))
         # we must use SGD to be sure we only consider gradients
         optimizer = torch.optim.SGD(mixprec_net.parameters(), lr=0.001)
         mixprec_net.eval()

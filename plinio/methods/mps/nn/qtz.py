@@ -2,8 +2,7 @@
 # * Copyright (C) 2022 Politecnico di Torino, Italy                            *
 # * SPDX-License-Identifier: Apache-2.0                                        *
 # *                                                                            *
-# * Licensed under the Apache License, Version 2.0 (the "License");            *
-# * you may not use this file except in compliance with the License.           *
+# * Licensed under the Apache License, Version 2.0 (the "License");            * * you may not use this file except in compliance with the License.           *
 # * You may obtain a copy of the License at                                    *
 # *                                                                            *
 # * http://www.apache.org/licenses/LICENSE-2.0                                 *
@@ -36,8 +35,8 @@ class MPSBaseQtz(nn.Module):
     """A nn.Module implementing a generic searchable mixed-precision quantization. Base class
     specialized below for per-channel and per-layer search.
 
-    :param precisions: different bitwitdth alternatives among which perform search
-    :type precisions: Tuple[int, ...]
+    :param precision: different bitwitdth alternatives among which perform search
+    :type precision: Tuple[int, ...]
     :param quantizer: input quantizer
     :type quantizer: Quantizer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
@@ -53,7 +52,7 @@ class MPSBaseQtz(nn.Module):
     :type disable_sampling: bool, optional (default = False)
     """
     def __init__(self,
-                 precisions: Tuple[int, ...],
+                 precision: Tuple[int, ...],
                  quantizer: Type[Quantizer],
                  quantizer_kwargs: Dict = {},
                  softmax_temperature: float = 1.0,
@@ -61,14 +60,14 @@ class MPSBaseQtz(nn.Module):
                  gumbel_softmax: bool = False,
                  disable_sampling: bool = False):
         super(MPSBaseQtz, self).__init__()
-        if len(precisions) != len(set(precisions)):
-            raise ValueError("Precisions cannot be repeated")
-        self.register_buffer('precisions', torch.tensor(precisions, dtype=torch.float))
+        if len(precision) != len(set(precision)):
+            raise ValueError("precision cannot be repeated")
+        self.register_buffer('precision', torch.tensor(precision, dtype=torch.float))
         self.quantizer = quantizer
         self.quantizer_kwargs = quantizer_kwargs
         # create individual quantizers
         self.qtz_funcs = nn.ModuleList()
-        for p in precisions:
+        for p in precision:
             qtz = quantizer(p, **quantizer_kwargs)
             qtz = cast(nn.Module, qtz)
             self.qtz_funcs.append(qtz)
@@ -189,8 +188,8 @@ class MPSPerChannelQtz(MPSBaseQtz):
     """A nn.Module implementing a generic searchable mixed-precision quantization applied to each
     channel of the tensor provided as input. This module includes trainable NAS parameters.
 
-    :param precisions: different bitwitdth alternatives among which perform search
-    :type precisions: Tuple[int, ...]
+    :param precision: different bitwitdth alternatives among which perform search
+    :type precision: Tuple[int, ...]
     :param quantizer: input quantizer
     :type quantizer: Quantizer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
@@ -206,7 +205,7 @@ class MPSPerChannelQtz(MPSBaseQtz):
     :type disable_sampling: bool, optional (default = False)
     """
     def __init__(self,
-                 precisions: Tuple[int, ...],
+                 precision: Tuple[int, ...],
                  quantizer: Type[Quantizer],
                  quantizer_kwargs: Dict = {},
                  softmax_temperature: float = 1.0,
@@ -214,7 +213,7 @@ class MPSPerChannelQtz(MPSBaseQtz):
                  gumbel_softmax: bool = False,
                  disable_sampling: bool = False):
         super(MPSPerChannelQtz, self).__init__(
-                precisions,
+                precision,
                 quantizer,
                 quantizer_kwargs,
                 softmax_temperature,
@@ -222,14 +221,14 @@ class MPSPerChannelQtz(MPSBaseQtz):
                 gumbel_softmax,
                 disable_sampling)
         # find the 0-bit precision (if present)
-        self.zero_index = None if 0 not in precisions else precisions.index(0)
+        self.zero_index = None if 0 not in precision else precision.index(0)
         # create and initialize the NAS parameters
-        self.alpha = nn.Parameter(torch.empty((len(precisions), quantizer_kwargs['cout']),
+        self.alpha = nn.Parameter(torch.empty((len(precision), quantizer_kwargs['cout']),
                                               dtype=torch.float32), requires_grad=True)
-        max_precision = max(precisions)
-        for i, p in enumerate(precisions):
+        max_precision = max(precision)
+        for i, p in enumerate(precision):
             self.alpha.data[i, :].fill_(float(p) / max_precision)
-        self.register_buffer('theta_alpha', torch.ones((len(precisions), quantizer_kwargs['cout']),
+        self.register_buffer('theta_alpha', torch.ones((len(precision), quantizer_kwargs['cout']),
                                                        dtype=torch.float32))
         # initial sampling
         with torch.no_grad():
@@ -289,7 +288,7 @@ class MPSPerChannelQtz(MPSBaseQtz):
         :rtype: torch.Tensor
         """
         # stabilization constant added to the denominator to avoid NaNs
-        eff_prec = ((self.theta_alpha.sum(dim=1) * self.precisions).sum() /
+        eff_prec = ((self.theta_alpha.sum(dim=1) * self.precision).sum() /
                     (self.out_features_eff + 1e-10))
         return eff_prec
 
@@ -299,8 +298,8 @@ class MPSPerLayerQtz(MPSBaseQtz):
     operation of the tensor provided as input.
     This module includes trainable NAS parameters.
 
-    :param precisions: different bitwitdth alternatives among which perform search
-    :type precisions: Tuple[int, ...]
+    :param precision: different bitwitdth alternatives among which perform search
+    :type precision: Tuple[int, ...]
     :param quantizer: input quantizer
     :type quantizer: Quantizer
     :param quantizer_kwargs: quantizer kwargs, if no kwargs are passed default is used
@@ -314,7 +313,7 @@ class MPSPerLayerQtz(MPSBaseQtz):
     :type disable_sampling: bool, optional
     """
     def __init__(self,
-                 precisions: Tuple[int, ...],
+                 precision: Tuple[int, ...],
                  quantizer: Type[Quantizer],
                  quantizer_kwargs: Dict = {},
                  softmax_temperature: float = 1.0,
@@ -322,19 +321,19 @@ class MPSPerLayerQtz(MPSBaseQtz):
                  gumbel_softmax: bool = False,
                  disable_sampling: bool = False):
         super(MPSPerLayerQtz, self).__init__(
-                precisions,
+                precision,
                 quantizer,
                 quantizer_kwargs,
                 softmax_temperature,
                 hard_softmax,
                 gumbel_softmax,
                 disable_sampling)
-        self.alpha = nn.Parameter(torch.empty((len(precisions),), dtype=torch.float32),
+        self.alpha = nn.Parameter(torch.empty((len(precision),), dtype=torch.float32),
                                   requires_grad=True)
-        max_precision = max(precisions)
-        for i, p in enumerate(precisions):
+        max_precision = max(precision)
+        for i, p in enumerate(precision):
             self.alpha.data[i].fill_(float(p) / max_precision)
-        self.register_buffer('theta_alpha', torch.ones((len(precisions),), dtype=torch.float32))
+        self.register_buffer('theta_alpha', torch.ones((len(precision),), dtype=torch.float32))
         # initial sampling
         with torch.no_grad():
             self.sample_alpha()
@@ -366,7 +365,7 @@ class MPSPerLayerQtz(MPSBaseQtz):
         :return: the effective precision
         :rtype: torch.Tensor
         """
-        eff_prec = (self.theta_alpha * self.precisions).sum()
+        eff_prec = (self.theta_alpha * self.precision).sum()
         return eff_prec
 
 

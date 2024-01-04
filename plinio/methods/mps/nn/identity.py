@@ -47,7 +47,7 @@ class MPSIdentity(nn.Identity, MPSModule):
         """The forward function of the mixed-precision NAS-able layer.
 
         In a nutshell, quantize and combine the input tensor at the different
-        `precisions`.
+        `precision`.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
@@ -154,13 +154,13 @@ class MPSIdentity(nn.Identity, MPSModule):
         """Method that returns the MPSModule cost, given a cost function and
         the layer's "fixed" hyperparameters
 
-        Allows to flexibly handle multiple combinations of weights/act precisions
+        Allows to flexibly handle multiple combinations of weights/act precision
 
         :param cost_fn: the scalar cost function for a single w/a prec combination
         :type cost_fn: CostFn
         :param out_shape: the output shape information
         :type out_shape: Dict[str, Any]
-        :return: the layer cost for each combination of precisions
+        :return: the layer cost for each combination of precision
         :rtype: torch.Tensor
         """
         # TODO: cost now fixed to 0 for speed, but when used as input quantization,
@@ -198,7 +198,7 @@ class MPSIdentity(nn.Identity, MPSModule):
         """
         with torch.no_grad():
             idx = int(torch.argmax(self.out_mps_quantizer.alpha))
-            return int(self.out_mps_quantizer.precisions[idx])
+            return int(self.out_mps_quantizer.precision[idx])
 
     @property
     def selected_out_quantizer(self) -> Quantizer:

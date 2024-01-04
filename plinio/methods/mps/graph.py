@@ -65,8 +65,6 @@ class MPSTracer(fx.Tracer):
 def convert(model: nn.Module,
             input_example: Any,
             conversion_type: str,
-            a_precisions: Tuple[int, ...] = (8,),
-            w_precisions: Tuple[int, ...] = (8,),
             w_search_type: MPSType = MPSType.PER_LAYER,
             qinfo: Dict = {},
             exclude_names: Iterable[str] = (),
@@ -83,12 +81,6 @@ def convert(model: nn.Module,
     :param conversion_type: a string specifying the type of conversion. Supported types:
     ('import', 'autoimport', 'export')
     :type conversion_type: str
-    :param a_precisions: the possible activations' precisions assigment to be explored
-    by the NAS
-    :type a_precisions: Iterable[int]
-    :param w_precisions: the possible weights' precisions assigment to be explored
-    by the NAS
-    :type w_precisions: Iterable[int]
     :param w_search_type: the mixed precision strategy to be used for weigth
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
     :type w_search_type: MPSType
@@ -127,10 +119,10 @@ def convert(model: nn.Module,
         fuse_mps_modules(mod)
     # Dictionary of shared quantizers. Used only in 'autoimport' mode.
     sq_dict = {} if conversion_type != 'autoimport' else build_shared_mps_qtz_map(
-            mod, a_precisions, w_precisions, w_search_type, qinfo, disable_shared_quantizers)
+            mod, w_search_type, qinfo, disable_shared_quantizers)
     convert_layers(mod, conversion_type, qinfo, sq_dict, exclude_names, exclude_types)
     if conversion_type in ('autoimport', 'import'):
-        add_input_quantizer(mod, a_precisions, qinfo)
+        add_input_quantizer(mod, qinfo)
         add_features_calculator(mod, [mps_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
@@ -185,8 +177,6 @@ def convert_layers(mod: fx.GraphModule,
 
 
 def build_shared_mps_qtz_map(mod: fx.GraphModule,
-                             activation_precisions: Tuple[int, ...],
-                             weight_precisions: Tuple[int, ...],
                              w_search_type: MPSType,
                              qinfo: Dict,
                              disable_shared_quantizers: bool) -> Dict[
@@ -199,12 +189,6 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
 
     :param mod: the fx-converted GraphModule
     :type mod: fx.GraphModule
-    :param activation_precisions: the possible activations' precisions assigment to be explored
-    by the NAS
-    :type activation_precisions: Tuple[int]
-    :param weight_precisions: the possible weights' precisions assigment to be explored
-    by the NAS
-    :type weight_precisions: Tuple[int]
     :param w_search_type: the mixed precision strategy to be used for weigth
     i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
     :type w_search_type: MPSType
@@ -242,29 +226,29 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
             if (n.meta['features_defining'] or n.meta['untouchable']) and \
                (sq_a is None or sq_w is None):
                    if n.name in curr_qinfo.keys():
-                       a_quantizer = curr_qinfo[n.name]['a_quantizer']['quantizer']
-                       a_quantizer_kwargs = curr_qinfo[n.name]['a_quantizer']['kwargs']
-                       w_quantizer = curr_qinfo[n.name]['w_quantizer']['quantizer']
-                       w_quantizer_kwargs = curr_qinfo[n.name]['w_quantizer']['kwargs']
+                       key = n.name
                    else:
-                       a_quantizer = curr_qinfo['layer_default']['a_quantizer']['quantizer']
-                       a_quantizer_kwargs = curr_qinfo['layer_default']['a_quantizer']['kwargs']
-                       w_quantizer = curr_qinfo['layer_default']['w_quantizer']['quantizer']
-                       w_quantizer_kwargs = curr_qinfo['layer_default']['w_quantizer']['kwargs']
+                       key = 'layer_default'
+                   a_quantizer = curr_qinfo[key]['output']['quantizer']
+                   a_quantizer_kwargs = curr_qinfo[key]['output']['kwargs']
+                   a_mps_precision = curr_qinfo[key]['output']['search_precision']
+                   w_quantizer = curr_qinfo[key]['weight']['quantizer']
+                   w_quantizer_kwargs = curr_qinfo[key]['weight']['kwargs']
+                   w_mps_precision = curr_qinfo[key]['weight']['search_precision']
                    # Build activation shared quantizer
                    cout = n.meta['tensor_meta'].shape[1]
                    a_quantizer_kwargs['cout'] = cout
-                   sq_a = MPSPerLayerQtz(activation_precisions,
+                   sq_a = MPSPerLayerQtz(a_mps_precision,
                                          a_quantizer,
                                          a_quantizer_kwargs)
                    # Build weight shared quantizer
                    w_quantizer_kwargs['cout'] = cout
                    if w_search_type == MPSType.PER_LAYER:
-                       sq_w = MPSPerLayerQtz(weight_precisions,
+                       sq_w = MPSPerLayerQtz(w_mps_precision,
                                              w_quantizer,
                                              w_quantizer_kwargs)
                    elif w_search_type == MPSType.PER_CHANNEL:
-                       sq_w = MPSPerChannelQtz(weight_precisions,
+                       sq_w = MPSPerChannelQtz(w_mps_precision,
                                                w_quantizer,
                                                w_quantizer_kwargs)
             if n in get_graph_outputs(mod.graph):
@@ -274,20 +258,21 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
                 # In this case we simply remove the precision '0' from `weight_precisions`
                 # if present and if mixprec search is PER_CHANNEL
                 if n.name in curr_qinfo.keys():
-                    w_quantizer = curr_qinfo[n.name]['w_quantizer']['quantizer']
-                    w_quantizer_kwargs = curr_qinfo[n.name]['w_quantizer']['kwargs']
+                    key = n.name
                 else:
-                    w_quantizer = curr_qinfo['layer_default']['w_quantizer']['quantizer']
-                    w_quantizer_kwargs = curr_qinfo['layer_default']['w_quantizer']['kwargs']
+                    key = 'layer_default'
+                w_quantizer = curr_qinfo[key]['weight']['quantizer']
+                w_quantizer_kwargs = curr_qinfo[key]['weight']['kwargs']
+                w_mps_precision = curr_qinfo[key]['weight']['search_precision']
                 cout = n.meta['tensor_meta'].shape[1]
                 w_quantizer_kwargs['cout'] = cout
                 if w_search_type == MPSType.PER_CHANNEL:
-                    new_weight_precisions = tuple(p for p in weight_precisions if p != 0)
-                    sq_w = MPSPerChannelQtz(new_weight_precisions,
+                    new_w_mps_precision = tuple(p for p in w_mps_precision if p != 0)
+                    sq_w = MPSPerChannelQtz(new_w_mps_precision,
                                             w_quantizer,
                                             w_quantizer_kwargs)
                 elif w_search_type == MPSType.PER_LAYER:
-                    sq_w = MPSPerLayerQtz(weight_precisions,
+                    sq_w = MPSPerLayerQtz(w_mps_precision,
                                           w_quantizer,
                                           w_quantizer_kwargs)
                 # If `c` contains an output node the output is not quantized
@@ -301,19 +286,20 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
             # one previously set in "sq_w".
             if disable_shared_quantizers:
                 if n.name in curr_qinfo.keys():
-                    w_quantizer = curr_qinfo[n.name]['w_quantizer']['quantizer']
-                    w_quantizer_kwargs = curr_qinfo[n.name]['w_quantizer']['kwargs']
+                    key = n.name
                 else:
-                    w_quantizer = curr_qinfo['layer_default']['w_quantizer']['quantizer']
-                    w_quantizer_kwargs = curr_qinfo['layer_default']['w_quantizer']['kwargs']
+                    key = 'layer_default'
+                w_quantizer = curr_qinfo[key]['weight']['quantizer']
+                w_quantizer_kwargs = curr_qinfo[key]['weight']['kwargs']
+                w_mps_precision = curr_qinfo[key]['weight']['search_precision']
                 cout = n.meta['tensor_meta'].shape[1]
                 w_quantizer_kwargs['cout'] = cout
                 if w_search_type == MPSType.PER_LAYER:
-                    sq_w = MPSPerLayerQtz(weight_precisions,
+                    sq_w = MPSPerLayerQtz(w_mps_precision,
                                           w_quantizer,
                                           w_quantizer_kwargs)
                 elif w_search_type == MPSType.PER_CHANNEL:
-                    sq_w = MPSPerChannelQtz(weight_precisions,
+                    sq_w = MPSPerChannelQtz(w_mps_precision,
                                             w_quantizer,
                                             w_quantizer_kwargs)
 
@@ -384,11 +370,11 @@ def autoimport_node(n: fx.Node,
 
     # create bias mixprec quantizer (which is never shared)
     if n.name in qinfo.keys():
-        b_quantizer = qinfo[n.name]['b_quantizer']['quantizer']
-        b_quantizer_kwargs = qinfo[n.name]['b_quantizer']['kwargs']
+        b_quantizer = qinfo[n.name]['bias']['quantizer']
+        b_quantizer_kwargs = qinfo[n.name]['bias']['kwargs']
     else:
-        b_quantizer = qinfo['layer_default']['b_quantizer']['quantizer']
-        b_quantizer_kwargs = qinfo['layer_default']['b_quantizer']['kwargs']
+        b_quantizer = qinfo['layer_default']['bias']['quantizer']
+        b_quantizer_kwargs = qinfo['layer_default']['bias']['kwargs']
     cout = n.meta['tensor_meta'].shape[1]
     b_quantizer_kwargs['cout'] = cout
     b_mps_quantizer = MPSBiasQtz(b_quantizer,
@@ -425,7 +411,6 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
 
 
 def add_input_quantizer(mod: fx.GraphModule,
-                        activation_precisions: Tuple[int, ...],
                         qinfo: Dict):
     """Add input quantizer at the network input.
 
@@ -444,16 +429,17 @@ def add_input_quantizer(mod: fx.GraphModule,
         n = queue.pop(0)
         # Create quantizer
         if n.name in qinfo.keys():
-            a_quantizer = qinfo[n.name]['quantizer']
-            a_quantizer_kwargs = qinfo[n.name]['kwargs']
+            key = n.name
         elif 'input_default' not in qinfo.keys():
             return # no quantizer for input
         else:
-            a_quantizer = qinfo['input_default']['quantizer']
-            a_quantizer_kwargs = qinfo['input_default']['kwargs']
+            key = 'input_default'
+        a_quantizer = qinfo[key]['quantizer']
+        a_quantizer_kwargs = qinfo[key]['kwargs']
+        a_mps_precision = qinfo[key]['search_precision']
         cout = n.meta['tensor_meta'].shape[1]
         a_quantizer_kwargs['cout'] = cout
-        q_a = MPSPerLayerQtz(activation_precisions,
+        q_a = MPSPerLayerQtz(a_mps_precision,
                              a_quantizer,
                              a_quantizer_kwargs)
         inp_qtz = MPSIdentity(q_a)

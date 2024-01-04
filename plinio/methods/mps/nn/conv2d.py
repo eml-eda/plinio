@@ -82,10 +82,10 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """The forward function of the mixed-precision NAS-able layer.
 
         In a nutshell,:
-        - Quantize and combine the weight tensor at the different `precisions`.
+        - Quantize and combine the weight tensor at the different `precision`.
         - Quantize and combine the bias tensor at fixed precision.
         - Compute Conv2d operation using the previous obtained quantized tensors.
-        - Quantize and combine the output tensor at the different `precisions`.
+        - Quantize and combine the output tensor at the different `precision`.
 
         :param input: the input activations tensor
         :type input: torch.Tensor
@@ -162,7 +162,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
                                         submodule.selected_out_quantizer,
                                         cast(Quantizer, submodule.selected_w_quantizer),
                                         b_quantizer)
-        # per-channel search => multiple precisions/quantizers
+        # per-channel search => multiple precision/quantizers
         elif isinstance(submodule.w_mps_quantizer, MPSPerChannelQtz):
             selected_w_precision = cast(List[int], submodule.selected_w_precision)
             selected_w_quantizer = cast(List[Quantizer], submodule.selected_w_quantizer)
@@ -234,16 +234,17 @@ class MPSConv2d(nn.Conv2d, MPSModule):
 
     def compensate_weights_values(self):
         """Modify the initial weight values of MPSModules compensating the possible presence of
-        0-bit among the weights precisions
+        0-bit among the weights precision
         """
-        theta_alpha_rescaling = 0.0
-        for i, precision in enumerate(cast(torch.Tensor, self.w_mps_quantizer.precisions)):
-            if precision != 0:
-                if isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
-                    theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i][0]
-                else:
-                    theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i]
-        self.weight.data = self.weight.data / theta_alpha_rescaling
+        if 0 in cast(torch.Tensor, self.w_mps_quantizer.precision):
+            theta_alpha_rescaling = 0.0
+            for i, precision in enumerate(cast(torch.Tensor, self.w_mps_quantizer.precision)):
+                if precision != 0:
+                    if isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
+                        theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i][0]
+                    else:
+                        theta_alpha_rescaling += self.w_mps_quantizer.theta_alpha[i]
+            self.weight.data = self.weight.data / theta_alpha_rescaling
         return
 
     def summary(self) -> Dict[str, Any]:
@@ -279,13 +280,13 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """Method that returns the MPSModule cost, given a cost function and
         the layer's "fixed" hyperparameters
 
-        Allows to flexibly handle multiple combinations of weights/act precisions
+        Allows to flexibly handle multiple combinations of weights/act precision
 
         :param cost_fn: the scalar cost function for a single w/a prec combination
         :type cost_fn: CostFn
         :param out_shape: the output shape information
         :type out_shape: Dict[str, Any]
-        :return: the layer cost for each combination of precisions
+        :return: the layer cost for each combination of precision
         :rtype: torch.Tensor
         """
 
@@ -313,13 +314,13 @@ class MPSConv2d(nn.Conv2d, MPSModule):
             vect_fn_inner = torch.vmap(vect_fn_inner)
 
             return in_theta_alpha * vect_fn_inner(
-                    self.w_mps_quantizer.precisions,
+                    self.w_mps_quantizer.precision,
                     w_theta_alpha_array
                     )
 
         vect_fn_outer = torch.vmap(vect_fn_outer)
         cost = vect_fn_outer(
-                self.in_mps_quantizer.precisions,
+                self.in_mps_quantizer.precision,
                 self.in_mps_quantizer.theta_alpha
                 )
         return cost
@@ -360,7 +361,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         with torch.no_grad():
             idx = int(torch.argmax(self.in_mps_quantizer.alpha))
-            return int(self.in_mps_quantizer.precisions[idx])
+            return int(self.in_mps_quantizer.precision[idx])
 
     @property
     def selected_out_precision(self) -> Union[int, str]:
@@ -373,7 +374,7 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         """
         with torch.no_grad():
             idx = int(torch.argmax(self.out_mps_quantizer.alpha))
-            return int(self.out_mps_quantizer.precisions[idx])
+            return int(self.out_mps_quantizer.precision[idx])
 
     @property
     def selected_w_precision(self) -> Union[int, List[int]]:
@@ -386,10 +387,10 @@ class MPSConv2d(nn.Conv2d, MPSModule):
         with torch.no_grad():
             if isinstance(self.w_mps_quantizer, MPSPerLayerQtz):
                 idx = int(torch.argmax(self.w_mps_quantizer.alpha))
-                return int(self.w_mps_quantizer.precisions[idx])
+                return int(self.w_mps_quantizer.precision[idx])
             elif isinstance(self.w_mps_quantizer, MPSPerChannelQtz):
                 idx = torch.argmax(self.w_mps_quantizer.alpha, dim=0)
-                return [int(self.w_mps_quantizer.precisions[int(i)]) for i in idx]
+                return [int(self.w_mps_quantizer.precision[int(i)]) for i in idx]
             else:
                 msg = f'Supported mixed-precision types: {list(MPSType)}'
                 raise ValueError(msg)
