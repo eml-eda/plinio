@@ -25,7 +25,7 @@ def _params_conv1d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    cost = cin * cout * k
+    cost = cout * (cin * k + 1)
     return cost
 
 
@@ -33,28 +33,28 @@ def _params_conv2d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    cost = cin * cout * k[0] * k[1]
+    cost = cout * (cin * k[0] * k[1] + 1)
     return cost
 
 
 def _params_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    cost = cin * k
+    cost = cin * (k + 1)
     return cost
 
 
 def _params_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    cost = cin * k[0] * k[1]
+    cost = cin * (k[0] * k[1] + 1)
     return cost
 
 
 def _params_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    cost = cin * cout
+    cost = cout * (cin + 1)
     return cost
 
 

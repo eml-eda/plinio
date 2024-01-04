@@ -46,8 +46,8 @@ class TestSuperNet(unittest.TestCase):
         self.assertEqual(out.shape, (batch_size, ch_out, out_width, out_heigth),
                          "Unexpected output shape")
 
-    def test_standard_pitsn_module_get_size(self):
-        """Test correctness of get_size() function
+    def test_standard_pitsn_module_params(self):
+        """Test correctness of params cost model
         """
         batch_size = 32
         ch_in = 32
@@ -58,10 +58,11 @@ class TestSuperNet(unittest.TestCase):
         dummy_inp = torch.rand((batch_size,) + (ch_in, in_width, in_height))
         _ = sn_model(dummy_inp)
         cost = sn_model.get_cost()
-        self.assertEqual(cost, 13312)
+        exp_cost = ((1+2) * (3*3*32+1)*32 + (5*5*32+1)*32 + 0 ) / 4
+        self.assertEqual(cost, exp_cost)
 
-    def test_standard_pitsn_module_get_macs(self):
-        """Test correctness of get_macs() function
+    def test_standard_pitsn_module_ops(self):
+        """Test correctness of ops cost model
         """
         ch_in = 32
         in_width = 64
@@ -69,7 +70,9 @@ class TestSuperNet(unittest.TestCase):
         model = StandardSNModule()
         sn_model = SuperNet(model, cost=ops, input_shape=(ch_in, in_width, in_height))
         cost = sn_model.get_cost()
-        self.assertEqual(cost, 54525952)
+        exp_cost = ((1+2) * (3*3*32+1)*32 + (5*5*32+1)*32 + 0 ) / 4
+        exp_cost = exp_cost * 64 * 64
+        self.assertEqual(cost, exp_cost)
 
     def test_kws_pitsn_target_modules(self):
         """Test that the number of SNModules found is correct

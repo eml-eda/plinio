@@ -16,59 +16,56 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
+
+# Warning: this cost model does not take into account the bias contribution.
+# It is kept mainly for reproducibility reasons of previous papers' experiments.
+# Please use "params.py" instead.
+
 from . import CostSpec
 from .pattern import Conv1dGeneric, Conv2dGeneric, LinearGeneric, \
         Conv1dDW, Conv2dDW
 
 
-def _ops_conv1d_generic(spec):
+def _params_conv1d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    out_shape = spec['output_shape']
-    cost = cout * (cin * k + 1)
-    cost = cost * out_shape[2]
+    cost = cin * cout * k
     return cost
 
 
-def _ops_conv2d_generic(spec):
+def _params_conv2d_generic(spec):
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
-    out_shape = spec['output_shape']
-    cost = cout * (cin * k[0] * k[1] + 1)
-    cost = cost * out_shape[2] * out_shape[3]
+    cost = cin * cout * k[0] * k[1]
     return cost
 
 
-def _ops_conv1d_dw(spec):
+def _params_conv1d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    out_shape = spec['output_shape']
-    cost = cin * (k + 1)
-    cost = cost * out_shape[2]
+    cost = cin * k
     return cost
 
 
-def _ops_conv2d_dw(spec):
+def _params_conv2d_dw(spec):
     cin = spec['in_channels']
     k = spec['kernel_size']
-    out_shape = spec['output_shape']
-    cost = cin * (k[0] * k[1] + 1)
-    cost = cost * out_shape[2] * out_shape[3]
+    cost = cin * k[0] * k[1]
     return cost
 
 
-def _ops_linear_generic(spec):
+def _params_linear(spec):
     cin = spec['in_features']
     cout = spec['out_features']
-    cost = cout * (cin + 1)
+    cost = cin * cout
     return cost
 
 
-ops_bias = CostSpec(shared=False, default_behavior='zero')
-ops_bias[Conv1dGeneric] = _ops_conv1d_generic
-ops_bias[Conv2dGeneric] = _ops_conv2d_generic
-ops_bias[Conv1dDW] = _ops_conv1d_dw
-ops_bias[Conv2dDW] = _ops_conv2d_dw
-ops_bias[LinearGeneric] = _ops_linear_generic
+params_no_bias = CostSpec(shared=True, default_behavior='zero')
+params_no_bias[Conv1dGeneric] = _params_conv1d_generic
+params_no_bias[Conv2dGeneric] = _params_conv2d_generic
+params_no_bias[Conv1dDW] = _params_conv1d_dw
+params_no_bias[Conv2dDW] = _params_conv2d_dw
+params_no_bias[LinearGeneric] = _params_linear

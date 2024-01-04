@@ -18,13 +18,13 @@
 # *----------------------------------------------------------------------------*
 from .cost_spec import CostFn, CostSpec, PatternSpec
 from .params import params
-from .params_bias import params_bias
+from .params_no_bias import params_no_bias
 from .params_bit import params_bit
 from .ops import ops
-from .ops_bias import ops_bias
+from .ops_no_bias import ops_no_bias
 from .ops_bit import ops_bit
 from .diana_latency import diana_latency
 
 __all__ = ['CostFn', 'CostSpec', 'PatternSpec',
-           'params', 'params_bias', 'params_bit',
-           'ops', 'ops_bias', 'ops_bit', 'diana_latency']
+           'params', 'params_no_bias', 'params_bit',
+           'ops', 'ops_no_bias', 'ops_bit', 'diana_latency']

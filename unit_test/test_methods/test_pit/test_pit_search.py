@@ -76,9 +76,9 @@ class TestPITSearch(unittest.TestCase):
         # conv0 and conv1 have Cin=3, Cout=10, K=3
         # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
-        exp_size_conv_01 = 3 * 10 * 3
-        exp_size_conv_2 = 10 * 20 * 5
-        exp_size_fc = 140 * 2
+        exp_size_conv_01 = (3 * 3 + 1) * 10
+        exp_size_conv_2 = (10 * 5 + 1) * 20
+        exp_size_fc = (140 + 1) * 2
         exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
         self.assertEqual(pit_net.get_cost('params'), exp_size_net, "Wrong net size ")
 
@@ -102,9 +102,9 @@ class TestPITSearch(unittest.TestCase):
         # conv0 and conv1 have Cin=3, Cout=10, K=3
         # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
-        exp_size_conv_01 = 3 * 10 * 3
-        exp_size_conv_2 = 10 * 20 * 5
-        exp_size_fc = 140 * 2
+        exp_size_conv_01 = (3 * 3 + 1) * 10 
+        exp_size_conv_2 = (10 * 5 + 1) * 20 
+        exp_size_fc = (140 + 1) * 2
         exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
         # for the OPs, conv2 has half the output length due to pooling
         exp_ops_conv_01 = exp_size_conv_01 * input_shape[1]
@@ -125,12 +125,12 @@ class TestPITSearch(unittest.TestCase):
         # the expected size with discrete sampling corresponds to having a number of channels
         # equal to the alpha_mask values > 0.5 (5, note that we kept the last channel, always
         # kept alive at 1.0), and a kernel size equal to the number of beta_mask values > 0.5 (2)
-        exp_size_conv_1_dsc = 3 * 5 * 2
+        exp_size_conv_1_dsc = (3 * 2 + 1) * 5
         # Moreover, since conv1 and conv0 share the channel mask, also the size of conv0 is
         # expected to change (only the channels)
-        exp_size_conv_0_dsc = 3 * 5 * 3
+        exp_size_conv_0_dsc = (3 * 3 + 1) * 5
         # lastly, conv_2 also changes because of the different number of input channels
-        exp_size_conv_2_dsc = 5 * 20 * 5
+        exp_size_conv_2_dsc = (5 * 5 + 1) * 20
         # So this is the new expected size
         exp_size_dsc = exp_size_conv_1_dsc + exp_size_conv_0_dsc + exp_size_conv_2_dsc + exp_size_fc
         # Update the OPs too
@@ -146,13 +146,13 @@ class TestPITSearch(unittest.TestCase):
         self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
 
         # with a continuous cost estimate, the cost will be different and depend on the mask values
-        exp_size_conv_0_cnt = 3 * torch.sum(alpha_mask) * 3
-        exp_size_conv_1_cnt = 3 * torch.sum(alpha_mask) * \
+        exp_size_conv_0_cnt = (3 * 3 + 1) * torch.sum(alpha_mask)
+        exp_size_conv_1_cnt = (3 * \
             torch.sum(torch.mul(
                 torch.mul(conv1.timestep_masker.theta, conv1._beta_norm),
                 torch.mul(conv1.dilation_masker.theta, conv1._gamma_norm)
-            ))
-        exp_size_conv_2_cnt = torch.sum(alpha_mask) * 20 * 5
+            )) + 1) * torch.sum(alpha_mask)
+        exp_size_conv_2_cnt = (torch.sum(alpha_mask) * 5 + 1) * 20
         exp_ops_conv_0_cnt = exp_size_conv_0_cnt * input_shape[1]
         exp_ops_conv_1_cnt = exp_size_conv_1_cnt * input_shape[1]
         exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2)
@@ -170,7 +170,7 @@ class TestPITSearch(unittest.TestCase):
         gamma_mask = torch.Tensor([0.1, 0.9, 0.85])
         conv2 = cast(PITConv1d, pit_net.seed.conv2)
         conv2.dilation_masker.gamma = nn.Parameter(gamma_mask)
-        exp_size_conv_2_dsc = 5 * 20 * 3
+        exp_size_conv_2_dsc = (5 * 3 + 1) * 20
         exp_size_dsc = exp_size_conv_1_dsc + exp_size_conv_0_dsc + exp_size_conv_2_dsc + exp_size_fc
         exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2)
         exp_ops_dsc = exp_ops_conv_1_dsc + exp_ops_conv_0_dsc + exp_ops_conv_2_dsc + exp_size_fc
@@ -181,11 +181,11 @@ class TestPITSearch(unittest.TestCase):
         self.assertEqual(pit_net.get_cost('params'), exp_size_dsc, "Wrong discrete net size")
 
         # lastly, try these conditions in the continuous case
-        exp_size_conv_2_cnt = torch.sum(alpha_mask) * 20 * \
+        exp_size_conv_2_cnt = (torch.sum(alpha_mask) * \
             torch.sum(torch.mul(
                 torch.mul(conv2.timestep_masker.theta, conv2._beta_norm),
                 torch.mul(conv2.dilation_masker.theta, conv2._gamma_norm)
-            ))
+            )) + 1) * 20
         exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2)
         exp_size_cnt = exp_size_conv_1_cnt + exp_size_conv_0_cnt + exp_size_conv_2_cnt + exp_size_fc
         exp_ops_cnt = exp_ops_conv_1_cnt + exp_ops_conv_0_cnt + exp_ops_conv_2_cnt + exp_size_fc
@@ -209,9 +209,9 @@ class TestPITSearch(unittest.TestCase):
         # conv0 and conv1 have Cin=3, Cout=10, K=(3,3)
         # conv2 has Cin=10, Cout=20, K=(5,5)
         # the final FC has 980 input features and 2 output features
-        exp_size_conv_01 = 3 * 10 * 3 * 3
-        exp_size_conv_2 = 10 * 20 * 5 * 5
-        exp_size_fc = 980 * 2
+        exp_size_conv_01 = (3 * 3 * 3 + 1) * 10 
+        exp_size_conv_2 = (10 * 5 * 5 + 1) * 20 
+        exp_size_fc = (980 + 1) * 2
         exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
         # for the OPs, conv2 has half the feature size due to pooling
         exp_ops_conv_01 = exp_size_conv_01 * input_shape[1] * input_shape[2]
@@ -231,9 +231,9 @@ class TestPITSearch(unittest.TestCase):
         # the expected size with discrete sampling corresponds to having a number of channels
         # equal to the alpha_mask values > 0.5 (5, note that we kept the last channel, always
         # kept alive at 1.0). This affects both conv1 and conv0 due to their shared mask
-        exp_size_conv_01_dsc = 3 * 5 * 3 * 3
+        exp_size_conv_01_dsc = (3 * 3 * 3 + 1) * 5
         # lastly, conv_2 also changes because of the different number of input channels
-        exp_size_conv_2_dsc = 5 * 20 * 5 * 5
+        exp_size_conv_2_dsc = (5 * 5 * 5 + 1) * 20
         # So this is the new expected size
         exp_size_dsc = 2 * exp_size_conv_01_dsc + exp_size_conv_2_dsc + exp_size_fc
         # Update the OPs too
@@ -248,8 +248,8 @@ class TestPITSearch(unittest.TestCase):
         self.assertEqual(pit_net.cost, exp_ops_dsc, "Wrong discrete net ops")
 
         # with a continuous cost estimate, the cost will be different and depend on the mask values
-        exp_size_conv_01_cnt = 3 * torch.sum(alpha_mask) * 3 * 3
-        exp_size_conv_2_cnt = torch.sum(alpha_mask) * 20 * 5 * 5
+        exp_size_conv_01_cnt = (3 * 3 * 3 + 1) * torch.sum(alpha_mask)
+        exp_size_conv_2_cnt = (torch.sum(alpha_mask) * 5 * 5 + 1) * 20 
         exp_ops_conv_01_cnt = exp_size_conv_01_cnt * input_shape[1] * input_shape[1]
         exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2) * (input_shape[1] // 2)
         exp_size_cnt = 2 * exp_size_conv_01_cnt + exp_size_conv_2_cnt + exp_size_fc
@@ -267,9 +267,9 @@ class TestPITSearch(unittest.TestCase):
         alpha_mask2 = torch.Tensor([0.1, 0.25, 0.6, 0.8] + [1] * 16)
         conv2 = cast(PITConv2d, pit_net.seed.conv2)
         conv2.out_features_masker.alpha = nn.Parameter(alpha_mask2)
-        exp_size_conv_2_dsc = 5 * 18 * 5 * 5
+        exp_size_conv_2_dsc = (5 * 5 * 5 + 1) * 18
         # each feature map after conv2 is 7*7, flattened to 49 features
-        exp_size_fc_dsc = 882 * 2
+        exp_size_fc_dsc = (882 + 1) * 2
         exp_size_dsc = 2 * exp_size_conv_01_dsc + exp_size_conv_2_dsc + exp_size_fc_dsc
         exp_ops_conv_2_dsc = exp_size_conv_2_dsc * (input_shape[1] // 2) * (input_shape[1] // 2)
         exp_ops_dsc = 2 * exp_ops_conv_01_dsc + exp_ops_conv_2_dsc + exp_size_fc_dsc
@@ -281,9 +281,9 @@ class TestPITSearch(unittest.TestCase):
         self.assertEqual(pit_net.get_cost('params'), exp_size_dsc, "Wrong discrete net size")
 
         # lastly, try these conditions in the continuous case
-        exp_size_conv_2_cnt = torch.sum(alpha_mask) * torch.sum(alpha_mask2) * 5 * 5
+        exp_size_conv_2_cnt = (torch.sum(alpha_mask) * 5 * 5 + 1) * torch.sum(alpha_mask2)
         # each feature map after conv2 is 7*7, flattened to 49 features
-        exp_size_fc_cnt = 49 * torch.sum(alpha_mask2) * 2
+        exp_size_fc_cnt = (49 * torch.sum(alpha_mask2) + 1) * 2
         exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2) * (input_shape[1] // 2)
         exp_size_cnt = 2 * exp_size_conv_01_cnt + exp_size_conv_2_cnt + exp_size_fc_cnt
         exp_ops_cnt = 2 * exp_ops_conv_01_cnt + exp_ops_conv_2_cnt + exp_size_fc_cnt
