@@ -25,16 +25,15 @@ from plinio.cost import gap8_latency
 from plinio.methods.pit.nn import PITConv2d, PITLinear
 from plinio.methods.pit.nn.features_masker import PITFeaturesMasker
 
+### key: (layer type, groups>1)
 estimated_MAC_cycles = {}
 estimated_MAC_cycles[(nn.Conv2d, 0)] = 16
 estimated_MAC_cycles[(nn.Conv2d, 1)] = 1.5
 estimated_MAC_cycles[(nn.Linear, 0)] = 8
 
 class TestGAP8Latency(unittest.TestCase):
-    """Verify correctness of the ops cost model, using torchinfo as reference."""
-
+    """Verify correctness of the GAP8 cost model, using "reference" numbers."""
     # note: batch-size is fixed to 1 because plinio cares about single-input inference cost
-
     def test_gap8latency_conv2d(self):
         print()
         cin = 16
@@ -59,7 +58,6 @@ class TestGAP8Latency(unittest.TestCase):
 
     def _compute_and_assert(self, layer, cout,g, input_size, message):
         x = torch.randn(input_size)
-
         if isinstance(layer, nn.Conv2d):
             pit_ut = PITConv2d(
                 layer,
@@ -75,10 +73,10 @@ class TestGAP8Latency(unittest.TestCase):
         spec['output_shape'] = y.shape
         if isinstance(layer, nn.Conv2d):
             spec['out_channels'] = pit_ut.out_features_eff
-            spec['in_channels'] = pit_ut.out_features_eff/cout*spec['in_channels']
+            spec['in_channels'] = torch.tensor(spec['in_channels'])
         else:
             spec['out_features'] = pit_ut.out_features_eff
-            spec['in_features'] = pit_ut.out_features_eff/cout*spec['in_features']
+            spec['in_features'] = torch.tensor(spec['in_features'])
         est_cost = gap8_latency[type(layer), spec](spec)
         model_summary = torchinfo.summary(layer, input_size, verbose=False)
         MACs = model_summary.total_mult_adds
