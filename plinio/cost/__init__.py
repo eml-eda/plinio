@@ -24,7 +24,8 @@ from .ops import ops
 from .ops_no_bias import ops_no_bias
 from .ops_bit import ops_bit
 from .diana_latency import diana_latency
+from .gap8_latency import gap8_latency
 
 __all__ = ['CostFn', 'CostSpec', 'PatternSpec',
            'params', 'params_no_bias', 'params_bit',
-           'ops', 'ops_no_bias', 'ops_bit', 'diana_latency']
+           'ops', 'ops_no_bias', 'ops_bit', 'diana_latency', 'gap8_latency']
