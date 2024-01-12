@@ -30,9 +30,9 @@ class TestOps(unittest.TestCase):
     # note: batch-size is fixed to 1 because plinio cares about single-input inference cost
 
     def test_ops_conv1d(self):
-        cin = random.randint(1,20)
-        cout = random.randint(1,20)
-        k = random.randint(1,20)
+        cin = random.randint(1, 20)
+        cout = random.randint(1, 20)
+        k = random.randint(1, 20)
         # with bias
         conv = nn.Conv1d(cin, cout, k)
         self._compute_and_assert(conv, (1, cin, random.randint(k, 20)),
@@ -47,10 +47,10 @@ class TestOps(unittest.TestCase):
                                  "Error in Conv1d depth-wise")
 
     def test_ops_conv2d(self):
-        cin = random.randint(1,20)
-        cout = random.randint(1,20)
-        kx = random.randint(1,20)
-        ky = random.randint(1,20)
+        cin = random.randint(1, 20)
+        cout = random.randint(1, 20)
+        kx = random.randint(1, 20)
+        ky = random.randint(1, 20)
         # with bias
         conv = nn.Conv2d(cin, cout, (kx, ky))
         self._compute_and_assert(conv, (1, cin, random.randint(kx, 20), random.randint(ky, 20)),
@@ -65,15 +65,14 @@ class TestOps(unittest.TestCase):
                                  "Error in Conv2d depth-wise")
 
     def test_ops_linear(self):
-        fin = random.randint(1,20)
-        fout = random.randint(1,20)
+        fin = random.randint(1, 20)
+        fout = random.randint(1, 20)
         # with bias
         lin = nn.Linear(fin, fout)
         self._compute_and_assert(lin, (1, fin), "Error in linear with bias")
         # without bias
         lin = nn.Linear(fin, fout, bias=False)
         self._compute_and_assert(lin, (1, fin), "Error in linear without bias")
-
 
     def _compute_and_assert(self, layer, input_size, message):
         x = torch.randn(input_size)

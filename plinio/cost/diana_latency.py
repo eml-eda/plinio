@@ -22,7 +22,6 @@ import torch
 from . import CostSpec
 from .pattern import Conv2dGeneric, LinearGeneric
 
-## TODO: document better the cycles functions below
 
 class ComputeOxUnrollSTE(torch.autograd.Function):
     """Torch autograd function that computes the optimal ox_unroll for the Diana analog accelerator"""
@@ -77,7 +76,12 @@ class GateSTE(torch.autograd.Function):
 
 
 def _analog_cycles(spec, clock_freq=260e06):
-    """function that computes the number of cycles for a convolution on the Diana analog accelerator"""
+    """
+    Function that computes the number of cycles for a convolution on the Diana analog accelerator.
+
+    Supports only normal convolutions.
+    An error is raised in case of depthwise/grouped convolutions (group != 1).
+    """
     ch_in = spec['in_channels']
     ch_out = spec['out_channels']
     k_x, k_y = spec['kernel_size']
@@ -88,7 +92,6 @@ def _analog_cycles(spec, clock_freq=260e06):
     out_x, out_y = spec['output_shape'][2:]
     ox_unroll_base = ComputeOxUnrollSTE.apply(ch_out, ch_in, k_x, k_y)
     cycles_comp = FloorSTE.apply(ch_out, 512) * _floor(ch_in, 128) * out_x * out_y / ox_unroll_base
-    # cycles_weights = 4 * 2 * 1152
     cycles_weights = 4 * 2 * ch_in * k_x * k_y
     cycles_comp_norm = cycles_comp * 70 / (1000000000 / clock_freq)
     gate = GateSTE.apply(ch_out, 1.)
@@ -96,24 +99,22 @@ def _analog_cycles(spec, clock_freq=260e06):
 
 
 def _digital_cycles(spec):
-    """function that computes the number of cycles for a convolution on the Diana digital accelerator"""
+    """
+    Function that computes the number of cycles for a convolution on the Diana digital accelerator.
+    The modeled accelerator is a systolic array of 16x16 PEs.
+
+    Supports both normal and depthwise convolutions.
+    """
     ch_in = spec['in_channels']
     ch_out = spec['out_channels']
     k_x, k_y = spec['kernel_size']
     groups = spec['groups']
     out_x, out_y = spec['output_shape'][2:]
-    # Original model (no depthwise):
-    # cycles = FloorSTE.apply(ch_out, 16) * ch_in * _floor(out_x, 16) * out_y * k_x * k_y
-    # Depthwise support:
-    # min(ch_out, groups) * FloorSTE.apply(1, 16) * 1 * _floor(out_x, 16) * out_y * k_x * k_y
-    # TODO: should we separate in two functions for depthwise and normal conv?
-    # TODO: why here the first floor is STE-d and the second is not?
+    # N.B., `ch_out` requires STE while `out_x` does not because it does not requires grad.
     cycles = FloorSTE.apply(ch_out / groups, 16) * ch_in * _floor(out_x, 16) * out_y * k_x * k_y
-    # Works with both depthwise and normal conv:
     cycles_load_store = out_x * out_y * (ch_out + ch_in) / 8
     gate = GateSTE.apply(ch_out, 1.)
     return (gate * cycles_load_store) + cycles
-    # return cycles_load_store + cycles
 
 
 def _diana_latency_conv2d_generic(spec):
