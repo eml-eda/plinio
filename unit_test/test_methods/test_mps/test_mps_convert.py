@@ -308,7 +308,7 @@ class TestMPSConvert(unittest.TestCase):
             [0, 1, 0] * 10 + [0, 0],  # 10 ch
             [0, 0, 1] * 10 + [1, 1]  # 12 ch
         ]
-        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float, device=device))
         conv0 = cast(MPSConv2d, new_nn.seed.conv0)
         conv0.w_mps_quantizer.alpha = new_alpha_t
         # force precision selection for the final linear layer
@@ -317,7 +317,7 @@ class TestMPSConvert(unittest.TestCase):
             [0, 1, 0],  # 1 ch
             [1, 0, 1]  # 2 ch
         ]
-        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float))
+        new_alpha_t = nn.Parameter(torch.tensor(new_alpha, dtype=torch.float, device=device))
         fc = cast(MPSLinear, new_nn.seed.fc)
         fc.w_mps_quantizer.alpha = new_alpha_t
         exported_nn = new_nn.export().to(device)
