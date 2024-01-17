@@ -285,9 +285,10 @@ class MPSLinear(nn.Linear, MPSModule):
             msg = f'Supported mixed-precision types: {list(MPSType)}'
             raise ValueError(msg)
 
-        def vect_fn_outer(in_prec, in_theta_alpha):
-
-            def vect_fn_inner(w_prec, w_theta_alpha):
+        cost = torch.zeros(size=(len(self.in_mps_quantizer.precision), len(self.w_mps_quantizer.precision)),
+                           device=self.in_mps_quantizer.precision.device)
+        for i, (in_prec, in_theta_alpha) in enumerate(zip(self.in_mps_quantizer.precision, self.in_mps_quantizer.theta_alpha)):
+            for j, (w_prec, w_theta_alpha) in enumerate(zip(self.w_mps_quantizer.precision, w_theta_alpha_array)):
                 v = vars(self)
                 v.update(out_shape)
                 v['in_format'] = int
@@ -296,20 +297,7 @@ class MPSLinear(nn.Linear, MPSModule):
                 v['in_channels'] = self.input_features_calculator.features.detach()
                 v['in_precision'] = in_prec
                 v['w_precision'] = w_prec
-                return w_theta_alpha * cost_fn(v)
-
-            vect_fn_inner = torch.vmap(vect_fn_inner)
-
-            return in_theta_alpha * vect_fn_inner(
-                    self.w_mps_quantizer.precision,
-                    w_theta_alpha_array
-                    )
-
-        vect_fn_outer = torch.vmap(vect_fn_outer)
-        cost = vect_fn_outer(
-                self.in_mps_quantizer.precision,
-                self.in_mps_quantizer.theta_alpha
-                )
+                cost[i][j] = in_theta_alpha * w_theta_alpha * cost_fn(v)
         return cost
 
     def named_nas_parameters(
