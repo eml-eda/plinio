@@ -24,7 +24,7 @@ Hardware unaware:
 Hardware aware:
 * `diana_latency`: a bit-width and spatial parallelism dependent analytical latency model for the DIANA System-on-Chip described [here](https://ieeexplore.ieee.org/document/9731716).
 * `diana_energy` (TBA): a bit-width and spatial parallelism dependent analytical energy model for the DIANA System-on-Chip described [here](https://ieeexplore.ieee.org/document/9731716).
-* `gap8_latency` (TBA): a latency model for the GreenWaves' GAP8 System-on-Chip described [here](https://ieeexplore.ieee.org/document/8445101).
+* `gap8_latency`: a latency model for the GreenWaves' GAP8 System-on-Chip described [here](https://ieeexplore.ieee.org/document/8445101).
 * `gap8_energy` (TBA): an energy model for the GreenWaves' GAP8 System-on-Chip described [here](https://ieeexplore.ieee.org/document/8445101).
 * `mpic_latency` (TBA): a bit-width dependent LUT-based latency model for the MPIC RISC-V processor with mixed-precision support described [here](https://arxiv.org/pdf/2010.04073.pdf).
 * `mpic_energy` (TBA): a bit-width dependent LUT-based energy model for the MPIC RISC-V processor with mixed-precision support described [here](https://arxiv.org/pdf/2010.04073.pdf).
