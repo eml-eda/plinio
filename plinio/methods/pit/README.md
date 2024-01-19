@@ -99,4 +99,6 @@ At the current state the optimization of the following layers is supported with 
 
 ## Known Limitations
 
-TBD
+When using `PIT` to optimize the receptive-field and/or the dilation of a 1D convolution, the user has two possibilities:
+- If no explicit padding is needed, use `padding='same'` for every layer with `stride=1` (PyTorch does not support same padding with stride different from 1).
+- If explicit padding is needed, use `padding='valid'` for every layer and add a `nn.ConstantPad1d` layer before each layer which need an explicit padding.
