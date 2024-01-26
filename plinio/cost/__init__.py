@@ -25,7 +25,11 @@ from .ops_no_bias import ops_no_bias
 from .ops_bit import ops_bit
 from .diana_latency import diana_latency
 from .gap8_latency import gap8_latency
+from .mpic_latency import mpic_latency
+from .mpic_energy import mpic_energy
+from .ne16_latency import ne16_latency
 
 __all__ = ['CostFn', 'CostSpec', 'PatternSpec',
            'params', 'params_no_bias', 'params_bit',
-           'ops', 'ops_no_bias', 'ops_bit', 'diana_latency', 'gap8_latency']
+           'ops', 'ops_no_bias', 'ops_bit', 'diana_latency', 'gap8_latency',
+           'mpic_latency', 'mpic_energy', 'ne16_latency']

@@ -17,7 +17,6 @@ The current version of PLiNIO supports the following cost models:
 Hardware unaware:
 * `params`: counts the number of WEIGHTS of the model. Ignores biases, and only considers Convolutional and Linear layers, assuming all other layers (e.g. BatchNorm) have 0 parameters.
 * `params_bit`: counts the number of bits required to store the WEIGHTS of the model (relevant for [`MPS`](../methods/mps/README.md) only). Ignores biases, and only considers Convolutional and Linear layers, assuming all other layers (e.g. BatchNorm) have 0 parameters.
-* `params_bias`: [DEPRECATED] counts the number of PARAMETERS (weights and biases) of the model. Considers Convolutional and Linear layers, assuming all other layers (e.g. BatchNorm) have 0 parameters. This model will replace `params` (currently kept only for reproducibility reasons) and the current name will be deprecated.
 * `ops`: counts the number of MAC operations per inference. Accounts for Convolutional and Linear layers only, assuming that all other layers have 0 ops.
 * `ops_bit`: counts the number of "bitops" per inference (relevant for [`MPS`](../methods/mps/README.md) only). Bitops are defined as $sum_{b_w,b_x}(b_w \cdot b_x \cdot OPS_{b_w,b_x})$, where $b_w$ and $b_x$ are the possible weights and activations bit-widths, and $OPS_{b_w, b_x}$ is the number of MAC operations executed with those bit-widths as input. Accounts for Convolutional and Linear layers only, assuming that all other layers have 0 ops.
 
@@ -26,9 +25,9 @@ Hardware aware:
 * `diana_energy` (TBA): a bit-width and spatial parallelism dependent analytical energy model for the DIANA System-on-Chip described [here](https://ieeexplore.ieee.org/document/9731716).
 * `gap8_latency`: a latency model for the GreenWaves' GAP8 System-on-Chip described [here](https://ieeexplore.ieee.org/document/8445101).
 * `gap8_energy` (TBA): an energy model for the GreenWaves' GAP8 System-on-Chip described [here](https://ieeexplore.ieee.org/document/8445101).
-* `mpic_latency` (TBA): a bit-width dependent LUT-based latency model for the MPIC RISC-V processor with mixed-precision support described [here](https://arxiv.org/pdf/2010.04073.pdf).
-* `mpic_energy` (TBA): a bit-width dependent LUT-based energy model for the MPIC RISC-V processor with mixed-precision support described [here](https://arxiv.org/pdf/2010.04073.pdf).
-* `ne16_latency` (TBA): a bit-width dependent latency model for the NE16 accelerator described [here](https://github.com/pulp-platform/ne16).
+* `mpic_latency`: a bit-width dependent LUT-based latency model for the MPIC RISC-V processor with mixed-precision support described [here](https://arxiv.org/pdf/2010.04073.pdf).
+* `mpic_energy`: a bit-width dependent LUT-based energy model for the MPIC RISC-V processor with mixed-precision support described [here](https://arxiv.org/pdf/2010.04073.pdf).
+* `ne16_latency`: a bit-width dependent latency model for the NE16 accelerator described [here](https://github.com/pulp-platform/ne16).
 
 ## Using Pre-defined Cost Models
 

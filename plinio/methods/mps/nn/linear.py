@@ -263,6 +263,19 @@ class MPSLinear(nn.Linear, MPSModule):
             'w_params': w_params
         }
 
+    def get_modified_vars(self) -> Dict[str, Any]:
+        """Method that returns the modified vars(self) dictionary for the instance, used for
+        cost computation
+
+        :return: the modified vars(self) data structure
+        :rtype: Dict[str, Any]
+        """
+        v = dict(vars(self))
+        # TODO: detach to be double-checked
+        v['in_channels'] = self.input_features_calculator.features.detach()
+        v['out_channels'] = self.out_features_eff
+        return v
+
     def get_cost(self, cost_fn: CostFn, out_shape: Dict[str, Any]) -> torch.Tensor:
         """Method that returns the MPSModule cost, given a cost function and
         the layer's "fixed" hyperparameters
@@ -289,14 +302,13 @@ class MPSLinear(nn.Linear, MPSModule):
                            device=self.in_mps_quantizer.precision.device)
         for i, (in_prec, in_theta_alpha) in enumerate(zip(self.in_mps_quantizer.precision, self.in_mps_quantizer.theta_alpha)):
             for j, (w_prec, w_theta_alpha) in enumerate(zip(self.w_mps_quantizer.precision, w_theta_alpha_array)):
-                v = vars(self)
+                v = self.get_modified_vars()
                 v.update(out_shape)
                 v['in_format'] = int
                 v['w_format'] = int
-                # TODO: detach to be double-checked
-                v['in_channels'] = self.input_features_calculator.features.detach()
                 v['in_precision'] = in_prec
                 v['w_precision'] = w_prec
+                v['w_theta_alpha'] = w_theta_alpha
                 cost[i][j] = in_theta_alpha * w_theta_alpha * cost_fn(v)
         return cost
 
