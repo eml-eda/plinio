@@ -31,7 +31,7 @@ def _ops_bit_conv1d_generic(spec):
     # w_format = spec['w_format']
     # in_format = spec['in_format']
     # assert w_format == int and in_format == int, "Model only supports integer quantization"
-    cost = k * cin * cout * w_prec * in_prec * out_shape[2]
+    cost = k[0] * cin * cout * w_prec * in_prec * out_shape[2]
     return cost
 
 
@@ -59,7 +59,7 @@ def _ops_bit_conv1d_dw(spec):
     # cin (effective channels) or cout (actual channels) in the expression below.
     # The correct thing is using cout, but this is leaking information from the NAS
     # internals to the cost model. So this should be probably fixed (TODO)
-    cost = k * cout * w_prec * in_prec * out_shape[2]
+    cost = k[0] * cout * w_prec * in_prec * out_shape[2]
     return cost
 
 
