@@ -28,7 +28,7 @@ def _params_bit_conv1d_generic(spec):
     w_prec = spec['w_precision']
     # w_format = spec['w_format']
     # assert w_format == int, "Model only supports integer quantization"
-    cost = k * cin * cout * w_prec
+    cost = k[0] * cin * cout * w_prec
     return cost
 
 
@@ -51,7 +51,7 @@ def _params_bit_conv1d_dw(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     w_prec = spec['w_precision']
-    cost = k * cout * w_prec
+    cost = k[0] * cout * w_prec
     return cost
 
 
