@@ -249,6 +249,8 @@ class PIT(DNAS):
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname
                 for name, param in layer.named_nas_parameters(prefix=prfx, recurse=recurse):
+                    if param is None:
+                        break
                     # avoid duplicates (e.g. shared channels masks)
                     if param not in included:
                         included.add(param)

@@ -16,7 +16,7 @@
 # *                                                                            *
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
-from typing import Dict, Any, cast
+from typing import Dict, Any, Iterator, Tuple, cast
 import torch
 import torch.nn as nn
 import torch.fx as fx
@@ -118,6 +118,20 @@ class PITBatchNorm2d(nn.BatchNorm2d, PITModule):
             'in_features': self.in_features_opt,
             'out_features': self.out_features_opt,
         }
+
+    def named_nas_parameters(
+            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
+        """Returns an iterator over the architectural parameters (masks) of this layer, yielding
+        both the name of the parameter as well as the parameter itself
+
+        :param prefix: prefix to prepend to all parameter names.
+        :type prefix: str
+        :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
+        :type recurse: bool
+        :return: an iterator over the architectural parameters (masks) of this layer
+        :rtype: Iterator[nn.Parameter]
+        """
+        yield ("", None)
 
     @property
     def out_features_opt(self) -> int:
