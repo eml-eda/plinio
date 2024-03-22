@@ -331,7 +331,7 @@ def pit_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeatur
     :return: optional feature calculator object for PIT node
     :rtype: ModAttrFeaturesCalculator
     """
-    if is_inherited_layer(n, mod, (PITModule,)):
+    if is_inherited_layer(n, mod, (PITModule,)) and not (is_inherited_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d))):
         # For PIT NAS-able layers, the "active" output features are stored in the
         # out_features_eff attribute, and the binary mask is in features_mask
         sub_mod = mod.get_submodule(str(n.target))
