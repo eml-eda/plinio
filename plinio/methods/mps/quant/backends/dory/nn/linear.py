@@ -80,7 +80,6 @@ class DORYLinear(nn.Linear, DORYModule):
         else:
             self.s_y = torch.tensor(1., device=self.device)
             self.last_layer = True
-        self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y)
 
         # Copy and integerize pretrained biases
         with torch.no_grad():
@@ -88,6 +87,11 @@ class DORYLinear(nn.Linear, DORYModule):
                 self.b_quantizer.dequantize = False
                 int_bias = self.b_quantizer(linear.bias, self.s_x, self.s_w)
                 int_bias = cast(torch.Tensor, int_bias)
+
+        self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y,
+                                                             int_bias)
+        with torch.no_grad():
+            if linear.bias is not None:
                 int_bias = int_bias * self.scale
                 self.add_bias = int_bias.view(1, self.out_features)
             else:
@@ -158,11 +162,14 @@ class DORYLinear(nn.Linear, DORYModule):
     def _integer_approximation(self,
                                s_w: torch.Tensor,
                                s_x: torch.Tensor,
-                               s_y: torch.Tensor
+                               s_y: torch.Tensor,
+                               int_bias: torch.Tensor
                                ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute an approximation of `s_w * s_x / s_y` as `scale` / 2**`shift`
         where scale is a vector of len(s_w) integer on 32bits and shift is
         a scalar between [0, 31].
+        It also checks that the computed scale values does not overflow when multiplied
+        to `int_bias`.
 
         :param s_w: the floating-point weights' quantizer scale-factor
         :type s_w: torch.Tensor
@@ -170,6 +177,8 @@ class DORYLinear(nn.Linear, DORYModule):
         :type s_x: torch.Tensor
         :param s_y: the floating-point output activations' quantizer scale-factor
         :type s_y: torch.Tensor
+        :param int_bias: the integer bias
+        :type int_bias: torch.Tensor
         :return: a tuple containing the computed `scale` and `shift` factors
         :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
@@ -212,7 +221,10 @@ class DORYLinear(nn.Linear, DORYModule):
         for key, val in avg_diff.items():
             scale = params[key]
             shift = key
-            if val < min_diff:
+            scaled_bias = int_bias * torch.tensor(scale)
+            overflow = any(torch.logical_or(scaled_bias > 2**31-1,
+                                            scaled_bias < -2**31))
+            if val < min_diff and (not overflow):
                 min_diff = val
                 min_scale = scale
                 min_shift = shift
