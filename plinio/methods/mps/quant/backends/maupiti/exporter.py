@@ -28,17 +28,16 @@ from typing import Optional, cast, Union, NamedTuple, List
 import torch
 import torch.nn as nn
 
-from plinio.methods.mps.quant.backends.base import (remove_inp_quantizer,
-                                                    remove_relu, get_map,
-                                                    )
-from .annotator import DORYAnnotator
+from plinio.methods.mps.quant.backends.base import (remove_inp_quantizer, remove_relu,
+                                                    get_map,)
+from .annotator import MAUPITIAnnotator
 
 
-class DORYExporter:
-    """Class to export DORY-compliant integer nn.Module to DORY-compliant onnx model"""
+class MAUPITIExporter:
+    """Class to export MAUPITI-compliant integer nn.Module to MAUPITI-compliant onnx model"""
 
     def __init__(self):
-        self._annotator = DORYAnnotator()
+        self._annotator = MAUPITIAnnotator()
         self._onnxname = None
         self._onnxfilepath = None
 
@@ -130,15 +129,15 @@ class DORYExporter:
         features: List[Features] = []
 
         def hook_fn(self, in_: torch.Tensor, out_: torch.Tensor, module_name: str):
-            # DORY wants HWC tensors
+            # MAUPITI wants HWC tensors
             features.append(Features(module_name=module_name, features=out_.squeeze(0)))
 
         # The core dump functionality starts here
-        # Get supported DORY layers
-        dory_layers = get_map()['dory']
+        # Get supported MAUPITI layers
+        maupiti_layers = get_map()['maupiti']
         # 1. set up hooks to intercept features
         for n, m in network.named_modules():
-            if isinstance(m, tuple(dory_layers.values()) + (nn.MaxPool2d,)):
+            if isinstance(m, tuple(maupiti_layers.values()) + (nn.MaxPool2d,)):
                 hook = partial(hook_fn, module_name=n)
                 m.register_forward_hook(hook)
 

@@ -35,4 +35,4 @@ class DORYModule:
         :return: a dictionary containing the optimized layer hyperparameter values
         :rtype: Dict[str, Any]
         """
-        raise NotImplementedError("Calling summary on base abstract QuantModule class")
+        raise NotImplementedError("Calling summary on base abstract DORYModule class")

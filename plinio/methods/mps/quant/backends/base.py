@@ -34,6 +34,7 @@ import plinio.methods.mps.quant.nn as qnn
 class Backend(Enum):
     DORY = auto()
     DIANA = auto()
+    MAUPITI = auto()
     # Add new backends here
 
     @classmethod
@@ -69,10 +70,12 @@ class IntegerizationTracer(fx.Tracer):
 # N.B., ugly but is needed to avoid circular import
 def get_map():
     from .dory.base import dory_layer_map
+    from .maupiti.base import maupiti_layer_map
 
     # Add new supported backends here:
     maps = {
         'dory': dory_layer_map,
+        'maupiti': maupiti_layer_map,
     }
     return maps
 
@@ -139,6 +142,11 @@ def integerize_arch(model: nn.Module,
         if isinstance(m, target_layers):
             m = cast(qnn.QuantModule, m)
             m.export(n, mod, backend)
+    if backend == Backend.MAUPITI:
+        # Remove relu
+        mod = remove_relu(mod)
+        # Remove input quantizer
+        mod = remove_inp_quantizer(mod)
     mod.delete_all_unused_submodules()
     mod.graph.lint()
     mod.recompile()

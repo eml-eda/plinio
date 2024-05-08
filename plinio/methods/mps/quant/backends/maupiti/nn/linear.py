@@ -23,12 +23,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from plinio.methods.mps.quant.quantizers import Quantizer, DummyQuantizer
 from plinio.methods.mps.quant.backends.utils import binary_search
-from .module import DORYModule
+from .module import MAUPITIModule
 
 
-class DORYLinear(nn.Linear, DORYModule):
+class MAUPITILinear(nn.Linear, MAUPITIModule):
     """A nn.Module implementing an integer quantized Linear layer compatible
-    with the DORY backend.
+    with the MAUPITI backend.
 
     :param linear: the inner `nn.Linear` layer
     :type linear: nn.Linear
@@ -47,12 +47,12 @@ class DORYLinear(nn.Linear, DORYModule):
                  out_quantizer: Quantizer,
                  w_quantizer: Quantizer,
                  b_quantizer: Optional[Quantizer]):
-        super(DORYLinear, self).__init__(
+        super(MAUPITILinear, self).__init__(
             linear.in_features,
             linear.out_features,
             linear.bias is not None)
 
-        # Store precisions and quantizers
+        # Store precisions, quantizers
         self.in_quantizer = in_quantizer
         self.out_quantizer = out_quantizer
         self.w_quantizer = w_quantizer
@@ -100,6 +100,19 @@ class DORYLinear(nn.Linear, DORYModule):
         # Done here to avoid the reshape op in fwd
         self.scale = self.scale.view(1, self.out_features)
 
+        # Initialize the zero_point to `self.add_bias`
+        with torch.no_grad():
+            if not self.last_layer:
+                self._zero_point = (self.add_bias + (self.clip_inf * 2**self.shift) -
+                                    self.clip_inf * self.scale *
+                                    torch.sum(self.weight, dim=1
+                                              ).view(1, self.out_features))
+            else:
+                self._zero_point = (self.add_bias -
+                                    self.clip_inf * self.scale *
+                                    torch.sum(self.weight, dim=1
+                                              ).view(1, self.out_features))
+
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of integer linear layer.
 
@@ -120,12 +133,12 @@ class DORYLinear(nn.Linear, DORYModule):
         # Linear
         out = F.linear(input, self.weight, None)
         # Multiply scale factor, sum bias, shift
-        out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+        out = (out * self.scale + self._zero_point) / (2 ** self.shift)
         if not self.last_layer:  # This should happens on the last layer
             # Compute floor
             out = torch.floor(out)
-        # Compute relu
-        out = torch.clip(out, self.clip_inf, self.clip_sup)
+            # Compute relu
+            out = torch.clip(out, self.clip_inf, self.clip_sup)
 
         return out
 
@@ -149,15 +162,20 @@ class DORYLinear(nn.Linear, DORYModule):
     @property
     def clip_inf(self):
         # Define ReLU inferior extreme
-        return torch.tensor(0., device=self.device)
+        if self.last_layer:
+            return torch.tensor(-2 ** (self.in_quantizer.precision - 1), device=self.device)
+        else:
+            return torch.tensor(-2 ** (self.out_quantizer.precision - 1),
+                                device=self.device)
 
     @property
     def clip_sup(self):
         # Define ReLU superior extreme
         if self.last_layer:
-            return torch.tensor(2 ** 32 - 1, device=self.device)
+            return torch.tensor(2 ** (self.in_quantizer.precision - 1) - 1, device=self.device)
         else:
-            return torch.tensor(2 ** self.out_quantizer.precision - 1, device=self.device)
+            return torch.tensor(2 ** (self.out_quantizer.precision - 1) - 1,
+                                device=self.device)
 
     def _integer_approximation(self,
                                s_w: torch.Tensor,
@@ -183,7 +201,7 @@ class DORYLinear(nn.Linear, DORYModule):
         :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
         # Constants, depend on the specific backend
-        SCALE_BIT = 32
+        SCALE_BIT = 16  # In principle, it can be up to 32 but we want to avoid overflow
         SHIFT_POS = 32
 
         # Value to be approximated as `scale` / 2**`shift`
