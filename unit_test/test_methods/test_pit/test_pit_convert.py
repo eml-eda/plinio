@@ -61,6 +61,21 @@ class TestPITConvert(unittest.TestCase):
         check_target_layers(self, new_nn, exp_tgt=3)
         check_input_features(self, new_nn, {'conv0': 3, 'conv1': 32, 'fc': 570})
 
+    def test_autoimport_train_status_neutrality(self):
+        """Test that the conversion does not change the training status of the original model"""
+        # Training status is True
+        nn_ut = SimpleNN()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        self.assertTrue(new_nn.training, 'Training status changed after conversion')
+        self.assertTrue(new_nn.seed.training, 'Training status changed after conversion within new_nn.seed')
+
+        # Training status is False
+        nn_ut = SimpleNN()
+        nn_ut.eval()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        self.assertFalse(new_nn.training, 'Training status changed after conversion')
+        self.assertFalse(new_nn.seed.training, 'Training status changed after conversion within new_nn.seed')
+
     def test_autoimport_advanced(self):
         """Test the conversion of a ResNet-like model"""
         config = self.tc_resnet_config
