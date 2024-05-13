@@ -28,7 +28,7 @@ from plinio.methods.mps.quant.backends.maupiti import MAUPITIExporter
 from unit_test.models import ToySequentialConv2d_v2, TutorialModel_NoDW
 
 
-class TestMPSConvert(unittest.TestCase):
+class TestBackednMaupiti(unittest.TestCase):
     """Test conversion operations from nn.Module to nn.DORY passing through
        nn.MPS and nn.Quant.
     """

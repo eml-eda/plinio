@@ -27,7 +27,7 @@ from plinio.methods.mps.quant.backends.dory import DORYExporter
 from unit_test.models import ToySequentialFullyConv2d, ToySequentialConv2d, TutorialModel
 
 
-class TestMPSConvert(unittest.TestCase):
+class TestBackendDory(unittest.TestCase):
     """Test conversion operations from nn.Module to nn.DORY passing through
        nn.MPS and nn.Quant.
     """
