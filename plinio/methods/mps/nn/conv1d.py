@@ -60,8 +60,9 @@ class MPSConv1d(nn.Conv1d, MPSModule):
             conv.bias is not None,
             conv.padding_mode)
         is_depthwise = (conv.groups == conv.in_channels and conv.groups == conv.out_channels)
-        if conv.groups != 1 and (not is_depthwise):
-            msg = ('MPS currently supports only full or DepthWise Conv.,'
+        if isinstance(w_mps_quantizer, MPSPerChannelQtz) and (w_mps_quantizer.zero_index is not None) and \
+                conv.groups != 1 and (not is_depthwise):
+            msg = ('MPS currently supports only full or DepthWise Conv. when using 0-bit precision,'
                    'not other groupwise versions')
             raise AttributeError(msg)
         with torch.no_grad():
