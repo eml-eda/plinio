@@ -208,7 +208,7 @@ def build_shared_mps_qtz_map(mod: fx.GraphModule,
     sharing_graph = fx_to_nx_graph(mod.graph)
     for n in sharing_graph.nodes:
         n = cast(fx.Node, n)
-        if n.meta['untouchable'] or n.meta['features_concatenate'] or n.meta['features_defining']:
+        if n.meta['untouchable'] or n.meta['features_defining']:
             # remove all incoming edges to this node from the "shared features graph"
             pred = list(sharing_graph.predecessors(n))
             for i in pred:
@@ -523,6 +523,8 @@ def register_in_mps_quantizers(mod: fx.GraphModule):
                 continue
             while not is_inherited_layer(prev_n, mod, (MPSModule,)):
                 prev_n = prev_n.meta['input_features_set_by']
+                if isinstance(prev_n, list):
+                    prev_n = prev_n[0]
             prev_submod = mod.get_submodule(str(prev_n.target))
             sub_mod.in_mps_quantizer = cast(MPSPerLayerQtz, prev_submod.out_mps_quantizer)
 
