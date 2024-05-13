@@ -104,7 +104,8 @@ class QuantConv2d(nn.Conv2d, QuantModule):
     @staticmethod
     def export(n: fx.Node,
                mod: fx.GraphModule,
-               backend: Backend):
+               backend: Backend,
+               backend_kwargs: Dict = {}):
         """Replaces a fx.Node corresponding to a Quant_Conv2d layer,
         with a backend-specific quantized Conv2d layer within a fx.GraphModule
 
@@ -114,6 +115,8 @@ class QuantConv2d(nn.Conv2d, QuantModule):
         :type mod: fx.GraphModule
         :param backend: the specific backend to be used
         :type backend: Backend
+        :param backend_kwargs: additional backend-specific arguments
+        :type backend_kwargs: Dict
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != QuantConv2d:
@@ -124,7 +127,8 @@ class QuantConv2d(nn.Conv2d, QuantModule):
             submodule.in_quantizer,
             submodule.out_quantizer,
             submodule.w_quantizer,
-            submodule.b_quantizer)
+            submodule.b_quantizer,
+            **backend_kwargs)
         mod.add_submodule(str(n.target), new_submodule)
 
     def summary(self) -> Dict[str, Any]:

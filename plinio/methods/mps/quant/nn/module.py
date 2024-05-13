@@ -42,7 +42,8 @@ class QuantModule:
     @abstractmethod
     def export(n: fx.Node,
                mod: fx.GraphModule,
-               backend: bk.Backend):
+               backend: bk.Backend,
+               backend_kwargs: Dict = {}):
         """Replaces a fx.Node corresponding to a QuantModule, with a backend-specific
         layer implementation within a fx.GraphModule
 

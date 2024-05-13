@@ -100,7 +100,8 @@ class QuantLinear(nn.Linear, QuantModule):
     @staticmethod
     def export(n: fx.Node,
                mod: fx.GraphModule,
-               backend: Backend):
+               backend: Backend,
+               backend_kwargs: Dict = {}):
         """Replaces a fx.Node corresponding to a Quant_Linear layer,
         with a backend-specific quantized Linear layer within a fx.GraphModule
 
@@ -110,6 +111,8 @@ class QuantLinear(nn.Linear, QuantModule):
         :type mod: fx.GraphModule
         :param backend: the specific backend to be used
         :type backend: Backend
+        :param backend_kwargs: additional backend-specific arguments
+        :type backend_kwargs: Dict
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != QuantLinear:
@@ -120,7 +123,8 @@ class QuantLinear(nn.Linear, QuantModule):
             submodule.in_quantizer,
             submodule.out_quantizer,
             submodule.w_quantizer,
-            submodule.b_quantizer)
+            submodule.b_quantizer,
+            **backend_kwargs)
         mod.add_submodule(str(n.target), new_submodule)
 
     def summary(self) -> Dict[str, Any]:

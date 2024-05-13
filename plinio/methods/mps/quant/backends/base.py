@@ -109,7 +109,8 @@ def backend_factory(layer: nn.Module, backend: Backend) -> nn.Module:
 
 
 def integerize_arch(model: nn.Module,
-                    backend: Backend
+                    backend: Backend,
+                    backend_kwargs: Dict = {}
                     ) -> nn.Module:
     """Convert a Fake Quantized model to a backend specific integer model
 
@@ -117,6 +118,8 @@ def integerize_arch(model: nn.Module,
     :type model: nn.Module
     :param backend: the backend to be used
     :type backend: Backend
+    :param backend_kwargs: additional backend-specific arguments
+    :type backend_kwargs: Dict
     """
     if Backend.has_entry(backend):
         backend_name = backend.name.lower()
@@ -141,7 +144,7 @@ def integerize_arch(model: nn.Module,
         # Target layers are automagically converted with their backend-specific ver
         if isinstance(m, target_layers):
             m = cast(qnn.QuantModule, m)
-            m.export(n, mod, backend)
+            m.export(n, mod, backend, backend_kwargs)
     if backend == Backend.MAUPITI:
         # Remove relu
         mod = remove_relu(mod)

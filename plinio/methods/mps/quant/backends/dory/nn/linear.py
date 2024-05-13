@@ -46,11 +46,17 @@ class DORYLinear(nn.Linear, DORYModule):
                  in_quantizer: Quantizer,
                  out_quantizer: Quantizer,
                  w_quantizer: Quantizer,
-                 b_quantizer: Optional[Quantizer]):
+                 b_quantizer: Optional[Quantizer],
+                 scale_bit: int = 32,
+                 shift_pos: int = 32
+                 ):
         super(DORYLinear, self).__init__(
             linear.in_features,
             linear.out_features,
             linear.bias is not None)
+
+        self.scale_bit = scale_bit
+        self.shift_pos = shift_pos
 
         # Store precisions and quantizers
         self.in_quantizer = in_quantizer
@@ -182,10 +188,6 @@ class DORYLinear(nn.Linear, DORYModule):
         :return: a tuple containing the computed `scale` and `shift` factors
         :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
-        # Constants, depend on the specific backend
-        SCALE_BIT = 32
-        SHIFT_POS = 32
-
         # Value to be approximated as `scale` / 2**`shift`
         target = s_w * s_x / s_y
         device = target.device
@@ -193,12 +195,12 @@ class DORYLinear(nn.Linear, DORYModule):
 
         # Integer approximation #
         params = {}
-        upper_bound = 2 ** (SCALE_BIT - 1)
+        upper_bound = 2 ** (self.scale_bit - 1)
         # Create a dict indexed by possible shift amounts, each entry of the dict
         # contains a list where for each channel a `scale` factor is selected as
         # the one minimizing abs(scale / 2**shift - target).
         for idx in range(len(target)):
-            for sh in range(SHIFT_POS):
+            for sh in range(self.shift_pos):
                 if sh not in params.keys():
                     params[sh] = []
                 params[sh].append(
@@ -207,7 +209,7 @@ class DORYLinear(nn.Linear, DORYModule):
         # For each `shift` amount compute the average difference between the
         # integer approximation and targets
         avg_diff = {}
-        for sh in range(SHIFT_POS):
+        for sh in range(self.shift_pos):
             diff = []
             for idx in range(len(target)):
                 diff.append(
