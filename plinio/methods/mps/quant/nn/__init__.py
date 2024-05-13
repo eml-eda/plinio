@@ -20,9 +20,11 @@
 from .module import QuantModule
 from .identity import QuantIdentity
 from .linear import QuantLinear
+from .conv1d import QuantConv1d
 from .conv2d import QuantConv2d
 from .list import QuantList
 
 __all__ = [
-    'QuantModule', 'QuantIdentity', 'QuantLinear', 'QuantConv2d', 'QuantList',
+    'QuantModule', 'QuantIdentity', 'QuantLinear', 'QuantConv1d', 'QuantConv2d',
+    'QuantList',
 ]

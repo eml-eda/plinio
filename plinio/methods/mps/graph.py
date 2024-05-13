@@ -26,7 +26,7 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 
-from plinio.methods.mps.nn import MPSLinear, MPSConv2d, MPSIdentity, \
+from plinio.methods.mps.nn import MPSLinear, MPSConv1d, MPSConv2d, MPSIdentity, \
     MPSModule, MPSAdd
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
     associate_input_features, add_single_node_properties
@@ -40,6 +40,7 @@ from .quant.quantizers import DummyQuantizer
 
 # add new supported layers here:
 mps_layer_map: Dict[Type[nn.Module], Type[MPSModule]] = {
+    nn.Conv1d: MPSConv1d,
     nn.Conv2d: MPSConv2d,
     nn.Linear: MPSLinear,
 }

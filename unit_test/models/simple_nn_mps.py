@@ -42,6 +42,42 @@ class SimpleMPSNN(nn.Module):
         return res
 
 
+class SimpleExportedNN1D(nn.Module):
+    """Defines a simple sequential DNN used within unit tests"""
+
+    def __init__(self, input_shape=(3, 40), num_classes=3, bias=True):
+        super(SimpleExportedNN1D, self).__init__()
+        self.input_shape = input_shape
+        conv0_in_a_qtz = PACTAct(precision=8)
+        conv0_out_a_qtz = PACTAct(precision=8)
+        self.conv0 = qnn.QuantConv1d(
+            nn.Conv1d(3, 32, (3,), padding='same', bias=bias),
+            in_quantizer=conv0_in_a_qtz,
+            out_quantizer=conv0_out_a_qtz,
+            w_quantizer=MinMaxWeight(precision=8, cout=32),
+            b_quantizer=QuantizerBias(precision=32, cout=32)
+            )
+        self.pool0 = nn.AvgPool1d(2)
+        conv1_out_a_qtz = PACTAct(precision=8)
+        self.conv1 = qnn.QuantConv1d(
+            nn.Conv1d(32, 57, (5,), padding='same', bias=bias),
+            in_quantizer=conv0_out_a_qtz,
+            out_quantizer=conv1_out_a_qtz,
+            w_quantizer=MinMaxWeight(precision=8, cout=57),
+            b_quantizer=QuantizerBias(precision=32, cout=57)
+            )
+        self.pool1 = nn.AvgPool1d(2)
+        self.dpout = nn.Dropout(0.5)
+        fc_out_a_qtz = PACTAct(precision=8)
+        self.fc = qnn.QuantLinear(
+            nn.Linear(57 * (input_shape[-1] // 2 // 2), num_classes),
+            in_quantizer=conv1_out_a_qtz,
+            out_quantizer=fc_out_a_qtz,
+            w_quantizer=MinMaxWeight(precision=8, cout=num_classes),
+            b_quantizer=QuantizerBias(precision=32, cout=num_classes)
+            )
+        self.foo = "non-nn.Module attribute"
+
 class SimpleExportedNN2D(nn.Module):
     """Defines a simple sequential DNN used within unit tests"""
 
