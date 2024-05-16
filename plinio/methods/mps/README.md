@@ -1,7 +1,7 @@
 # MPS - Mixed Precision Search
 
 ## Overview
-`plinio.mps` implements a gradient-based tool to automatically explore and assign an integer quantization precision to different parts of a DNN. In particular, `plinio.mps` is able to explore and assign independent precisions to *weights* and *activations* of convolutional and linear layers.
+`plinio.mps` implements a gradient-based tool to automatically explore and assign an integer quantization precision to different parts of a DNN. In particular, `plinio.mps` is able to explore and assign independent precisions to *weights* and *activations* of convolutional and linear layers. Moreover, when it is applied with a single precision choice, it can be used to implement a standard Quantization-Aware Training (QAT).
 
 The precision assignment in `plinio.mps` can have two granularity levels:
 
