@@ -101,16 +101,18 @@ class PITFrozenFeaturesMasker(PITFeaturesMasker):
                  trainable: bool = True,
                  keep_alive_channels: int = 1):
         super(PITFrozenFeaturesMasker, self).__init__(
-            out_channels,
-            trainable=False,
-            keep_alive_channels=keep_alive_channels,
-        )
+                out_channels, trainable=trainable, keep_alive_channels=keep_alive_channels)
         self.alpha.requires_grad = False
 
     @property
+    def theta(self) -> torch.Tensor:
+        return torch.ones(self.out_channels, dtype=torch.float32)
+
+    @property
     def trainable(self) -> bool:
-        return self.alpha.requires_grad
+        return False
 
     @trainable.setter
     def trainable(self, value: bool):
         pass
+
