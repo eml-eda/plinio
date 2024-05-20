@@ -79,6 +79,35 @@ class TestMPSSearch(unittest.TestCase):
                          float(mixprec_net.cost),
                          "get_cost() returns wrong result")
 
+    def test_params_trainability(self):
+        """Test the effectiveness of the helpers functions `train_nas_only`, `train_net_only`
+        and `train_net_and_nas`."""
+        net = ToyAdd_2D()
+        a_prec = (2, 4, 8)
+        w_prec = (2, 4, 8)
+
+        input_shape = net.input_shape
+        mixprec_net = MPS(net,
+                          input_shape=input_shape,
+                          cost=params_bit,
+                          qinfo=get_default_qinfo(w_precision=w_prec, a_precision=a_prec))
+
+        mixprec_net.train_nas_only()
+        for nas_param in mixprec_net.nas_parameters():
+            self.assertTrue(nas_param.requires_grad, "NAS parameters not trainable")
+        for net_param in mixprec_net.net_parameters():
+            self.assertFalse(net_param.requires_grad, "Net parameters trainable")
+        mixprec_net.train_net_only()
+        for nas_param in mixprec_net.nas_parameters():
+            self.assertFalse(nas_param.requires_grad, "NAS parameters trainable")
+        for net_param in mixprec_net.net_parameters():
+            self.assertTrue(net_param.requires_grad, "Net parameters not trainable")
+        mixprec_net.train_net_and_nas()
+        for nas_param in mixprec_net.nas_parameters():
+            self.assertTrue(nas_param.requires_grad, "NAS parameters not trainable")
+        for net_param in mixprec_net.net_parameters():
+            self.assertTrue(net_param.requires_grad, "Net parameters not trainable")
+
     def test_regularization_loss_descent_layer(self):
         """Test that the regularization loss decreases after a few forward and backward steps,
         without other loss components with PER_LAYER weight mixed-precision (default)"""

@@ -152,9 +152,32 @@ class DNAS(nn.Module):
         """
         raise NotImplementedError("Trying to create cost function map on base DNAS class")
 
+    def train_nas_only(self):
+        """Sets all the architectural parameters as trainable and sets the inner network
+        parameters as non trainable"""
+        for param in self.nas_parameters():
+            param.requires_grad = True
+        for param in self.net_parameters():
+            param.requires_grad = False
+
+    def train_net_only(self):
+        """Sets all the architectural parameters as non trainable and sets the inner network
+        parameters as trainable"""
+        for param in self.nas_parameters():
+            param.requires_grad = False
+        for param in self.net_parameters():
+            param.requires_grad = True
+
+    def train_net_and_nas(self):
+        """Sets all the architectural and inner network parameters as trainable"""
+        for param in self.nas_parameters():
+            param.requires_grad = True
+        for param in self.net_parameters():
+            param.requires_grad = True
+
     @abstractmethod
     def named_nas_parameters(
-            self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
+            self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
         """Returns an iterator over the architectural parameters of the NAS, yielding
         both the name of the parameter as well as the parameter itself
 
@@ -167,7 +190,7 @@ class DNAS(nn.Module):
         """
         raise NotImplementedError("Calling arch_parameters on base abstract DNAS class")
 
-    def nas_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
+    def nas_parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         """Returns an iterator over the architectural parameters of the NAS
 
         :param recurse: kept for uniformity with pytorch API, but PITLayers never have sub-layers
@@ -193,7 +216,7 @@ class DNAS(nn.Module):
         """
         raise NotImplementedError("Calling arch_parameters on base abstract DNAS class")
 
-    def net_parameters(self, recurse: bool = False) -> Iterator[nn.Parameter]:
+    def net_parameters(self, recurse: bool = True) -> Iterator[nn.Parameter]:
         """Returns an iterator over the inner network parameters, EXCEPT the NAS architectural
         parameters
 

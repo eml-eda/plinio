@@ -29,6 +29,32 @@ class TestSuperNet(unittest.TestCase):
         self.assertEqual(out.shape, (batch_size, ch_out, out_width, out_heigth),
                          "Unexpected output shape")
 
+    def test_params_trainability(self):
+        """Test the effectiveness of the helpers functions `train_nas_only`, `train_net_only`
+        and `train_net_and_nas`."""
+        ch_in = 32
+        in_width = 64
+        in_height = 64
+        model = StandardSNModule()
+        sn_model = SuperNet(model, input_shape=(ch_in, in_width, in_height))
+
+        sn_model.train_nas_only()
+        for nas_param in sn_model.nas_parameters():
+            self.assertTrue(nas_param.requires_grad, "NAS parameters not trainable")
+        for net_param in sn_model.net_parameters():
+            self.assertFalse(net_param.requires_grad, "Net parameters trainable")
+        sn_model.train_net_only()
+        for nas_param in sn_model.nas_parameters():
+            self.assertFalse(nas_param.requires_grad, "NAS parameters trainable")
+        for net_param in sn_model.net_parameters():
+            self.assertTrue(net_param.requires_grad, "Net parameters not trainable")
+        sn_model.train_net_and_nas()
+        for nas_param in sn_model.nas_parameters():
+            self.assertTrue(nas_param.requires_grad, "NAS parameters not trainable")
+        for net_param in sn_model.net_parameters():
+            self.assertTrue(net_param.requires_grad, "Net parameters not trainable")
+
+
     def test_standard_pitsn_module_custom_block(self):
         """Test the import of a SuperNet with a custom defined block
         """

@@ -64,6 +64,28 @@ class TestPITSearch(unittest.TestCase):
         pit_net = PIT(nn_ut, input_shape=input_shape)
         check_output_equal(self, nn_ut, pit_net, input_shape)
 
+    def test_params_trainability(self):
+        """Test the effectiveness of the helpers functions `train_nas_only`, `train_net_only`
+        and `train_net_and_nas`."""
+        input_shape = (6, 50)
+        nn_ut = TCResNet14(self.tc_resnet_config)
+        pit_net = PIT(nn_ut, input_shape=input_shape)
+        pit_net.train_nas_only()
+        for nas_param in pit_net.nas_parameters():
+            self.assertTrue(nas_param.requires_grad, "NAS parameters not trainable")
+        for net_param in pit_net.net_parameters():
+            self.assertFalse(net_param.requires_grad, "Net parameters trainable")
+        pit_net.train_net_only()
+        for nas_param in pit_net.nas_parameters():
+            self.assertFalse(nas_param.requires_grad, "NAS parameters trainable")
+        for net_param in pit_net.net_parameters():
+            self.assertTrue(net_param.requires_grad, "Net parameters not trainable")
+        pit_net.train_net_and_nas()
+        for nas_param in pit_net.nas_parameters():
+            self.assertTrue(nas_param.requires_grad, "NAS parameters not trainable")
+        for net_param in pit_net.net_parameters():
+            self.assertTrue(net_param.requires_grad, "Net parameters not trainable")
+
     def test_regularization_loss_init(self):
         """Test the regularization loss computation on an initialized model"""
         # we use ToyAdd to make sure that mask sharing does not create errors on regloss
@@ -102,8 +124,8 @@ class TestPITSearch(unittest.TestCase):
         # conv0 and conv1 have Cin=3, Cout=10, K=3
         # conv2 has Cin=10, Cout=20, K=5
         # the final FC has 140 input features and 2 output features
-        exp_size_conv_01 = (3 * 3 + 1) * 10 
-        exp_size_conv_2 = (10 * 5 + 1) * 20 
+        exp_size_conv_01 = (3 * 3 + 1) * 10
+        exp_size_conv_2 = (10 * 5 + 1) * 20
         exp_size_fc = (140 + 1) * 2
         exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
         # for the OPs, conv2 has half the output length due to pooling
@@ -209,8 +231,8 @@ class TestPITSearch(unittest.TestCase):
         # conv0 and conv1 have Cin=3, Cout=10, K=(3,3)
         # conv2 has Cin=10, Cout=20, K=(5,5)
         # the final FC has 980 input features and 2 output features
-        exp_size_conv_01 = (3 * 3 * 3 + 1) * 10 
-        exp_size_conv_2 = (10 * 5 * 5 + 1) * 20 
+        exp_size_conv_01 = (3 * 3 * 3 + 1) * 10
+        exp_size_conv_2 = (10 * 5 * 5 + 1) * 20
         exp_size_fc = (980 + 1) * 2
         exp_size_net = 2 * exp_size_conv_01 + exp_size_conv_2 + exp_size_fc
         # for the OPs, conv2 has half the feature size due to pooling
@@ -249,7 +271,7 @@ class TestPITSearch(unittest.TestCase):
 
         # with a continuous cost estimate, the cost will be different and depend on the mask values
         exp_size_conv_01_cnt = (3 * 3 * 3 + 1) * torch.sum(alpha_mask)
-        exp_size_conv_2_cnt = (torch.sum(alpha_mask) * 5 * 5 + 1) * 20 
+        exp_size_conv_2_cnt = (torch.sum(alpha_mask) * 5 * 5 + 1) * 20
         exp_ops_conv_01_cnt = exp_size_conv_01_cnt * input_shape[1] * input_shape[1]
         exp_ops_conv_2_cnt = exp_size_conv_2_cnt * (input_shape[1] // 2) * (input_shape[1] // 2)
         exp_size_cnt = 2 * exp_size_conv_01_cnt + exp_size_conv_2_cnt + exp_size_fc
