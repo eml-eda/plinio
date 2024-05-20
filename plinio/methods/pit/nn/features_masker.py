@@ -103,10 +103,11 @@ class PITFrozenFeaturesMasker(PITFeaturesMasker):
         super(PITFrozenFeaturesMasker, self).__init__(
                 out_channels, trainable=trainable, keep_alive_channels=keep_alive_channels)
         self.alpha.requires_grad = False
+        self.register_buffer('_fixed_alpha', torch.ones(self.out_channels, dtype=torch.float32))
 
     @property
     def theta(self) -> torch.Tensor:
-        return torch.ones(self.out_channels, dtype=torch.float32)
+        return self._fixed_alpha
 
     @property
     def trainable(self) -> bool:
