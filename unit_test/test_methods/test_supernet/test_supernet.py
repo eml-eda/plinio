@@ -54,7 +54,6 @@ class TestSuperNet(unittest.TestCase):
         for net_param in sn_model.net_parameters():
             self.assertTrue(net_param.requires_grad, "Net parameters not trainable")
 
-
     def test_standard_pitsn_module_custom_block(self):
         """Test the import of a SuperNet with a custom defined block
         """

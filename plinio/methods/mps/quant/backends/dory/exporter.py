@@ -66,7 +66,8 @@ class DORYExporter:
                           str(onnxfilepath),
                           export_params=True,
                           do_constant_folding=True,
-                          opset_version=opset_version)
+                          opset_version=opset_version,
+                          )
         # Annotate the onnx file with backend-specific information
         self._annotator.annotate(network, onnxfilepath)
 

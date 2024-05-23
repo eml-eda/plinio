@@ -132,6 +132,12 @@ def convert(model: nn.Module,
     mod.recompile()
     nlf = named_leaf_modules(mod)
     ulf = uniquify_leaf_modules(nlf)
+    # Final dummy inference needed to update eventually quantizers' parameters
+    with torch.no_grad():
+        if len(get_graph_inputs(mod.graph)) > 1:
+            mod(*input_example)
+        else:
+            mod(input_example)
     return mod, nlf, ulf
 
 
