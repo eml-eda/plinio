@@ -62,7 +62,7 @@ class MATCHExporter:
 
         # Export network to onnx file
         torch.onnx.export(network,
-                          torch.randn(input_shape),
+                          torch.randn(input_shape, device=next(iter(network.parameters())).device),
                           str(onnxfilepath),
                           export_params=True,
                           do_constant_folding=True,

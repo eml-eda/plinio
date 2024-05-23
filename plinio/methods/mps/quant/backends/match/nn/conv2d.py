@@ -205,6 +205,7 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
         target = s_w * s_x / s_y
         device = target.device
         target = target.clone().detach().cpu()
+        int_bias = int_bias.clone().detach().cpu()
 
         # Integer approximation #
         params = {}

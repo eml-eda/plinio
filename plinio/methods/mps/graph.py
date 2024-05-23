@@ -135,9 +135,9 @@ def convert(model: nn.Module,
     # Final dummy inference needed to update eventually quantizers' parameters
     with torch.no_grad():
         if len(get_graph_inputs(mod.graph)) > 1:
-            mod(*input_example)
+            mod.to(input_example[0].device)(*input_example)
         else:
-            mod(input_example)
+            mod.to(input_example.device)(input_example)
     return mod, nlf, ulf
 
 
