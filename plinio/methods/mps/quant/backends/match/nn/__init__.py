@@ -17,15 +17,11 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Type, Dict
+from .module import MATCHModule
+from .conv2d import MATCHConv2d
+from .linear import MATCHLinear
 
-import torch.nn as nn
-
-import plinio.methods.mps.quant.nn as qnn
-import plinio.methods.mps.quant.backends.dory.nn as dory_nn
-
-# add new supported layers here:
-dory_layer_map: Dict[Type[nn.Module], Type[dory_nn.DORYModule]] = {
-    qnn.QuantConv2d: dory_nn.DORYConv2d,
-    qnn.QuantLinear: dory_nn.DORYLinear,
-}
+__all__ = [
+    'MATCHModule', 'MATCHConv2d',
+    'MATCHLinear',
+]

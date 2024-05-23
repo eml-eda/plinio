@@ -32,7 +32,7 @@ import plinio.methods.mps.quant.nn as qnn
 
 
 class Backend(Enum):
-    DORY = auto()
+    MATCH = auto()
     DIANA = auto()
     MAUPITI = auto()
     # Add new backends here
@@ -69,12 +69,12 @@ class IntegerizationTracer(fx.Tracer):
 
 # N.B., ugly but is needed to avoid circular import
 def get_map():
-    from .dory.base import dory_layer_map
+    from .match.base import match_layer_map
     from .maupiti.base import maupiti_layer_map
 
     # Add new supported backends here:
     maps = {
-        'dory': dory_layer_map,
+        'match': match_layer_map,
         'maupiti': maupiti_layer_map,
     }
     return maps
@@ -157,7 +157,7 @@ def integerize_arch(model: nn.Module,
 
 
 def remove_inp_quantizer(mod: nn.Module) -> nn.Module:
-    """DORY does not expect an input quantizer.
+    """MATCH does not expect an input quantizer.
     """
     if not isinstance(mod, fx.GraphModule):
         msg = f'Input is of type {type(mod)} instead of fx.GraphModule'
@@ -177,7 +177,7 @@ def remove_inp_quantizer(mod: nn.Module) -> nn.Module:
 
 
 def remove_relu(mod: nn.Module) -> nn.Module:
-    """ReLU is already implemented as clip function in dory.nn modules, then we
+    """ReLU is already implemented as clip function in match.nn modules, then we
     can remove explicit calls to F.relu, torch.relu and nn.ReLU
     """
     if not isinstance(mod, fx.GraphModule):

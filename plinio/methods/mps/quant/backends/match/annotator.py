@@ -28,8 +28,8 @@ from onnx import helper as onnx_helper
 import torch.nn as nn
 
 
-class DORYAnnotator:
-    """Class to annotate DORY-compliant onnx model"""
+class MATCHAnnotator:
+    """Class to annotate MATCH-compliant onnx model"""
 
     def __init__(self, requantization_bits: int = 32):
         self._requantization_bits = requantization_bits
@@ -60,7 +60,7 @@ class DORYAnnotator:
 
         # Define backend-specific supported ONNX nodes. The nodes belonging to
         # different node classes will be annotated using a class-specific logic.
-        dory_onnxnode_op_types = {
+        match_onnxnode_op_types = {
             'linear': {'Conv', 'Gemm', 'MatMul'},
             'mul': {'Mul'},
             'add': {'Add'},
@@ -68,7 +68,7 @@ class DORYAnnotator:
         }
 
         # Rename input and output nodes.
-        # DORY expects a single integer as input/output node name
+        # MATCH expects a single integer as input/output node name
         # Each key of `name_to_int_map` is a input/output node name
         # Each key is associated with the integer identifier `int_id`
         # Input node starts at 0, then every time a new input/output is identified
@@ -100,7 +100,7 @@ class DORYAnnotator:
                     int_id += 1
                 n.output[idx] = name_to_int_map[oup]  # Rename with int
 
-            if op_type in dory_onnxnode_op_types['linear']:
+            if op_type in match_onnxnode_op_types['linear']:
                 # op_name = n.input[1].rsplit('.', 1)[0]
                 if op_type == 'Conv':
                     op_name = n.input[1].rsplit('.', 1)[0]
@@ -117,12 +117,12 @@ class DORYAnnotator:
                     annotations.append(onnx_helper.make_attribute(key='bias_bits',
                                                                   value=bias_bits))
 
-            elif op_type in dory_onnxnode_op_types['mul']:
+            elif op_type in match_onnxnode_op_types['mul']:
                 mul_bits = self._requantization_bits
                 annotations.append(onnx_helper.make_attribute(key='mult_bits',
                                                               value=mul_bits))
 
-            elif op_type in dory_onnxnode_op_types['add']:
+            elif op_type in match_onnxnode_op_types['add']:
                 is_requant_add = all(i.isnumeric() for i in n.input)
                 if is_requant_add:
                     add_bits = self._requantization_bits
@@ -131,7 +131,7 @@ class DORYAnnotator:
                 annotations.append(onnx_helper.make_attribute(key='add_bits',
                                                               value=add_bits))
 
-            elif op_type in dory_onnxnode_op_types['clip']:
+            elif op_type in match_onnxnode_op_types['clip']:
                 clip_lo = get_onnxnode_attr_by_name(n, 'min').f
                 clip_hi = get_onnxnode_attr_by_name(n, 'max').f
                 assert np.log2(clip_hi + 1.0) % 1.0 < 1e-6  # TODO: document this choice

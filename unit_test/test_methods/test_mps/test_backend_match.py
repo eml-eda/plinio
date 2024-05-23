@@ -23,12 +23,12 @@ import unittest
 import torch
 from plinio.methods.mps import MPS, get_default_qinfo, MPSType
 from plinio.methods.mps.quant.backends import Backend, integerize_arch
-from plinio.methods.mps.quant.backends.dory import DORYExporter
+from plinio.methods.mps.quant.backends.match import MATCHExporter
 from unit_test.models import ToySequentialFullyConv2d, ToySequentialConv2d, TutorialModel
 
 
-class TestBackendDory(unittest.TestCase):
-    """Test conversion operations from nn.Module to nn.DORY passing through
+class TestBackendMATCH(unittest.TestCase):
+    """Test conversion operations from nn.Module to nn.MATCH passing through
        nn.MPS and nn.Quant.
     """
 
@@ -57,8 +57,8 @@ class TestBackendDory(unittest.TestCase):
         self.assertTrue(torch.all(out_mixprec == out_quant),
                         "Mismatch between mixprec and fake-quantized outputs")
 
-        # Convert to integer DORY-compliant model
-        integer_nn = integerize_arch(quantized_nn, Backend.DORY)
+        # Convert to integer MATCH-compliant model
+        integer_nn = integerize_arch(quantized_nn, Backend.MATCH)
         # Dummy inference
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
@@ -68,7 +68,7 @@ class TestBackendDory(unittest.TestCase):
                         "Mismatch between fake-quantized and integer outputs")
 
         # Convert to onnx
-        exporter = DORYExporter()
+        exporter = MATCHExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path('.'))
         Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
 
@@ -97,8 +97,8 @@ class TestBackendDory(unittest.TestCase):
         self.assertTrue(torch.all(out_mixprec == out_quant),
                         "Mismatch between mixprec and fake-quantized outputs")
 
-        # Convert to integer DORY-compliant model
-        integer_nn = integerize_arch(quantized_nn, Backend.DORY)
+        # Convert to integer MATCH-compliant model
+        integer_nn = integerize_arch(quantized_nn, Backend.MATCH)
         # Dummy inference
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
@@ -108,7 +108,7 @@ class TestBackendDory(unittest.TestCase):
                         "Mismatch between fake-quantized and integer outputs")
 
         # Convert to onnx
-        exporter = DORYExporter()
+        exporter = MATCHExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path('.'))
         Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
 
@@ -138,8 +138,8 @@ class TestBackendDory(unittest.TestCase):
         self.assertTrue(torch.all(out_mixprec == out_quant),
                         "Mismatch between mixprec and fake-quantized outputs")
 
-        # Convert to integer DORY-compliant model
-        integer_nn = integerize_arch(quantized_nn, Backend.DORY)
+        # Convert to integer MATCH-compliant model
+        integer_nn = integerize_arch(quantized_nn, Backend.MATCH)
         # Dummy inference
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
@@ -149,7 +149,7 @@ class TestBackendDory(unittest.TestCase):
                         "Mismatch between fake-quantized and integer outputs")
 
         # Convert to onnx
-        exporter = DORYExporter()
+        exporter = MATCHExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path('.'))
         Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
 
@@ -181,8 +181,8 @@ class TestBackendDory(unittest.TestCase):
         self.assertTrue(torch.all(out_mixprec == out_quant),
                         "Mismatch between mixprec and fake-quantized outputs")
 
-        # Convert to integer DORY-compliant model
-        integer_nn = integerize_arch(quantized_nn, Backend.DORY,
+        # Convert to integer MATCH-compliant model
+        integer_nn = integerize_arch(quantized_nn, Backend.MATCH,
                                      backend_kwargs={'scale_bit': 16})
         # Dummy inference
         with torch.no_grad():
@@ -193,6 +193,6 @@ class TestBackendDory(unittest.TestCase):
                         "Mismatch between fake-quantized and integer outputs")
 
         # Convert to onnx
-        exporter = DORYExporter()
+        exporter = MATCHExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path('.'))
         Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()

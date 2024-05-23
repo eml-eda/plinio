@@ -17,8 +17,15 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .exporter import DORYExporter
+from typing import Type, Dict
 
-__all__ = [
-    'DORYExporter',
-]
+import torch.nn as nn
+
+import plinio.methods.mps.quant.nn as qnn
+import plinio.methods.mps.quant.backends.match.nn as match_nn
+
+# add new supported layers here:
+match_layer_map: Dict[Type[nn.Module], Type[match_nn.MATCHModule]] = {
+    qnn.QuantConv2d: match_nn.MATCHConv2d,
+    qnn.QuantLinear: match_nn.MATCHLinear,
+}

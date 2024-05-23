@@ -31,14 +31,14 @@ import torch.nn as nn
 from plinio.methods.mps.quant.backends.base import (remove_inp_quantizer,
                                                     remove_relu, get_map,
                                                     )
-from .annotator import DORYAnnotator
+from .annotator import MATCHAnnotator
 
 
-class DORYExporter:
-    """Class to export DORY-compliant integer nn.Module to DORY-compliant onnx model"""
+class MATCHExporter:
+    """Class to export MATCH-compliant integer nn.Module to MATCH-compliant onnx model"""
 
     def __init__(self):
-        self._annotator = DORYAnnotator()
+        self._annotator = MATCHAnnotator()
         self._onnxname = None
         self._onnxfilepath = None
 
@@ -81,7 +81,7 @@ class DORYExporter:
         onnx_file = self._onnxfilepath.name
         onnx_name = self._onnxfilepath.stem
 
-        cnn_dory_config = {
+        cnn_match_config = {
             'BNRelu_bits': 32,
             'onnx_file': onnx_file,
             'code reserved space': code_size,
@@ -91,14 +91,14 @@ class DORYExporter:
         }
         jsonfilepath = self._onnxfilepath.parent
         with open(jsonfilepath.joinpath(f'config_{onnx_name}.json'), 'w') as fp:
-            json.dump(cnn_dory_config, fp, indent=4)
+            json.dump(cnn_match_config, fp, indent=4)
 
     @staticmethod
     def dump_features(network: nn.Module,
                       x: torch.Tensor,
                       path: Union[Path, str]) -> None:
         """Given a network, export the features associated with a given input.
-        To verify the correctness of an ONNX export, DORY requires text files
+        To verify the correctness of an ONNX export, MATCH requires text files
         containing the values of the features for each layer in the target
         network. The format of these text files is exemplified here:
         https://github.com/pulp-platform/dory_examples/tree/master/examples/Quantlab_examples .
@@ -110,7 +110,7 @@ class DORYExporter:
 
         def export_to_txt(module_name: str, filename: str, path: Path, t: torch.Tensor):
             try:  # for the output, this step is not applicable
-                # PyTorch's `nn.Conv2d` layers output CHW arrays, but DORY expects HWC arrays
+                # PyTorch's `nn.Conv2d` layers output CHW arrays, but MATCH expects HWC arrays
                 t = t.squeeze().permute(1, 2, 0)
             except RuntimeError:
                 pass  # I won't permute the features of this module
@@ -131,15 +131,15 @@ class DORYExporter:
         features: List[Features] = []
 
         def hook_fn(self, in_: torch.Tensor, out_: torch.Tensor, module_name: str):
-            # DORY wants HWC tensors
+            # MATCH wants HWC tensors
             features.append(Features(module_name=module_name, features=out_.squeeze(0)))
 
         # The core dump functionality starts here
-        # Get supported DORY layers
-        dory_layers = get_map()['dory']
+        # Get supported MATCH layers
+        match_layers = get_map()['match']
         # 1. set up hooks to intercept features
         for n, m in network.named_modules():
-            if isinstance(m, tuple(dory_layers.values()) + (nn.MaxPool2d,)):
+            if isinstance(m, tuple(match_layers.values()) + (nn.MaxPool2d,)):
                 hook = partial(hook_fn, module_name=n)
                 m.register_forward_hook(hook)
 
