@@ -139,7 +139,7 @@ class MATCHExporter:
         match_layers = get_map()['match']
         # 1. set up hooks to intercept features
         for n, m in network.named_modules():
-            if isinstance(m, tuple(match_layers.values()) + (nn.MaxPool2d,)):
+            if isinstance(m, tuple(match_layers.values()) + (nn.MaxPool2d,)) or 'input_quantizer' in n:
                 hook = partial(hook_fn, module_name=n)
                 m.register_forward_hook(hook)
 
@@ -148,8 +148,11 @@ class MATCHExporter:
         y = network(x.to(dtype=torch.float32))
 
         # 3. export input, features, and output to text files
-        export_to_txt('input', 'input', path, x)
+        # export_to_txt('input', 'input', path, x)
         for i, (module_name, f) in enumerate(features):
-            export_to_txt(module_name, f"out_layer{i}", path, f)
-        export_to_txt('output', f"out_layer{len(features)}", path, y)
+            if 'input_quantizer' in module_name:
+                export_to_txt(module_name, "input_quantizer", path, f)
+            else:
+                export_to_txt(module_name, f"out_layer{i-1}", path, f)
+        # export_to_txt('output', f"out_layer{len(features)-1}", path, y)
         export_to_txt('output', 'output', path, y)
