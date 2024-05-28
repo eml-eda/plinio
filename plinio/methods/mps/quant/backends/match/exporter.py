@@ -111,7 +111,7 @@ class MATCHExporter:
         def export_to_txt(module_name: str, filename: str, path: Path, t: torch.Tensor):
             try:  # for the output, this step is not applicable
                 # PyTorch's `nn.Conv2d` layers output CHW arrays, but MATCH expects HWC arrays
-                t = t.squeeze().permute(1, 2, 0)
+                t = t.permute(1, 2, 0)
             except RuntimeError:
                 pass  # I won't permute the features of this module
 
