@@ -27,7 +27,7 @@ from .toy_models import ToySequentialConv1d, ToySequentialConv2d, ToySequentialF
 from .toy_models import ToyTimeCat, ToyChannelsCat
 from .toy_models import ToyFlatten, ToyMultiPath1, ToyMultiPath2, ToyRegression, \
     ToyMultiPath1_2D, ToyMultiPath2_2D, ToyAdd_2D, ToyRegression_2D, ToyInputConnectedDW, \
-    ToyBatchNorm, ToyIllegalBN
+    ToyBatchNorm, ToyIllegalBN, ToySequentialFullyConv2dDil
 from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR
 
@@ -39,5 +39,5 @@ __all__ = ['TCResNet14', 'SimpleNN', 'SimpleNN2D', 'SimplePitNN', 'DSCNN',
            'SimpleMPSNN', 'SimpleExportedNN1D', 'SimpleExportedNN2D', 'ToyAdd_2D', 'ToyRegression_2D',
            'SimpleNN2D_NoBN', 'SimpleExportedNN2D_ch',
            'ToyBatchNorm', 'ToyIllegalBN', 'ToySequentialConv2d_v2',
-           'TutorialModel', 'TutorialModel_NoDW', 'TCN_IR',
+           'TutorialModel', 'TutorialModel_NoDW', 'TCN_IR', 'ToySequentialFullyConv2dDil'
            ]

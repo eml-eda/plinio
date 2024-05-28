@@ -26,6 +26,18 @@ class ToySequentialFullyConv2d(nn.Module):
         return self.conv1(F.relu(self.bn0(self.conv0(x))))
 
 
+class ToySequentialFullyConv2dDil(nn.Module):
+    def __init__(self):
+        super(ToySequentialFullyConv2dDil, self).__init__()
+        self.input_shape = (3, 12, 1)
+        self.conv0 = nn.Conv2d(3, 10, (3, 1), dilation=(2, 1), padding=(2, 0))
+        self.bn0 = nn.BatchNorm2d(10)
+        self.conv1 = nn.Conv2d(10, 2, (12, 1))
+
+    def forward(self, x):
+        return self.conv1(F.relu(self.bn0(self.conv0(x))))
+
+
 class ToySequentialConv2d(nn.Module):
     def __init__(self):
         super(ToySequentialConv2d, self).__init__()

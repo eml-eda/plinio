@@ -47,8 +47,8 @@ class MATCHLinear(nn.Linear, MATCHModule):
                  out_quantizer: Quantizer,
                  w_quantizer: Quantizer,
                  b_quantizer: Optional[Quantizer],
-                 scale_bit: int = 32,
-                 shift_pos: int = 32
+                 scale_bit: int = 24,
+                 shift_pos: int = 24
                  ):
         super(MATCHLinear, self).__init__(
             linear.in_features,

@@ -47,8 +47,8 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
                  out_quantizer: Quantizer,
                  w_quantizer: Quantizer,
                  b_quantizer: Optional[Quantizer],
-                 scale_bit: int = 32,
-                 shift_pos: int = 32
+                 scale_bit: int = 24,
+                 shift_pos: int = 24
                  ):
         super(MATCHConv2d, self).__init__(
             conv.in_channels,
@@ -115,6 +115,17 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
 
         # Done here to avoid the reshape op in fwd
         self.scale = self.scale.view(1, self.out_channels, 1, 1)
+
+        # Eventually add zero-padding if dilation is present
+        maybe_pad_dil = self._check_dil_kernel_combination()
+        if maybe_pad_dil:
+            pad_dim = 0 if self.dilation[0] != 1 else 1
+            with torch.no_grad():
+                padded_weights = self._pad_dilation_in_weight(self.dilation[0], self.kernel_size[0], pad_dim)
+                self.weight.data = padded_weights
+            self.dilation = (1, 1)
+            self.kernel_size = (self.kernel_size[0] * self.dilation[0] - (self.dilation[0] - 1),
+                                self.kernel_size[1] * self.dilation[1] - (self.dilation[1] - 1))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of integer conv2d layer.
@@ -249,3 +260,53 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
         scale_t = torch.tensor(min_scale, device=device)
         shift_t = torch.tensor([min_shift, ], device=device)
         return scale_t, shift_t
+
+    def _check_dil_kernel_combination(self) -> bool:
+        """Check if the kernel size and dilation factor combination is valid.
+        If the combination is invalid, the weight tensor needs to be padded.
+
+        We support dilation != 1 only if it happens on the first OR the second dimension of the kernel.
+        Then, also the kernel size must be different from 1 in the same dimension.
+
+        :return: True if the combination is valid, False otherwise
+        :rtype: bool
+        """
+        if self.dilation[0] != 1 and self.dilation[1] != 1:
+            raise ValueError("Currently only dilation factors different from 1 in only one dimension are supported")
+        if (self.dilation[0] != 1 and self.kernel_size[1] != 1) or (self.dilation[1] != 1 and self.kernel_size[0] != 1):
+            msg = ("Currently if dilation factor is different from 1 in one dimension "
+                   "the kernel size must be 1 in the other dimension")
+            raise ValueError(msg)
+        if self.dilation[0] == 1 and self.dilation[1] == 1:
+            return False
+        return True
+
+    def _pad_dilation_in_weight(self, dilation: int, kernel_size: int, pad_dim: int) -> torch.Tensor:
+        """Pad the weight tensor to take into account the dilation factor.
+        Each kernel is replaced with a zeroes array of size
+        `kernel_size * dilation - (dilation - 1)` and the original kernels' weights
+        are placed in positions `i * d` with `i in [0, k-1]`.
+
+        :param dilation: the dilation factor
+        :type dilation: int
+        :param kernel_size: the kernel size
+        :type kernel_size: int
+        """
+        if pad_dim == 0:
+            padded_weights = torch.zeros(self.out_channels, self.in_channels,
+                                         kernel_size * dilation - (dilation - 1),
+                                         1,
+                                         device=self.device)
+        else:
+            padded_weights = torch.zeros(self.out_channels, self.in_channels,
+                                         1,
+                                         kernel_size * dilation - (dilation - 1),
+                                         device=self.device)
+        for c_out in range(self.out_channels):
+            for c_in in range(self.in_channels):
+                for i in range(kernel_size):
+                    if pad_dim == 0:
+                        padded_weights[c_out, c_in, i * dilation] = self.weight[c_out, c_in, i]
+                    else:
+                        padded_weights[c_out, c_in, 0, i * dilation] = self.weight[c_out, c_in, i]
+        return padded_weights

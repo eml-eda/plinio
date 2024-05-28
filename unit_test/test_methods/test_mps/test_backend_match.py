@@ -24,7 +24,8 @@ import torch
 from plinio.methods.mps import MPS, get_default_qinfo, MPSType
 from plinio.methods.mps.quant.backends import Backend, integerize_arch
 from plinio.methods.mps.quant.backends.match import MATCHExporter
-from unit_test.models import ToySequentialFullyConv2d, ToySequentialConv2d, TutorialModel
+from unit_test.models import (ToySequentialFullyConv2d, ToySequentialConv2d, TutorialModel,
+                              ToySequentialFullyConv2dDil)
 
 
 class TestBackendMATCH(unittest.TestCase):
@@ -37,6 +38,47 @@ class TestBackendMATCH(unittest.TestCase):
         with layer autoconversion with PER_LAYER weight mixed-precision (default)"""
         # Instantiate toy model
         nn_ut = ToySequentialFullyConv2d()
+
+        # Convert to mixprec searchable model
+        mixprec_nn = MPS(nn_ut,
+                         input_shape=nn_ut.input_shape,
+                         qinfo=get_default_qinfo(w_precision=(8,), a_precision=(8,)),
+                         w_search_type=MPSType.PER_LAYER
+                         )
+        # Dummy inference
+        dummy_inp = torch.rand((1,) + nn_ut.input_shape)
+        with torch.no_grad():
+            out_mixprec = mixprec_nn(dummy_inp)
+
+        # Convert to (fake) quantized model
+        quantized_nn = mixprec_nn.export()
+        # Dummy inference
+        with torch.no_grad():
+            out_quant = quantized_nn(dummy_inp)
+        self.assertTrue(torch.all(out_mixprec == out_quant),
+                        "Mismatch between mixprec and fake-quantized outputs")
+
+        # Convert to integer MATCH-compliant model
+        integer_nn = integerize_arch(quantized_nn, Backend.MATCH)
+        # Dummy inference
+        with torch.no_grad():
+            out_int = integer_nn(dummy_inp)
+        # self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
+        #                 "Mismatch between fake-quantized and integer outputs")
+        self.assertTrue(out_quant.argmax() == out_int.argmax(),
+                        "Mismatch between fake-quantized and integer outputs")
+
+        # Convert to onnx
+        exporter = MATCHExporter()
+        exporter.export(integer_nn, dummy_inp.shape, Path('.'))
+        Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
+
+    def test_autoimport_fullyconv_w_dil_layer(self):
+        """Test the conversion of a simple fully convolutional sequential model
+        with dilation and
+        with layer autoconversion with PER_LAYER weight mixed-precision (default)"""
+        # Instantiate toy model
+        nn_ut = ToySequentialFullyConv2dDil()
 
         # Convert to mixprec searchable model
         mixprec_nn = MPS(nn_ut,
