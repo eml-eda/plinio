@@ -23,7 +23,7 @@ def binary_search(div, low, high, x):
         if x == mid * div:
             return mid
         if x < mid * div:
-            return binary_search(div, low, mid - 1, x)
+            return binary_search(div, low, mid, x)
         else:
             return binary_search(div, mid + 1, high, x)
     else:
