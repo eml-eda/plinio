@@ -98,7 +98,8 @@ class MATCHLinear(nn.Linear, MATCHModule):
                                                              int_bias)
         with torch.no_grad():
             if linear.bias is not None:
-                int_bias = int_bias * self.scale
+                if not self.last_layer:
+                    int_bias = int_bias * self.scale
                 self.add_bias = int_bias.view(1, self.out_features)
             else:
                 self.add_bias = None
@@ -125,13 +126,16 @@ class MATCHLinear(nn.Linear, MATCHModule):
         """
         # Linear
         out = F.linear(input, self.weight, None)
-        # Multiply scale factor, sum bias, shift
-        out = (out * self.scale + self.add_bias) / (2 ** self.shift)
-        if not self.last_layer:  # This should happens on the last layer
+        if self.last_layer:
+            # Add bias
+            out = out + self.add_bias
+        else:
+            # Multiply scale factor, sum bias, shift
+            out = (out * self.scale + self.add_bias) / (2 ** self.shift)
             # Compute floor
             out = torch.floor(out)
-        # Compute relu
-        out = torch.clip(out, self.clip_inf, self.clip_sup)
+            # Compute relu
+            out = torch.clip(out, self.clip_inf, self.clip_sup)
 
         return out
 
