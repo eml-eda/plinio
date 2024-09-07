@@ -24,7 +24,7 @@ from .features_calculation import FlattenFeaturesCalculator, ConcatFeaturesCalcu
 from .utils import try_get_args
 from .inspection import is_features_propagating_op, is_features_defining_op, \
     is_shared_input_features_op, is_flatten, is_squeeze, is_unsqueeze, \
-    is_features_concatenate, \
+    is_features_concatenate, is_non_tensor_op, \
     is_untouchable_op, is_zero_or_one_input_op, get_graph_inputs, all_output_nodes
 
 
@@ -35,18 +35,8 @@ def add_node_properties(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    queue = get_graph_inputs(g)
-    visited = []
-    while queue:
-        n = queue.pop(0)
-        if n in visited:
-            continue
-
+    for n in g.nodes:
         add_single_node_properties(n, mod)
-
-        for succ in all_output_nodes(n):
-            queue.append(succ)
-        visited.append(n)
 
 
 def add_single_node_properties(n: fx.Node, mod: fx.GraphModule):
@@ -59,6 +49,7 @@ def add_single_node_properties(n: fx.Node, mod: fx.GraphModule):
     n.meta['features_concatenate'] = is_features_concatenate(n, mod)
     n.meta['untouchable'] = is_untouchable_op(n)
     n.meta['zero_or_one_input'] = is_zero_or_one_input_op(n)
+    n.meta['non_tensor_op'] = is_non_tensor_op(n)
 
 
 def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = []):
@@ -91,6 +82,9 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
         if fc:
             n.meta['features_calculator'] = fc
         # handle default rules
+        elif n.meta['non_tensor_op']:
+            # assume no one will ever need to compute output features for non-tensor ops
+            continue
         elif n.meta['flatten']:
             # For flatten ops, the output features are computed as: input_features * spatial_size
             # note that this is NOT simply equal to the output shape if the preceding layer is a
@@ -153,7 +147,10 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
         elif n.meta['features_defining']:
             # these are "static" (i.e., non NAS-able) nodes that alter the number of output
             # features, and hence the number of input features of subsequent layers
-            n.meta['features_calculator'] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[1])
+            # the min() here handles the case of scalar values (e.g. flags) sometimes present
+            # in complex models such as YoLo versions
+            n.meta['features_calculator'] = ConstFeaturesCalculator(n.meta['tensor_meta'].shape[
+                min(1, len(n.meta['tensor_meta'].shape) - 1)])
         elif n.meta['features_propagating']:
             # these are nodes that have a single input and n. output features == n. input features
             # so, we just propagate forward the features calculator of the input
@@ -187,7 +184,10 @@ def associate_input_features(mod: fx.GraphModule):
 
         prev = n if len(n.all_input_nodes) == 0 else n.all_input_nodes[0]
 
-        if len(n.all_input_nodes) == 0:  # input node
+        if n.meta['non_tensor_op']:
+            # assume no one will ever need to compute output features for non-tensor ops
+            continue
+        elif len(n.all_input_nodes) == 0:  # input node
             n.meta['input_features_set_by'] = n
         elif n.meta['features_concatenate']:
             n.meta['input_features_set_by'] = n.all_input_nodes
@@ -245,19 +245,10 @@ def clean_up_propagated_shapes(mod: fx.GraphModule):
     :type mod: fx.GraphModule
     """
     g = mod.graph
-    queue = get_graph_inputs(g)
-    visited = []
-    while queue:
-        n = queue.pop(0)
-        if n in visited:
-            continue
+    for n in g.nodes:
 
-        if isinstance(n.meta['tensor_meta'], list):
+        if hasattr(n.meta, 'tensor_meta') and len(n.meta['tensor_meta']) > 1:
             all_equal = all(item == n.meta['tensor_meta'][0]
                             for item in n.meta['tensor_meta'])
             if all_equal:
                 n.meta['tensor_meta'] = n.meta['tensor_meta'][0]
-
-        for succ in all_output_nodes(n):
-            queue.append(succ)
-        visited.append(n)

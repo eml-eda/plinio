@@ -83,7 +83,8 @@ class PIT(DNAS):
             exclude_types: Iterable[Type[nn.Module]] = (),
             train_features: bool = True,
             train_rf: bool = True,
-            train_dilation: bool = True):
+            train_dilation: bool = True,
+            fold_bn: bool = False):
         super(PIT, self).__init__(model, cost, input_example, input_shape)
         self.is_training = model.training
         self.exclude_names = exclude_names
@@ -93,7 +94,8 @@ class PIT(DNAS):
             self._input_example,
             'autoimport' if autoconvert_layers else 'import',
             exclude_names,
-            exclude_types
+            exclude_types,
+            fold_bn
         )
         self._cost_fn_map = self._create_cost_fn_map()
         # these are set after conversion to make sure they are applied to all layers

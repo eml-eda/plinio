@@ -39,12 +39,15 @@ class PITLinear(nn.Linear, PITModule):
     :type binarization_threshold: float, optional
     :param discrete_cost: True if the layer cost should be computed on a discretized sample
     :type discrete_cost: bool, default False
+    :param fold_bn: True if the BatchNorm layer is to be considered folded into the linear
+    :type fold_bn: bool, default False
     """
     def __init__(self,
                  linear: nn.Linear,
                  out_features_masker: PITFeaturesMasker,
                  binarization_threshold: float = 0.5,
                  discrete_cost: bool = False,
+                 fold_bn: bool = False
                  ):
         super(PITLinear, self).__init__(
             linear.in_features,
@@ -56,7 +59,8 @@ class PITLinear(nn.Linear, PITModule):
                 cast(torch.nn.parameter.Parameter, self.bias).copy_(linear.bias)
             else:
                 self.bias = None
-        self.following_bn_args: Optional[Dict[str, Any]] = None
+        self.fold_bn = fold_bn
+        self.bn: Optional[nn.Module] = None
         # this will be overwritten later when we process the model graph
         self._input_features_calculator = ConstFeaturesCalculator(linear.in_features)
         self.out_features_masker = out_features_masker
@@ -75,11 +79,19 @@ class PITLinear(nn.Linear, PITModule):
         :rtype: torch.Tensor
         """
         cout_mask = self._features_mask(discrete=True)
-        pruned_weight = torch.mul(self.weight, cout_mask.unsqueeze(1))
-        return F.linear(input, pruned_weight, self.bias)
+        if self.fold_bn:
+            # apply mask to the weights
+            pruned_weight = torch.mul(self.weight, cout_mask.unsqueeze(1))
+            return F.linear(input, pruned_weight, self.bias)
+        else:
+            y = F.linear(input, self.weight, self.bias)
+            if self.bn is not None:
+                y = self.bn(y)
+            # apply mask to the output activations
+            return torch.mul(y, cout_mask.unsqueeze(0))
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker, fold_bn: bool):
         """Create a new fx.Node relative to a PITLinear layer, starting from the fx.Node
         of a nn.Linear layer, and replace it into the parent fx.GraphModule
 
@@ -90,13 +102,16 @@ class PITLinear(nn.Linear, PITModule):
         :param fm: the output features masker to use for this layer
         :type fm: PITFeaturesMasker
         :raises TypeError: if the input fx.Node is not of the correct type
+        :param fold_bn: flag that says if the BatchNorm layer is to be considered folded into the
+        linear
+        :type fold_bn: bool
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Linear:
             raise TypeError(f"Trying to generate PITLinear from layer of type{type(submodule)}")
         # here, this is guaranteed
         submodule = cast(nn.Linear, submodule)
-        new_submodule = PITLinear(submodule, out_features_masker=fm)
+        new_submodule = PITLinear(submodule, out_features_masker=fm, fold_bn=fold_bn)
         mod.add_submodule(str(n.target), new_submodule)
 
     @staticmethod
@@ -130,13 +145,13 @@ class PITLinear(nn.Linear, PITModule):
         mod.add_submodule(str(n.target), new_submodule)
 
         # unfuse the BatchNorm
-        if submodule.following_bn_args is not None:
+        if submodule.bn is not None and not submodule.fold_bn:
             new_bn = nn.BatchNorm1d(
                 submodule.out_features_opt,
-                eps=submodule.following_bn_args['eps'],
-                momentum=submodule.following_bn_args['momentum'],
-                affine=submodule.following_bn_args['affine'],
-                track_running_stats=submodule.following_bn_args['track_running_stats']
+                eps=submodule.bn.eps,
+                momentum=submodule.bn.momentum,
+                affine=submodule.bn.affine,
+                track_running_stats=submodule.bn.track_running_stats
             )
             mod.add_submodule(str(n.target) + "_exported_bn", new_bn)
             # add the batchnorm just after the conv in the graph

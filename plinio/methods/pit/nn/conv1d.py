@@ -46,6 +46,8 @@ class PITConv1d(nn.Conv1d, PITModule):
     :type binarization_threshold: float, optional
     :param discrete_cost: True if the layer cost should be computed on a discretized sample
     :type discrete_cost: bool, default False
+    :param fold_bn: True if the BatchNorm layer is to be considered folded into the conv
+    :type fold_bn: bool, default False
     """
     def __init__(self,
                  conv: nn.Conv1d,
@@ -54,6 +56,7 @@ class PITConv1d(nn.Conv1d, PITModule):
                  dilation_masker: PITDilationMasker,
                  binarization_threshold: float = 0.5,
                  discrete_cost: bool = False,
+                 fold_bn: bool = False
                  ):
         super(PITConv1d, self).__init__(
             conv.in_channels,
@@ -82,7 +85,8 @@ class PITConv1d(nn.Conv1d, PITModule):
         self.dilation_masker = dilation_masker
         self.binarization_threshold = binarization_threshold
         self.discrete_cost = discrete_cost
-        self.following_bn_args: Optional[Dict[str, Any]] = None
+        self.fold_bn = fold_bn
+        self.bn: Optional[nn.Module] = None
         _beta_norm, _gamma_norm = self._generate_norm_constants()
         self.register_buffer('_beta_norm', _beta_norm)
         self.register_buffer('_gamma_norm', _gamma_norm)
@@ -98,14 +102,26 @@ class PITConv1d(nn.Conv1d, PITModule):
         :return: the output activations tensor
         :rtype: torch.Tensor
         """
+        # TODO: add support for not-folded BatchNorm also for Conv1d
         cout_mask = self._features_mask(discrete=True)
-        pruned_weight = torch.mul(self.weight, cout_mask.unsqueeze(1).unsqueeze(1))
         time_mask = self._time_mask(discrete=True)
-        pruned_weight = torch.mul(time_mask, pruned_weight)
-        return self._conv_forward(input, pruned_weight, self.bias)
+        if self.fold_bn:
+            # apply all masks to the weights
+            pruned_weight = torch.mul(self.weight, cout_mask.unsqueeze(1).unsqueeze(1))
+            pruned_weight = torch.mul(time_mask, pruned_weight)
+            return self._conv_forward(input, pruned_weight, self.bias)
+        else:
+            # apply time mask to the weights
+            pruned_weight = torch.mul(time_mask, self.weight)
+            y = self._conv_forward(input, pruned_weight, self.bias)
+            if self.bn is not None:
+                y = self.bn(y)
+            # ...and cout mask to the output activations
+            return torch.mul(y, cout_mask.view(1, -1, 1))
+
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker, fold_bn: bool):
         """Create a new fx.Node relative to a PITConv1d layer, starting from the fx.Node
         of a nn.Conv1d layer, and replace it into the parent fx.GraphModule
 
@@ -116,6 +132,9 @@ class PITConv1d(nn.Conv1d, PITModule):
         :param fm: the output features masker to use for this layer
         :type fm: PITFeaturesMasker
         :raises TypeError: if the input fx.Node is not of the correct type
+        :param fold_bn: flag that says if the BatchNorm layer is to be considered folded into the
+        conv
+        :type fold_bn: bool
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.Conv1d:
@@ -132,6 +151,7 @@ class PITConv1d(nn.Conv1d, PITModule):
             out_features_masker=fm,
             timestep_masker=time_masker,
             dilation_masker=dil_masker,
+            fold_bn=fold_bn
         )
         mod.add_submodule(str(n.target), new_submodule)
 
@@ -202,13 +222,13 @@ class PITConv1d(nn.Conv1d, PITModule):
                         str(n.target) + "_pad",
                         args=n.args)
         # unfuse the BatchNorm
-        if submodule.following_bn_args is not None:
+        if submodule.bn is not None and not submodule.fold_bn:
             new_bn = nn.BatchNorm1d(
                 submodule.out_features_opt,
-                eps=submodule.following_bn_args['eps'],
-                momentum=submodule.following_bn_args['momentum'],
-                affine=submodule.following_bn_args['affine'],
-                track_running_stats=submodule.following_bn_args['track_running_stats']
+                eps=submodule.bn.eps,
+                momentum=submodule.bn.momentum,
+                affine=submodule.bn.affine,
+                track_running_stats=submodule.bn.track_running_stats
             )
             mod.add_submodule(str(n.target) + "_exported_bn", new_bn)
             # add the batchnorm just after the conv in the graph

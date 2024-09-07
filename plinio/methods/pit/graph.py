@@ -18,6 +18,7 @@
 # *----------------------------------------------------------------------------*
 from typing import cast, Iterable, Type, Tuple, Optional, Dict, Any
 
+import copy
 import networkx as nx
 import torch
 import torch.nn as nn
@@ -63,6 +64,7 @@ class PITTracer(fx.Tracer):
 def convert(model: nn.Module, input_example: Any, conversion_type: str,
             exclude_names: Iterable[str] = (),
             exclude_types: Iterable[Type[nn.Module]] = (),
+            fold_bn: bool = False,
             ) -> Tuple[nn.Module, NamedLeafModules, NamedLeafModules]:
     """Converts a nn.Module, to/from "NAS-able" PIT format
 
@@ -100,9 +102,9 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
     if conversion_type in ('autoimport', 'export'):
         # dictionary of shared feature maskers. Used only in 'autoimport' mode.
         sm_dict = {} if conversion_type != 'autoimport' else build_shared_features_map(mod)
-        convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types)
+        convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types, fold_bn)
     if conversion_type in ('autoimport', 'import'):
-        fuse_pit_modules(mod)
+        fuse_pit_modules(mod, fold_bn)
         add_features_calculator(mod, [pit_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
@@ -118,6 +120,7 @@ def convert_layers(mod: fx.GraphModule,
                    sm_dict: Dict,
                    exclude_names: Iterable[str],
                    exclude_types: Iterable[Type[nn.Module]],
+                   fold_bn: bool
                    ):
     """Replaces target layers with their NAS-able version, or vice versa. Layer conversion
     is implemented as a reverse BFS on the model graph.
@@ -133,6 +136,8 @@ def convert_layers(mod: fx.GraphModule,
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
+    :param fold_bn: flag to fold the bn layer into the linear/conv layer
+    :type fold_bn: bool
     """
     g = mod.graph
     queue = get_graph_outputs(g)
@@ -142,7 +147,7 @@ def convert_layers(mod: fx.GraphModule,
         if n in visited:
             continue
         if conversion_type == 'autoimport':
-            autoimport_node(n, mod, sm_dict, exclude_names, exclude_types)
+            autoimport_node(n, mod, sm_dict, exclude_names, exclude_types, fold_bn)
         if conversion_type == 'export':
             export_node(n, mod, exclude_names, exclude_types)
         for pred in n.all_input_nodes:
@@ -173,20 +178,39 @@ def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesM
             for i in pred:
                 sharing_graph.remove_edge(i, n)
 
+    # handle the case of a forward function with multiple outputs (returned as a tuple or list) with
+    # possibly independent shapes. In this case, the graph will contain a final output node that is
+    # difficult to treat and we remove in this step, treating each single output independently.
+    nodes_to_remove = []
+    for n in sharing_graph.nodes:
+        if n in get_graph_outputs(mod.graph) and len(n.meta['tensor_meta']) > 1:
+            # tag each predecessor as output-connected
+            pred = list(sharing_graph.predecessors(n))
+            for i in pred:
+                i.meta['output_connected'] = True
+            # add the node to the removal list
+            nodes_to_remove.append(n)
+    for n in nodes_to_remove:
+        sharing_graph.remove_node(n)
+
     # each weakly connected component of the sharing graph must share the same features masker
     sm_dict = {}
     for c in nx.weakly_connected_components(sharing_graph):
         sm = None
         for n in c:
             # identify a node which can give us the number of features with 100% certainty
-            # nodes such as flatten/squeeze etc make this necessary
+            # such as a convolution. Nodes such as flatten/squeeze/view/etc make this necessary
             if n.meta['features_defining'] or n.meta['untouchable'] and sm is None:
-                sm = PITFeaturesMasker(n.meta['tensor_meta'].shape[1])
-            if n in get_graph_outputs(mod.graph) or n in get_graph_inputs(mod.graph):
                 # distinguish the case in which the number of features must "frozen"
                 # i.e. the case of input-connected or output-connected components,
-                # this may overwrite a previously set "sm"
-                sm = PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1])
+                if (
+                    any(n in get_graph_inputs(mod.graph) for n in c) or
+                    any(n in get_graph_outputs(mod.graph) for n in c) or
+                    any(n.meta.get('output_connected', False) for n in c)
+                ):
+                    sm = PITFrozenFeaturesMasker(n.meta['tensor_meta'].shape[1])
+                else:
+                    sm = PITFeaturesMasker(n.meta['tensor_meta'].shape[1])
                 break
         for n in c:
             sm_dict[n] = sm
@@ -220,7 +244,9 @@ def exclude(n: fx.Node, mod: fx.GraphModule,
 def autoimport_node(n: fx.Node, mod: fx.GraphModule,
                     sm_dict: Dict[fx.Node, PITFeaturesMasker],
                     exclude_names: Iterable[str],
-                    exclude_types: Iterable[Type[nn.Module]]):
+                    exclude_types: Iterable[Type[nn.Module]],
+                    fold_bn: bool
+                    ):
     """Possibly rewrites a fx.GraphModule node replacing a sub-module instance corresponding to a
     standard nn.Module with its corresponding NAS-able version.
 
@@ -235,11 +261,13 @@ def autoimport_node(n: fx.Node, mod: fx.GraphModule,
     :type exclude_names: Iterable[str], optional
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
+    :param fold_bn: flag to fold the bn layer into the linear/conv layer
+    :type fold_bn: bool
     """
     if is_layer(n, mod, tuple(pit_layer_map.keys())) and not exclude(
             n, mod, exclude_names, exclude_types):
         conv_layer_type = pit_layer_map[type(mod.get_submodule(str(n.target)))]
-        conv_layer_type.autoimport(n, mod, sm_dict[n])
+        conv_layer_type.autoimport(n, mod, sm_dict[n], fold_bn)
 
 
 def export_node(n: fx.Node, mod: fx.GraphModule,
@@ -265,52 +293,53 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
         layer.export(n, mod)
 
 
-def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
+def remove_bn_inplace(lin: nn.Module, bn: nn.Module, fold: bool):
     """
-    Given a conv/linear Module `A` and an batch_norm module `B`, modifies A
-    such that A(x) == B(A_old(x))
+    Removes BN layer followin linear layers. If fold is True, the BN layer is folded into the linear
+    layer, otherwise, it is just added as a field of the linear layer.
     """
     assert (isinstance(lin, PITConv1d) or isinstance(lin, PITConv2d) or isinstance(lin, PITLinear))
     assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
     if not bn.track_running_stats:
         raise AttributeError("BatchNorm folding requires track_running_stats = True")
     with torch.no_grad():
-        lin.following_bn_args = {
-            'eps': bn.eps,
-            'momentum': bn.momentum,
-            'affine': bn.affine,
-            'track_running_stats': bn.track_running_stats,
-        }
-        conv_w = lin.weight
-        conv_b = lin.bias
-        bn_rm = cast(torch.Tensor, bn.running_mean)
-        bn_rv = cast(torch.Tensor, bn.running_var)
-        bn_w = bn.weight
-        bn_b = bn.bias
-        if conv_b is None:
-            conv_b = torch.zeros_like(bn_rm)
-        if bn_w is None:
-            bn_w = torch.ones_like(bn_rm)
-        if bn_b is None:
-            bn_b = torch.zeros_like(bn_rm)
-        bn_var_rsqrt = torch.rsqrt(bn_rv + bn.eps)
-        conv_w = conv_w * (bn_w * bn_var_rsqrt).reshape([-1] + [1] * (len(conv_w.shape) - 1))
-        conv_b = (conv_b - bn_rm) * bn_var_rsqrt * bn_w + bn_b
-        lin.weight.copy_(conv_w)
-        if lin.bias is None:
-            lin.bias = torch.nn.Parameter(conv_b)
-        else:
-            lin.bias.copy_(conv_b)
+        lin.bn = copy.deepcopy(bn)
+        if fold:
+            conv_w = lin.weight
+            conv_b = lin.bias
+            bn_rm = cast(torch.Tensor, bn.running_mean)
+            bn_rv = cast(torch.Tensor, bn.running_var)
+            bn_w = bn.weight
+            bn_b = bn.bias
+            if conv_b is None:
+                conv_b = torch.zeros_like(bn_rm)
+            if bn_w is None:
+                bn_w = torch.ones_like(bn_rm)
+            if bn_b is None:
+                bn_b = torch.zeros_like(bn_rm)
+            bn_var_rsqrt = torch.rsqrt(bn_rv + bn.eps)
+            conv_w = conv_w * (bn_w * bn_var_rsqrt).reshape([-1] + [1] * (len(conv_w.shape) - 1))
+            conv_b = (conv_b - bn_rm) * bn_var_rsqrt * bn_w + bn_b
+            lin.weight.copy_(conv_w)
+            if lin.bias is None:
+                lin.bias = torch.nn.Parameter(conv_b)
+            else:
+                lin.bias.copy_(conv_b)
 
 
-def fuse_pit_modules(mod: fx.GraphModule):
+def fuse_pit_modules(mod: fx.GraphModule, fold_bn: bool) -> None:
     """Fuse sequences of layers as required by PIT. Namely: Conv-BN and Linear-BN
     :param mod: the parent module
     :type mod: fx.GraphModule
+    :param fold_bn: flag to fold the bn layer into the linear/conv layer
+    :type fold_bn: bool
     """
-    fuse_consecutive_layers(mod, PITConv1d, nn.BatchNorm1d, fuse_bn_inplace)
-    fuse_consecutive_layers(mod, PITConv2d, nn.BatchNorm2d, fuse_bn_inplace)
-    fuse_consecutive_layers(mod, PITLinear, nn.BatchNorm1d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, PITConv1d, nn.BatchNorm1d,
+                            lambda x, y: remove_bn_inplace(x, y, fold_bn))
+    fuse_consecutive_layers(mod, PITConv2d, nn.BatchNorm2d,
+                            lambda x, y: remove_bn_inplace(x, y, fold_bn))
+    fuse_consecutive_layers(mod, PITLinear, nn.BatchNorm1d,
+                            lambda x, y: remove_bn_inplace(x, y, fold_bn))
 
 
 def register_input_features(mod: fx.GraphModule):

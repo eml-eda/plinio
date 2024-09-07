@@ -30,11 +30,11 @@ from plinio.methods.pit.nn.features_masker import PITFrozenFeaturesMasker
 def check_output_equal(test: unittest.TestCase, orig_nn: nn.Module, pit_nn: PIT,
                        input_shape: Tuple[int, ...], iterations=10):
     """Verify that a model and a PIT model produce the same output given the same input"""
+    orig_nn.eval()
+    pit_nn.eval()
     for _ in range(iterations):
         # add batch size in front
         x = torch.rand((32,) + input_shape)
-        orig_nn.eval()
-        pit_nn.eval()
         y = orig_nn(x)
         pit_y = pit_nn(x)
         test.assertTrue(torch.allclose(y, pit_y, atol=1e-7),
@@ -58,7 +58,7 @@ def check_batchnorm_memory(test: unittest.TestCase, pit_seed: nn.Module, layers:
     by BatchNorm have saved internally the BN information for restoring it later"""
     for name, child in pit_seed.named_children():
         if isinstance(child, PITModule) and name in layers:
-            test.assertTrue(child.following_bn_args is not None)
+            test.assertTrue(child.bn is not None)
 
 
 def check_batchnorm_unfolding(test: unittest.TestCase, pit_seed: nn.Module,
@@ -66,7 +66,7 @@ def check_batchnorm_unfolding(test: unittest.TestCase, pit_seed: nn.Module,
     """Check that, in a PIT converted model, PIT layers that were originally followed
     by BatchNorm have saved internally the BN information for restoring it later"""
     for name, child in pit_seed.named_children():
-        if isinstance(child, PITModule) and child.following_bn_args is not None:
+        if isinstance(child, PITModule) and child.bn is not None:
             bn_name = name + "_exported_bn"
             test.assertTrue(bn_name in exported_mod._modules)
             new_child = cast(nn.Module, exported_mod._modules[bn_name])

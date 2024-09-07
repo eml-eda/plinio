@@ -69,12 +69,13 @@ class DUCCIO():
         :rtype: torch.Tensor
         """
         # initialize final strengths on first call, if not done explicitly at construction
-        if self.final_strengths is None:
-            self.final_strengths = (torch.min(torch.tensor(0.0), self.task_loss / (model.get_cost(n) - t)) for n, t in self.targets.items())
+        with torch.no_grad():
+            if self.final_strengths is None:
+                self.final_strengths = tuple(torch.maximum(torch.tensor(0.0), self.task_loss / (model.get_cost(n) - t)) for n, t in self.targets.items())
 
         cost = torch.tensor(0.0)
         for (cost_name, target), strength in zip(self.targets.items(), self.final_strengths):
             eff_strength = torch.min(strength/100 + epoch * (strength*99/100) / (n_epochs / 2), strength)
-            cost += (eff_strength * torch.max(torch.tensor(0.0), model.get_cost(cost_name) - target))
+            cost += (eff_strength * torch.maximum(torch.tensor(0.0), model.get_cost(cost_name) - target))
         return cost
 

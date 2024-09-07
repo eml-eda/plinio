@@ -49,7 +49,7 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITModule):
             self.bias.copy_(bn.bias)
 
     @staticmethod
-    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker):
+    def autoimport(n: fx.Node, mod: fx.GraphModule, fm: PITFeaturesMasker, fold_bn: bool):
         """Create a new fx.Node relative to a PITBatchNorm1d layer, starting from the fx.Node
         of a nn.BatchNorm1d layer, and replace it into the parent fx.GraphModule
 
@@ -60,6 +60,8 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITModule):
         :param fm: The output features masker to use for this layer
         :type fm: PITFeaturesMasker
         :raises TypeError: if the input fx.Node is not of the correct type
+        :param fold_bn: ignored for BN layers
+        :type fold_bn: bool
         """
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != nn.BatchNorm1d:
@@ -114,9 +116,13 @@ class PITBatchNorm1d(nn.BatchNorm1d, PITModule):
         :return: a dictionary containing the optimized layer hyperparameter values
         :rtype: Dict[str, Any]
         """
-        return {
-            'num_features': self.out_features_opt,
-        }
+        try:
+            return {
+                'num_features': self.out_features_opt,
+            }
+        # this handles the case where the BN is instanciated within another PIT Layer (Conv/Linear)
+        except AttributeError:
+            return {}
 
     def named_nas_parameters(
             self, prefix: str = '', recurse: bool = False) -> Iterator[Tuple[str, nn.Parameter]]:
