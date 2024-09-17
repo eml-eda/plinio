@@ -365,6 +365,8 @@ class Ne16PerfModel:
 
 
 def _ne16_latency_conv2d_generic(spec):
+    if (spec['w_precision'] == 0) or (spec['w_theta_alpha'] == 0):
+        return 0.
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
@@ -395,6 +397,8 @@ def _ne16_latency_conv2d_generic(spec):
 
 
 def _ne16_latency_conv2d_dw(spec):
+    if (spec['w_precision'] == 0) or (spec['w_theta_alpha'] == 0):
+        return 0.
     cin = spec['in_channels']
     cout = spec['out_channels']
     k = spec['kernel_size']
@@ -425,6 +429,8 @@ def _ne16_latency_conv2d_dw(spec):
 
 
 def _ne16_latency_linear(spec):
+    if (spec['w_precision'] == 0) or (spec['w_theta_alpha'] == 0):
+        return 0.
     cin = spec['in_features']
     cout = spec['out_features']
     kernel_size = (1, 1)
@@ -438,7 +444,7 @@ def _ne16_latency_linear(spec):
     layer_params = (
         1,
         1,
-        w_theta_alpha_sum,
+        w_theta_alpha_sum,  # division due to the product in the calling function
         cin)  # TODO: check detach
 
     latency, _, _ = Ne16PerfModel_generalized(
