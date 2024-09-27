@@ -8,8 +8,8 @@ The precision assignment in `plinio.mps` can have two granularity levels:
 1. **Per-Layer**: the default scheme, supported for both activations and weights. This scheme assigns a single precision to the *entire* activations and weights tensors of each layer.
 2. **Per-Channel**: currently supported **only for weights**. With this scheme, an indipendent precision is selected for **each output channel** of the weight tensor of a convolutional layer. Importantly, this second scheme also supports using **0-bit precision** for some of the channels, thus implementing a joint channel-pruning and MPS scheme.
 
-For the technical details on this optimization algorithm, please refer to our publication: [Channel-wise Mixed-precision Assignment for DNN Inference on Constrained Edge Nodes
-](https://ieeexplore.ieee.org/abstract/document/9969373).
+For the technical details on this optimization algorithm, please refer to our publications: [Channel-wise Mixed-precision Assignment for DNN Inference on Constrained Edge Nodes
+](https://ieeexplore.ieee.org/abstract/document/9969373), and [Joint Pruning and Channel-wise Mixed-Precision Quantization for Efficient Deep Neural Networks](https://ieeexplore.ieee.org/document/10644100).
 
 **Important:**: currently, the `export()` API for exporting the final optimized model crashes for the per-channel assignment scheme. This will be fixed in a future release.
 
@@ -61,6 +61,20 @@ At the current state the optimization of the following layers is supported:
 |:-:|:-:|
 | Conv2d  | Weights Precision, Activations Precision |
 | Linear  | Weights Precision, Activation Precision |
+
+## Precision assignments refinement
+With the _NE16 latency model_, sometimes the weights precision assignments after the search phase may be sub-optimal, due to only partially complete tiles. Precision assignments that do not match perfectly the parallelism of the hardware may be slightly modified, in order to reduce as much as possible the number of incomplete tiles. This can be accomplished by "promoting" weights channels to a higher precision, if that eventually leads to a reduction in the cost of the entire layer.
+
+PLiNIO includes a function to refine the precisions assignments, by increasing the weights' channels bit-width and checking whether there are any benefits in terms of cost. Thus, after this step, one obtains a model which has a higher representational capacity (since the weights' precision may increase), but with an equal or lower total cost with respect to the initial model.
+
+The function can be applied on top of a trained `MPS` model as follows:
+```Python
+from plinio.methods.mps.nn.utils import optimize_prec_assignment
+
+optimized_model = optimize_prec_assignment(model, name="ne16")
+```
+
+
 
 
 ## Known Limitations
