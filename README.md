@@ -93,6 +93,7 @@ Main paper describing the library:
 
 Papers on novel NAS techniques included in PLiNIO:
 
+- [Joint Pruning and Channel-wise Mixed-Precision Quantization for Efficient Deep Neural Networks](https://ieeexplore.ieee.org/document/10644100)
 - [Enhancing Neural Architecture Search with Multiple Hardware Constraints for Deep Learning Model Deployment on Tiny IoT Devices](https://ieeexplore.ieee.org/abstract/document/10278089)
 - [Precision-aware Latency and Energy Balancing on Multi-Accelerator Platforms for DNN Inference](https://ieeexplore.ieee.org/document/10244311)
 - [Channel-wise Mixed-precision Assignment for DNN Inference on Constrained Edge Nodes](https://ieeexplore.ieee.org/abstract/document/9969373)
