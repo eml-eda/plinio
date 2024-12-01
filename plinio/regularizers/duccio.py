@@ -76,6 +76,5 @@ class DUCCIO():
         cost = torch.tensor(0.0)
         for (cost_name, target), strength in zip(self.targets.items(), self.final_strengths):
             eff_strength = torch.min(strength/100 + epoch * (strength*99/100) / (n_epochs / 2), strength)
-            cost += (eff_strength * torch.maximum(torch.tensor(0.0), model.get_cost(cost_name) - target))
+            cost = cost + (eff_strength * torch.maximum(torch.tensor(0.0), model.get_cost(cost_name) - target))
         return cost
-
