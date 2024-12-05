@@ -149,7 +149,7 @@ def integerize_arch(model: nn.Module,
         # Remove relu
         mod = remove_relu(mod)
         # Remove input quantizer
-        mod = remove_inp_quantizer(mod)
+        # mod = remove_inp_quantizer(mod)
     mod.delete_all_unused_submodules()
     mod.graph.lint()
     mod.recompile()
