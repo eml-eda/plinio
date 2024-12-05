@@ -117,7 +117,7 @@ class MAUPITIExporter:
             with open(str(filepath), 'w') as fp:
                 fp.write(f"# {module_name} (shape {list(t.shape)}),\n")
                 for c in t.flatten():
-                    fp.write(f"{int(c)},\n")
+                    fp.write(f"{int(c)},\n")  # math.floor ?
 
         if type(path) == str:
             path = Path(path)

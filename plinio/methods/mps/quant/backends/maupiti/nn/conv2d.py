@@ -46,7 +46,10 @@ class MAUPITIConv2d(nn.Conv2d, MAUPITIModule):
                  in_quantizer: Quantizer,
                  out_quantizer: Quantizer,
                  w_quantizer: Quantizer,
-                 b_quantizer: Optional[Quantizer]):
+                 b_quantizer: Optional[Quantizer],
+                 scale_bit: int = 24,
+                 shift_pos: int = 24
+                 ):
         super(MAUPITIConv2d, self).__init__(
             conv.in_channels,
             conv.out_channels,
@@ -57,6 +60,10 @@ class MAUPITIConv2d(nn.Conv2d, MAUPITIModule):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode)
+
+        self._device = conv.weight.device
+        self.scale_bit = scale_bit
+        self.shift_pos = shift_pos
 
         # Store precisions and quantizers
         self.in_quantizer = in_quantizer
@@ -75,7 +82,8 @@ class MAUPITIConv2d(nn.Conv2d, MAUPITIModule):
             self.w_quantizer.dequantize = False
             int_weight = self.w_quantizer(conv.weight)
             int_weight = cast(torch.Tensor, int_weight)
-            self.weight.copy_(int_weight)
+            self.weight = nn.Parameter(int_weight.to(self.device))
+            
 
         # Compute self.scale_fact and self.shift
         self.s_w = self.w_quantizer.scale
@@ -182,7 +190,10 @@ class MAUPITIConv2d(nn.Conv2d, MAUPITIModule):
 
     @property
     def device(self):
-        return next(self.parameters()).device
+        # Ensure that device does not change after being set
+        if self._device is None:
+            self._device = next(self.parameters()).device
+        return self._device
 
     @property
     def clip_inf(self):
@@ -219,23 +230,20 @@ class MAUPITIConv2d(nn.Conv2d, MAUPITIModule):
         :return: a tuple containing the computed `scale` and `shift` factors
         :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
-        # Constants, depend on the specific backend
-        SCALE_BIT = 16  # In principle, it can be up to 32 but we want to avoid overflow
-        SHIFT_POS = 32
-
         # Value to be approximated as `scale` / 2**`shift`
         target = s_w * s_x / s_y
         device = target.device
         target = target.clone().detach().cpu()
+        int_bias = int_bias.clone().detach().cpu()
 
         # Integer approximation #
         params = {}
-        upper_bound = 2 ** (SCALE_BIT - 1)
+        upper_bound = 2 ** (self.scale_bit - 1)
         # Create a dict indexed by possible shift amounts, each entry of the dict
         # contains a list where for each channel a `scale` factor is selected as
         # the one minimizing abs(scale / 2**shift - target).
         for idx in range(len(target)):
-            for sh in range(SHIFT_POS):
+            for sh in range(self.shift_pos):
                 if sh not in params.keys():
                     params[sh] = []
                 params[sh].append(
@@ -244,7 +252,7 @@ class MAUPITIConv2d(nn.Conv2d, MAUPITIModule):
         # For each `shift` amount compute the average difference between the
         # integer approximation and targets
         avg_diff = {}
-        for sh in range(SHIFT_POS):
+        for sh in range(self.shift_pos):
             diff = []
             for idx in range(len(target)):
                 diff.append(
