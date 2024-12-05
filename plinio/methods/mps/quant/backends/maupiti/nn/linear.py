@@ -99,7 +99,8 @@ class MAUPITILinear(nn.Linear, MAUPITIModule):
                                                              int_bias)
         with torch.no_grad():
             if linear.bias is not None:
-                int_bias = int_bias * self.scale
+                if not self.last_layer:
+                    int_bias = int_bias * self.scale
                 self.add_bias = int_bias.view(1, self.out_features)
             else:
                 self.add_bias = None
@@ -116,7 +117,7 @@ class MAUPITILinear(nn.Linear, MAUPITIModule):
                                               ).view(1, self.out_features))
             else:
                 self._zero_point = (self.add_bias -
-                                    self.clip_inf * self.scale *
+                                    self.clip_inf * 
                                     torch.sum(self.weight, dim=1
                                               ).view(1, self.out_features))
 
@@ -139,9 +140,11 @@ class MAUPITILinear(nn.Linear, MAUPITIModule):
         """
         # Linear
         out = F.linear(input, self.weight, None)
-        # Multiply scale factor, sum bias, shift
-        out = (out * self.scale + self._zero_point) / (2 ** self.shift)
-        if not self.last_layer:  # This should happens on the last layer
+        if self.last_layer:  # This should happens on the last layer
+            out = out + self._zero_point
+        else:
+            # Multiply scale factor, sum bias, shift
+            out = (out * self.scale + self._zero_point) / (2 ** self.shift)
             # Compute floor
             out = torch.floor(out)
             # Compute relu
