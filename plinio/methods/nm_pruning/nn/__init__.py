@@ -14,13 +14,11 @@
 # * See the License for the specific language governing permissions and        *
 # * limitations under the License.                                             *
 # *                                                                            *
-# * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
+# * Author:  Francesco Daghero <francesco.daghero@polito.it>                             *
 # *----------------------------------------------------------------------------*
-from .dnas_base import DNAS
-from .pit import PIT
-from .supernet import SuperNet
-from .mps import MPS
-from .odimo_mps import ODiMO_MPS
-from .nm_pruning import NMPruning
 
-__all__ = ['DNAS', 'PIT', 'SuperNet', 'MPS', 'ODiMO_MPS', 'NMPruning']
+from .conv2d import NMPruningConv2d
+from .linear import NMPruningLinear
+from .module import NMPruningModule
+
+__all__ = ["NMPruningConv2d", "NMPruningLinear", "NMPruningModule"]
