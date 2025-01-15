@@ -53,18 +53,15 @@ class IntegerizationTracer(fx.Tracer):
         super().__init__()
         self.target_layers = target_layers
 
-    def is_leaf_module(
-        self,
-        m: nn.Module,
-        module_qualified_name: str
-    ) -> bool:
+    def is_leaf_module(self, m: nn.Module, module_qualified_name: str) -> bool:
         if isinstance(m, self.target_layers):
             return True
         if isinstance(m, Quantizer):
             return True
         else:
-            return m.__module__.startswith('torch.nn') and \
-                not isinstance(m, torch.nn.Sequential)
+            return m.__module__.startswith("torch.nn") and not isinstance(
+                m, torch.nn.Sequential
+            )
 
 
 # N.B., ugly but is needed to avoid circular import
@@ -74,8 +71,8 @@ def get_map():
 
     # Add new supported backends here:
     maps = {
-        'match': match_layer_map,
-        'maupiti': maupiti_layer_map,
+        "match": match_layer_map,
+        "maupiti": maupiti_layer_map,
     }
     return maps
 
@@ -101,17 +98,19 @@ def backend_factory(layer: nn.Module, backend: Backend) -> nn.Module:
         if type(layer) in layer_map.keys():
             return layer_map[type(layer)]
         else:
-            msg = f'Layer of type {type(layer)} is not supported by {backend_name} backend.'
+            msg = f"Layer of type {type(layer)} is not supported by {backend_name} backend."
             raise ValueError(msg)
     else:
-        msg = f'The {backend} is not supported.'
+        msg = f"The {backend} is not supported."
         raise ValueError(msg)
 
 
-def integerize_arch(model: nn.Module,
-                    backend: Backend,
-                    backend_kwargs: Dict = {}
-                    ) -> nn.Module:
+def integerize_arch(
+    model: nn.Module,
+    backend: Backend,
+    backend_kwargs: Dict = {},
+    remove_input_quantizer: bool = False,
+) -> nn.Module:
     """Convert a Fake Quantized model to a backend specific integer model
 
     :param model: the input Fake Quantized model
@@ -120,14 +119,19 @@ def integerize_arch(model: nn.Module,
     :type backend: Backend
     :param backend_kwargs: additional backend-specific arguments
     :type backend_kwargs: Dict
+    :param remove_input_quantizer: remove the input quantizer
+    :type remove_input_quantizer: bool
     """
+    assert (
+        remove_inp_quantizer and backend == Backend.MAUPITI
+    ), "Remove input quantizer is only supported for MAUPITI backend"
     if Backend.has_entry(backend):
         backend_name = backend.name.lower()
         maps = get_map()
         layer_map = maps[backend_name]
         layer_map = cast(Dict, layer_map)
     else:
-        msg = f'The {backend} is not supported.'
+        msg = f"The {backend} is not supported."
         raise ValueError(msg)
     target_layers = tuple(layer_map.keys())
     tracer = IntegerizationTracer(target_layers=target_layers)
@@ -138,7 +142,9 @@ def integerize_arch(model: nn.Module,
     for n in mod.graph.nodes:
         m = modules.get(n.target)
         # The input quantizer is kept and forced to return integer outputs
-        if 'input_quantizer_out_quantizer' in n.name:  # TODO: name-dependent, find better way
+        if (
+            "input_quantizer_out_quantizer" in n.name
+        ):  # TODO: name-dependent, find better way
             m = cast(Quantizer, m)
             m.dequantize = False
         # Target layers are automagically converted with their backend-specific ver
@@ -149,7 +155,8 @@ def integerize_arch(model: nn.Module,
         # Remove relu
         mod = remove_relu(mod)
         # Remove input quantizer
-        # mod = remove_inp_quantizer(mod)
+        if remove_input_quantizer:
+            mod = remove_inp_quantizer(mod)
     mod.delete_all_unused_submodules()
     mod.graph.lint()
     mod.recompile()
@@ -157,15 +164,16 @@ def integerize_arch(model: nn.Module,
 
 
 def remove_inp_quantizer(mod: nn.Module) -> nn.Module:
-    """MATCH does not expect an input quantizer.
-    """
+    """MATCH does not expect an input quantizer."""
     if not isinstance(mod, fx.GraphModule):
-        msg = f'Input is of type {type(mod)} instead of fx.GraphModule'
+        msg = f"Input is of type {type(mod)} instead of fx.GraphModule"
         raise ValueError(msg)
     mod = cast(fx.GraphModule, mod)
     modules = dict(mod.named_modules())
     for node in mod.graph.nodes:
-        if 'input_quantizer_out_quantizer' in node.name:  # TODO: name-dependent, find better way
+        if (
+            "input_quantizer_out_quantizer" in node.name
+        ):  # TODO: name-dependent, find better way
             inp_qtz = nn.Identity()
             replace_node_module(node, modules, inp_qtz)
             node.replace_all_uses_with(node.args[0])
@@ -181,21 +189,24 @@ def remove_relu(mod: nn.Module) -> nn.Module:
     can remove explicit calls to F.relu, torch.relu and nn.ReLU
     """
     if not isinstance(mod, fx.GraphModule):
-        msg = f'Input is of type {type(mod)} instead of fx.GraphModule'
+        msg = f"Input is of type {type(mod)} instead of fx.GraphModule"
         raise ValueError(msg)
     mod = cast(fx.GraphModule, mod)
     for n in mod.graph.nodes:
-        if is_function(n, (F.relu, torch.relu,)) or is_layer(n, mod, (nn.ReLU,)):
+        if is_function(
+            n,
+            (
+                F.relu,
+                torch.relu,
+            ),
+        ) or is_layer(n, mod, (nn.ReLU,)):
             assert len(n.all_input_nodes) == 1
             inp_node = n.all_input_nodes[0]
             new_submodule = nn.Identity()
-            name = str(n) + '_' + str(n.all_input_nodes) + '_identity'
+            name = str(n) + "_" + str(n.all_input_nodes) + "_identity"
             mod.add_submodule(name, new_submodule)
             with mod.graph.inserting_after(n):
-                new_node = mod.graph.call_module(
-                    name,
-                    args=(inp_node,)
-                )
+                new_node = mod.graph.call_module(name, args=(inp_node,))
                 # Copy metadata
                 new_node.meta = {}
                 new_node.meta = n.meta
