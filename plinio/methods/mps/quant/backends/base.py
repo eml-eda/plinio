@@ -123,7 +123,8 @@ def integerize_arch(
     :type remove_input_quantizer: bool
     """
     assert (
-        remove_inp_quantizer and backend == Backend.MAUPITI
+        (backend == Backend.MAUPITI) or
+        (not remove_input_quantizer and backend != Backend.MAUPITI)
     ), "Remove input quantizer is only supported for MAUPITI backend"
     if Backend.has_entry(backend):
         backend_name = backend.name.lower()
