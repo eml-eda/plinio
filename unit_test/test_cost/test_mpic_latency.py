@@ -43,7 +43,7 @@ class TestMPICLatency(unittest.TestCase):
         spec['output_shape'] = (1, spec['out_channels'],
                                 random.randint(8, 64),
                                 random.randint(8, 64))
-        spec8        spec['w_precision'] = 8
+        spec['w_precision'] = 8
         original_ch = spec['out_channels']
 
         est_cost_high = mpic_latency[nn.Conv2d, spec](spec)
