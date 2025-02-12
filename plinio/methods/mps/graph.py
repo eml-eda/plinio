@@ -474,7 +474,7 @@ def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
     such that A(x) == B(A_old(x))
     """
     # TODO: this is almost a duplicate of PIT. Resolve.
-    assert (isinstance(lin, nn.Conv2d) or isinstance(lin, nn.Linear))
+    assert (isinstance(lin, nn.Conv1d) or isinstance(lin, nn.Conv2d) or isinstance(lin, nn.Linear))
     assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
     if not bn.track_running_stats:
         raise AttributeError("BatchNorm folding requires track_running_stats = True")
@@ -506,7 +506,7 @@ def fuse_mps_modules(mod: fx.GraphModule):
     :param mod: the parent module
     :type mod: fx.GraphModule
     """
-    # TODO: add Conv1d
+    fuse_consecutive_layers(mod, nn.Conv1d, nn.BatchNorm1d, fuse_bn_inplace)
     fuse_consecutive_layers(mod, nn.Conv2d, nn.BatchNorm2d, fuse_bn_inplace)
     fuse_consecutive_layers(mod, nn.Linear, nn.BatchNorm1d, fuse_bn_inplace)
 
