@@ -429,6 +429,23 @@ class ToyResNet_inp_conn(nn.Module):
         return self.classifier(x3)
 
 
+class ToyResNet_inp_conn_add_out(nn.Module):
+    def __init__(self):
+        super(ToyResNet_inp_conn_add_out, self).__init__()
+        self.input_shape = (16, 2, 2)
+        self.conv1 = nn.Conv2d(16, 16, (3, 3), padding="same")
+        self.bn1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 16, (3, 3), padding="same")
+        self.bn2 = nn.BatchNorm2d(16)
+        self.classifier = nn.Linear(16 * 2 * 2, 10)
+
+    def forward(self, x):
+        x1 = F.relu(self.bn1(self.conv1(x)))
+        x2 = self.bn2(self.conv2(x1))
+        x3 = x + x2
+        return x3
+
+
 class ToyResNet_1D(nn.Module):
     def __init__(self):
         super(ToyResNet_1D, self).__init__()

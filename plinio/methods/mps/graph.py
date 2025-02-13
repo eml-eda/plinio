@@ -91,6 +91,7 @@ def convert(
     exclude_names: Iterable[str] = (),
     exclude_types: Iterable[Type[nn.Module]] = (),
     disable_shared_quantizers: bool = False,
+    quantize_output: bool = False,
 ) -> Tuple[nn.Module, NamedLeafModules, NamedLeafModules]:
     """Converts a nn.Module, to/from "NAS-able" format for the mixed-precision search method
 
@@ -118,6 +119,8 @@ def convert(
     :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
     sharing. It can be useful if precision '0' is in not in the search options.
     :type disable_shared_quantizers: bool
+    :param quantize_output: a boolean to indicate whether to quantize the output of the network
+    :type quantize_output: bool
     :raises ValueError: for unsupported conversion types
     :return: the converted model, and two lists of all (or all unique) leaf modules for
     the NAS
@@ -143,7 +146,7 @@ def convert(
         {}
         if conversion_type != "autoimport"
         else build_shared_mps_qtz_map(
-            mod, w_search_type, qinfo, disable_shared_quantizers
+            mod, w_search_type, qinfo, disable_shared_quantizers, quantize_output
         )
     )
     convert_layers(mod, conversion_type, qinfo, sq_dict, exclude_names, exclude_types)
@@ -214,6 +217,7 @@ def build_shared_mps_qtz_map(
     w_search_type: MPSType,
     qinfo: Dict,
     disable_shared_quantizers: bool,
+    quantize_output: bool,
 ) -> Dict[fx.Node, Tuple[MPSPerLayerQtz, Union[MPSPerLayerQtz, MPSPerChannelQtz]]]:
     """Create a map from fx.Node instances to instances of MPS Quantizers to be used by the NAS
     to optimize precision selection for both activations and weights of that node.
@@ -230,6 +234,8 @@ def build_shared_mps_qtz_map(
     :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
     sharing. It can be useful if precision '0' is in the search options.
     :type disable_shared_quantizers: bool
+    :param quantize_output: a boolean to indicate whether to quantize the output of the network
+    :type quantize_output: bool
     :return: a map (node -> out_mps_quantizer, w_mps_quantizer)
     :rtype: Dict[fx.Node, Tuple[Quantizer, Quantizer]]
     """
@@ -308,7 +314,8 @@ def build_shared_mps_qtz_map(
                     )
                 # If `c` contains an output node the output is not quantized
                 # precision ignored
-                sq_a = MPSPerLayerQtz((-1,), DummyQuantizer)
+                if not quantize_output:
+                    sq_a = MPSPerLayerQtz((-1,), DummyQuantizer)
         for n in c:
             # if the flag 'disable_shared_quantizers' is set to True, then we can keep one quantizer
             # per connected component, which is the one defined in the previous for loop. Otherwise,

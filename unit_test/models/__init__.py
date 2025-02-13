@@ -51,6 +51,7 @@ from .toy_models import (
     ToyResNet,
     ToyResNet_1D,
     ToyResNet_inp_conn,
+    ToyResNet_inp_conn_add_out,
 )
 from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR
@@ -92,4 +93,5 @@ __all__ = [
     "ToyResNet",
     "ToyResNet_1D",
     "ToyResNet_inp_conn",
+    "ToyResNet_inp_conn_add_out",
 ]
