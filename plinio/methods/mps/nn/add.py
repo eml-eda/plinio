@@ -21,7 +21,7 @@ import operator
 from typing import Dict, Any, Iterator, Union, cast
 import torch
 import torch.fx as fx
-from ..quant.nn import QuantIdentity
+from ..quant.nn import QuantAdd
 from .identity import MPSIdentity
 from .qtz import MPSPerLayerQtz, MPSPerChannelQtz, MPSBiasQtz
 from plinio.cost import CostFn
@@ -34,17 +34,18 @@ class MPSAdd(MPSIdentity):
     :param out_mps_quantizer: activation MPS quantizer
     :type out_mps_quantizer: MPSQtzLayer
     """
-    def __init__(self,
-                 out_mps_quantizer: MPSPerLayerQtz):
+
+    def __init__(self, out_mps_quantizer: MPSPerLayerQtz):
         super(MPSAdd, self).__init__(out_mps_quantizer)
 
     @staticmethod
-    def autoimport(n: fx.Node,
-                   mod: fx.GraphModule,
-                   out_mps_quantizer: MPSPerLayerQtz,
-                   w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
-                   b_mps_quantizer: MPSBiasQtz,
-                   ):
+    def autoimport(
+        n: fx.Node,
+        mod: fx.GraphModule,
+        out_mps_quantizer: MPSPerLayerQtz,
+        w_mps_quantizer: Union[MPSPerLayerQtz, MPSPerChannelQtz],
+        b_mps_quantizer: MPSBiasQtz,
+    ):
         """Create a new fx.Node relative to a MPSAdd layer, starting from the fx.Node
         of a nn.Module layer, and replace it into the parent fx.GraphModule
 
@@ -64,15 +65,14 @@ class MPSAdd(MPSIdentity):
             msg = f"Trying to generate MPSAdd from layer of type {type(n.target)}"
             raise TypeError(msg)
         new_submodule = MPSAdd(out_mps_quantizer)
-        name = str('add_')
-        name += str(n.all_input_nodes).replace('[', '').replace(']', '').replace(', ', '_')
-        name += '_quant'
+        name = str("add_")
+        name += (
+            str(n.all_input_nodes).replace("[", "").replace("]", "").replace(", ", "_")
+        )
+        name += "_quant"
         mod.add_submodule(name, new_submodule)
         with mod.graph.inserting_after(n):
-            new_node = mod.graph.call_module(
-                name,
-                args=(n,)
-            )
+            new_node = mod.graph.call_module(name, args=(n,))
             # Copy metadata
             new_node.meta = {}
             new_node.meta = n.meta
@@ -93,9 +93,7 @@ class MPSAdd(MPSIdentity):
         submodule = mod.get_submodule(str(n.target))
         if type(submodule) != MPSAdd:
             raise TypeError(f"Trying to export a layer of type {type(submodule)}")
-        new_submodule = QuantIdentity(
-            submodule.selected_out_quantizer
-        )
+        new_submodule = QuantAdd(submodule.selected_out_quantizer)
         mod.add_submodule(str(n.target), new_submodule)
 
     def get_cost(self, cost_fn: CostFn, out_shape: Dict[str, Any]) -> torch.Tensor:
@@ -115,18 +113,17 @@ class MPSAdd(MPSIdentity):
         def vect_fn(in_prec, in_theta_alpha):
             v = vars(self)
             v.update(out_shape)
-            v['in_precision'] = in_prec
-            v['in_format'] = int
+            v["in_precision"] = in_prec
+            v["in_format"] = int
             # TODO: detach to be double-checked
-            v['in_channels'] = self.input_features_calculator.features.detach()
+            v["in_channels"] = self.input_features_calculator.features.detach()
             # TODO: verify that it's correct to use out_features_eff here, differently from
             # conv/linear
-            v['out_channels'] = self.out_features_eff
+            v["out_channels"] = self.out_features_eff
             return in_theta_alpha * cost_fn(v)
 
         vect_fn = torch.vmap(vect_fn)
         cost = vect_fn(
-                self.in_mps_quantizer.precision,
-                self.in_mps_quantizer.theta_alpha
-                )
+            self.in_mps_quantizer.precision, self.in_mps_quantizer.theta_alpha
+        )
         return cost
