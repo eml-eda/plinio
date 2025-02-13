@@ -17,8 +17,7 @@
 # * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from typing import Any, Tuple, Type, Iterable, Dict, Iterator, Union, Optional, \
-        Callable
+from typing import Any, Tuple, Type, Iterable, Dict, Iterator, Union, Optional, Callable
 import copy
 import torch
 import torch.nn as nn
@@ -35,37 +34,36 @@ from .quant.quantizers import PACTAct, MinMaxWeight, QuantizerBias
 """Data structure including quantizer information for each layer/input, as well as defaults
 for all other layers/inputs"""
 DEFAULT_QINFO = {
-    'layer_default': {
-        'output': {
-            'quantizer': PACTAct,
-            'search_precision': (2, 4, 8),
-            'kwargs': {},
+    "layer_default": {
+        "output": {
+            "quantizer": PACTAct,
+            "search_precision": (2, 4, 8),
+            "kwargs": {},
         },
-        'weight': {
-            'quantizer': MinMaxWeight,
-            'search_precision': (2, 4, 8),
-            'kwargs': {},
+        "weight": {
+            "quantizer": MinMaxWeight,
+            "search_precision": (2, 4, 8),
+            "kwargs": {},
         },
-        'bias': {
-            'quantizer': QuantizerBias,
-            'kwargs': {
-                 # we do not optimize the bias precision, so it is fixed in the quantizer kwargs
-                'precision': 32,
+        "bias": {
+            "quantizer": QuantizerBias,
+            "kwargs": {
+                # we do not optimize the bias precision, so it is fixed in the quantizer kwargs
+                "precision": 32,
             },
         },
     },
-    'input_default': {
-        'quantizer': PACTAct,
-        'search_precision': (2, 4, 8),
-        'kwargs': {
-            'init_clip_val': 1
-        },
-    }
+    "input_default": {
+        "quantizer": PACTAct,
+        "search_precision": (2, 4, 8),
+        "kwargs": {"init_clip_val": 1},
+    },
 }
 
+
 def get_default_qinfo(
-        w_precision: Tuple[int,...] = (2, 4, 8),
-        a_precision: Tuple[int,...] = (2, 4, 8)) -> Dict[str, Dict[str, Any]]:
+    w_precision: Tuple[int, ...] = (2, 4, 8), a_precision: Tuple[int, ...] = (2, 4, 8)
+) -> Dict[str, Dict[str, Any]]:
     """Function that returns the default quantization information for the NAS
 
     :param w_precision: the list of bitwidths to be considered for weights
@@ -76,9 +74,9 @@ def get_default_qinfo(
     :rtype: Dict[str, Dict[str, Any]]
     """
     d = copy.deepcopy(DEFAULT_QINFO)
-    d['input_default']['search_precision'] = a_precision
-    d['layer_default']['output']['search_precision'] = a_precision
-    d['layer_default']['weight']['search_precision'] = w_precision
+    d["input_default"]["search_precision"] = a_precision
+    d["layer_default"]["output"]["search_precision"] = a_precision
+    d["layer_default"]["weight"]["search_precision"] = w_precision
     return d
 
 
@@ -132,38 +130,45 @@ class MPS(DNAS):
     defaults to torch.sum
     :type cost_reduction_fn: Callable, optional
     """
+
     def __init__(
-            self,
-            model: nn.Module,
-            cost: Union[CostSpec, Dict[str, CostSpec]] = params_bit,
-            input_example: Optional[Any] = None,
-            input_shape: Optional[Tuple[int, ...]] = None,
-            w_search_type: MPSType = MPSType.PER_LAYER,
-            qinfo: Dict = DEFAULT_QINFO,
-            autoconvert_layers: bool = True,
-            full_cost: bool = False,
-            exclude_names: Iterable[str] = (),
-            exclude_types: Iterable[Type[nn.Module]] = (),
-            temperature: float = 1.,
-            gumbel_softmax: bool = False,
-            hard_softmax: bool = False,
-            disable_sampling: bool = False,
-            disable_shared_quantizers: bool = False,
-            cost_reduction_fn: Callable = torch.sum):
+        self,
+        model: nn.Module,
+        cost: Union[CostSpec, Dict[str, CostSpec]] = params_bit,
+        input_example: Optional[Any] = None,
+        input_shape: Optional[Tuple[int, ...]] = None,
+        w_search_type: MPSType = MPSType.PER_LAYER,
+        qinfo: Dict = DEFAULT_QINFO,
+        autoconvert_layers: bool = True,
+        full_cost: bool = False,
+        exclude_names: Iterable[str] = (),
+        exclude_types: Iterable[Type[nn.Module]] = (),
+        temperature: float = 1.0,
+        gumbel_softmax: bool = False,
+        hard_softmax: bool = False,
+        disable_sampling: bool = False,
+        disable_shared_quantizers: bool = False,
+        quantize_output: bool = False,
+        cost_reduction_fn: Callable = torch.sum,
+    ):
         super(MPS, self).__init__(model, cost, input_example, input_shape)
         self.is_training = model.training
         self.seed, self._leaf_modules, self._unique_leaf_modules = convert(
             model,
             self._input_example,
-            'autoimport' if autoconvert_layers else 'import',
+            "autoimport" if autoconvert_layers else "import",
             w_search_type,
             qinfo,
             exclude_names,
             exclude_types,
-            disable_shared_quantizers)
+            disable_shared_quantizers,
+            quantize_output,
+        )
         self._cost_reduction_fn = cost_reduction_fn
         self._cost_fn_map = self._create_cost_fn_map()
-        self.update_softmax_options(temperature, hard_softmax, gumbel_softmax, disable_sampling)
+        self.update_softmax_options(
+            temperature, hard_softmax, gumbel_softmax, disable_sampling
+        )
         if not hard_softmax:
             self.compensate_weights_values()
         self.full_cost = full_cost
@@ -194,11 +199,12 @@ class MPS(DNAS):
         self._cost_fn_map = self._create_cost_fn_map()
 
     def update_softmax_options(
-            self,
-            temperature: Optional[float] = None,
-            hard: Optional[bool] = None,
-            gumbel: Optional[bool] = None,
-            disable_sampling: Optional[bool] = None):
+        self,
+        temperature: Optional[float] = None,
+        hard: Optional[bool] = None,
+        gumbel: Optional[bool] = None,
+        disable_sampling: Optional[bool] = None,
+    ):
         """Set the flags to choose between the softmax, the hard and soft Gumbel-softmax
         and the sampling disabling of the architectural coefficients in the quantizers
 
@@ -214,7 +220,9 @@ class MPS(DNAS):
         """
         for _, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
-                layer.update_softmax_options(temperature, hard, gumbel, disable_sampling)
+                layer.update_softmax_options(
+                    temperature, hard, gumbel, disable_sampling
+                )
 
     def compensate_weights_values(self):
         """Modify the initial weight values of MPSModules compensating the possible presence of
@@ -232,7 +240,7 @@ class MPS(DNAS):
         :return: the precision-assignement found by the NAS
         :rtype: Dict[str, Dict[str, Any]]
         """
-        mod, _, _ = convert(self.seed, self._input_example, 'export')
+        mod, _, _ = convert(self.seed, self._input_example, "export")
         return mod
 
     def summary(self) -> Dict[str, Dict[str, Any]]:
@@ -246,10 +254,12 @@ class MPS(DNAS):
         for lname, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
                 arch[lname] = layer.summary()
-                arch[lname]['type'] = layer.__class__.__name__
+                arch[lname]["type"] = layer.__class__.__name__
         return arch
 
-    def nas_parameters_summary(self, post_sampling: bool = False) -> Dict[str, Dict[str, Any]]:
+    def nas_parameters_summary(
+        self, post_sampling: bool = False
+    ) -> Dict[str, Dict[str, Any]]:
         """Generates a dictionary representation of the architectural parameters values found by
         the NAS.
 
@@ -259,7 +269,7 @@ class MPS(DNAS):
         for lname, _, layer in self._unique_leaf_modules:
             if isinstance(layer, MPSModule):
                 arch[lname] = layer.nas_parameters_summary(post_sampling=post_sampling)
-                arch[lname]['type'] = layer.__class__.__name__
+                arch[lname]["type"] = layer.__class__.__name__
         return arch
 
     def alpha_summary(self) -> Dict[str, Dict[str, Any]]:
@@ -273,7 +283,8 @@ class MPS(DNAS):
         return self.nas_parameters_summary(post_sampling=True)
 
     def named_nas_parameters(
-            self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
+        self, prefix: str = "", recurse: bool = True
+    ) -> Iterator[Tuple[str, nn.Parameter]]:
         """Returns an iterator over the architectural parameters of the NAS, yielding
         both the name of the parameter as well as the parameter itself
 
@@ -290,14 +301,17 @@ class MPS(DNAS):
                 prfx = prefix
                 prfx += "." if len(prefix) > 0 else ""
                 prfx += lname
-                for name, param in layer.named_nas_parameters(prefix=prfx, recurse=recurse):
+                for name, param in layer.named_nas_parameters(
+                    prefix=prfx, recurse=recurse
+                ):
                     # avoid duplicates (e.g. shared params)
                     if param not in included:
                         included.add(param)
                         yield name, param
 
     def named_net_parameters(
-            self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str, nn.Parameter]]:
+        self, prefix: str = "", recurse: bool = True
+    ) -> Iterator[Tuple[str, nn.Parameter]]:
         """Returns an iterator over the inner network parameters, EXCEPT the NAS architectural
         parameters, yielding both the name of the parameter as well as the parameter itself
 
@@ -313,11 +327,14 @@ class MPS(DNAS):
             if param not in exclude:
                 yield name, param
 
-    def _get_single_cost(self, cost_spec: CostSpec,
-                         cost_fn_map: Dict[str, CostFn]) -> torch.Tensor:
+    def _get_single_cost(
+        self, cost_spec: CostSpec, cost_fn_map: Dict[str, CostFn]
+    ) -> torch.Tensor:
         """Private method to compute a single cost value"""
         cost = torch.tensor(0, dtype=torch.float32)
-        target_list = self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
+        target_list = (
+            self._unique_leaf_modules if cost_spec.shared else self._leaf_modules
+        )
         for lname, node, layer in target_list:
             if isinstance(layer, MPSModule):
                 l_cost = layer.get_cost(cost_fn_map[lname], shapes_dict(node))
@@ -342,7 +359,9 @@ class MPS(DNAS):
                 # we have a try/except here
                 try:
                     # didnt' find a more readable way to implement this compactly
-                    t = list(mps_layer_map.keys())[list(mps_layer_map.values()).index(type(layer))]
+                    t = list(mps_layer_map.keys())[
+                        list(mps_layer_map.values()).index(type(layer))
+                    ]
                     # equally unreadable alternative
                     # t = layer.__class__.__bases__[0]
                 except ValueError:
