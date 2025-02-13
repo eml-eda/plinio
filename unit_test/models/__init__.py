@@ -50,6 +50,7 @@ from .toy_models import (
     ToySequentialFullyConv2dDil,
     ToyResNet,
     ToyResNet_1D,
+    ToyResNet_inp_conn,
 )
 from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR
@@ -90,4 +91,5 @@ __all__ = [
     "ToySequentialFullyConv2dDil",
     "ToyResNet",
     "ToyResNet_1D",
+    "ToyResNet_inp_conn",
 ]
