@@ -148,7 +148,7 @@ def convert(
     )
     convert_layers(mod, conversion_type, qinfo, sq_dict, exclude_names, exclude_types)
     if conversion_type in ("autoimport", "import"):
-        add_input_quantizer(mod, qinfo)
+        add_input_quantizer(mod, qinfo, sq_dict)
         add_features_calculator(mod, [mps_features_calc])
         associate_input_features(mod)
         register_input_features(mod)
@@ -444,7 +444,13 @@ def export_node(
         layer.export(n, mod)
 
 
-def add_input_quantizer(mod: fx.GraphModule, qinfo: Dict):
+def add_input_quantizer(
+    mod: fx.GraphModule,
+    qinfo: Dict,
+    sq_dict: Dict[
+        fx.Node, Tuple[MPSPerLayerQtz, Union[MPSPerLayerQtz, MPSPerChannelQtz]]
+    ],
+):
     """Add input quantizer at the network input.
 
     :param mod: the parent module, where the new node has to be optionally inserted
@@ -455,6 +461,8 @@ def add_input_quantizer(mod: fx.GraphModule, qinfo: Dict):
     :param qinfo: dict containing desired quantizers for act and their arguments excluding
     the precision precision
     :type qinfo: Dict
+    :param sq_dict: a map (node -> out_mps_quantizer, w_mps_quantizer)
+    :type sq_dict: Dict[fx.Node, Tuple[MPSPerLayerQtz, Union[MPSPerLayerQtz, MPSPerChannelQtz]]
     """
     g = mod.graph
     queue = get_graph_inputs(g)
@@ -474,6 +482,21 @@ def add_input_quantizer(mod: fx.GraphModule, qinfo: Dict):
         a_quantizer_kwargs["cout"] = cout
         q_a = MPSPerLayerQtz(a_mps_precision, a_quantizer, a_quantizer_kwargs)
         inp_qtz = MPSIdentity(q_a)
+
+        # Check if sq_dict already contains a quantizer for the `n` node
+        if n in sq_dict.keys():
+            # Check that if the shared quantizer is of the same type of `q_a` defined above
+            shared_q_a = sq_dict[n][0]
+            msg = (
+                "\nConversion failed. "
+                f"Quantizer for input node {n} must be shared with activations quantizer of nodes {sq_dict.keys()}, "
+                f"but qinfo dictionary imposes two different types of quantizers {q_a}\nand\n{shared_q_a}\n"
+                "for input nodes ('input_default') and the other nodes ('layer_default')."
+            )
+            assert _compare_quantizers(q_a, shared_q_a), msg
+            # Overwrite the quantizer with the shared one
+            inp_qtz = MPSIdentity(shared_q_a)
+
         # Add quantizer to graph
         mod.add_submodule(n.name + "_input_quantizer", inp_qtz)
         with mod.graph.inserting_after(n):
@@ -583,3 +606,21 @@ def mps_features_calc(
         return ModAttrFeaturesCalculator(sub_mod, "out_features_eff", "features_mask")
     else:
         return None
+
+
+def _compare_quantizers(q1: MPSPerLayerQtz, q2: MPSPerLayerQtz) -> bool:
+    """Compare two quantizers. They are considered equal if they have the same type and
+    the same arguments.
+
+    :param q1: first quantizer
+    :type q1: MPSPerLayerQtz
+    :param q2: second quantizer
+    :type q2: MPSPerLayerQtz
+    :return: True if the two quantizers are equal
+    :rtype: bool
+    """
+    return (
+        q1.quantizer == q2.quantizer
+        and (q1.precision == q2.precision).item()
+        and q1.quantizer_kwargs == q2.quantizer_kwargs
+    )

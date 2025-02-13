@@ -411,12 +411,28 @@ class ToyResNet(nn.Module):
         return self.classifier(x3)
 
 
+class ToyResNet_inp_conn(nn.Module):
+    def __init__(self):
+        super(ToyResNet_inp_conn, self).__init__()
+        self.input_shape = (16, 2, 2)
+        self.conv1 = nn.Conv2d(16, 16, (3, 3), padding="same")
+        self.bn1 = nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 16, (3, 3), padding="same")
+        self.bn2 = nn.BatchNorm2d(16)
+        self.classifier = nn.Linear(16 * 2 * 2, 10)
+
+    def forward(self, x):
+        x1 = F.relu(self.bn1(self.conv1(x)))
+        x2 = self.bn2(self.conv2(x1))
+        x3 = F.relu(x + x2)
+        x3 = torch.flatten(x3, 1)
+        return self.classifier(x3)
+
+
 class ToyResNet_1D(nn.Module):
     def __init__(self):
         super(ToyResNet_1D, self).__init__()
         self.input_shape = (16, 2)
-        self.conv0 = nn.Conv1d(16, 16, 3, padding="same")
-        self.bn0 = nn.BatchNorm1d(16)
         self.conv1 = nn.Conv1d(16, 16, 3, padding="same")
         self.bn1 = nn.BatchNorm1d(16)
         self.conv2 = nn.Conv1d(16, 16, 3, padding="same")
@@ -424,7 +440,6 @@ class ToyResNet_1D(nn.Module):
         self.classifier = nn.Linear(16 * 2, 10)
 
     def forward(self, x):
-        x = F.relu(self.bn0(self.conv0(x)))
         x1 = F.relu(self.bn1(self.conv1(x)))
         x2 = self.bn2(self.conv2(x1))
         x3 = F.relu(x + x2)
