@@ -490,13 +490,14 @@ def add_input_quantizer(
         q_a = MPSPerLayerQtz(a_mps_precision, a_quantizer, a_quantizer_kwargs)
         inp_qtz = MPSIdentity(q_a)
 
-        # Check if sq_dict already contains a quantizer for the `n` node
-        if n in sq_dict.keys():
+        # Check if sq_dict contains a quantizer for the `n` node which is shared with other nodes
+        if n in sq_dict.keys() and any([(k != n) and (sq_dict[k][0] is sq_dict[n][0]) for k in sq_dict]):
             # Check that if the shared quantizer is of the same type of `q_a` defined above
             shared_q_a = sq_dict[n][0]
             msg = (
                 "\nConversion failed. "
-                f"Quantizer for input node {n} must be shared with activations quantizer of nodes {sq_dict.keys()}, "
+                f"Quantizer for input node {n} must be shared with activations quantizer of nodes {
+                    [k for k in sq_dict if (sq_dict[k][0] is sq_dict[n][0])]}, "
                 f"but qinfo dictionary imposes two different types of quantizers {q_a}\nand\n{shared_q_a}\n"
                 "for input nodes ('input_default') and the other nodes ('layer_default')."
             )
@@ -626,8 +627,15 @@ def _compare_quantizers(q1: MPSPerLayerQtz, q2: MPSPerLayerQtz) -> bool:
     :return: True if the two quantizers are equal
     :rtype: bool
     """
+    # Extracting directly the parameters of the quantizers (quantizers have the same kwargs for
+    # all the considered precisions). This is needed because the quantizer_kwargs contains only 
+    # explicitly set parameters and not default ones. Thus, even if the parameters of the two
+    # quantizers are the same, the MPSPerLayerQtz objects might have different 'quantizer_kwargs'
+    # values. 
+    q1_formatted_params = {k: v.item() for k, v in getattr(q1.qtz_funcs[0], '_parameters').items()}
+    q2_formatted_params = {k: v.item() for k, v in getattr(q2.qtz_funcs[0], '_parameters').items()}
     return (
         q1.quantizer == q2.quantizer
         and (q1.precision == q2.precision).item()
-        and q1.quantizer_kwargs == q2.quantizer_kwargs
+        and q1_formatted_params == q2_formatted_params
     )
