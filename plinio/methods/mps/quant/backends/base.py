@@ -36,6 +36,7 @@ class Backend(Enum):
     DIANA = auto()
     MAUPITI = auto()
     # Add new backends here
+    ONNX = auto()
 
     @classmethod
     def has_entry(cls, value) -> bool:
@@ -68,11 +69,13 @@ class IntegerizationTracer(fx.Tracer):
 def get_map():
     from .match.base import match_layer_map
     from .maupiti.base import maupiti_layer_map
+    from .onnx.base import onnx_layer_map
 
     # Add new supported backends here:
     maps = {
         "match": match_layer_map,
         "maupiti": maupiti_layer_map,
+        "onnx": onnx_layer_map,
     }
     return maps
 
@@ -124,6 +127,7 @@ def integerize_arch(
     """
     assert (
         (backend == Backend.MAUPITI) or
+        (backend == Backend.ONNX) or
         (not remove_input_quantizer and backend != Backend.MAUPITI)
     ), "Remove input quantizer is only supported for MAUPITI backend"
     if Backend.has_entry(backend):
@@ -152,7 +156,7 @@ def integerize_arch(
         if isinstance(m, target_layers):
             m = cast(qnn.QuantModule, m)
             m.export(n, mod, backend, backend_kwargs)
-    if backend == Backend.MAUPITI:
+    if backend == Backend.MAUPITI or backend == Backend.ONNX:
         # Remove relu
         mod = remove_relu(mod)
         # Remove input quantizer
