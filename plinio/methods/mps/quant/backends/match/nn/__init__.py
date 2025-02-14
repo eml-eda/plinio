@@ -21,8 +21,12 @@ from .module import MATCHModule
 from .conv2d import MATCHConv2d
 from .conv1d import MATCHConv1d
 from .linear import MATCHLinear
+from .add import MATCHAdd
 
 __all__ = [
-    'MATCHModule', 'MATCHConv2d',
-    'MATCHConv1d', 'MATCHLinear',
+    "MATCHModule",
+    "MATCHConv2d",
+    "MATCHConv1d",
+    "MATCHLinear",
+    "MATCHAdd",
 ]
