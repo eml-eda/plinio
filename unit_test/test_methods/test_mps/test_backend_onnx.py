@@ -40,14 +40,20 @@ import numpy as np
 class TestBackendONNX(unittest.TestCase):
     """Test conversion operations from nn.Module to nn.ONNX passing through
     nn.MPS and nn.Quant.
+    Exports multiple models to ONNX, runs them with onnxruntime and compares
+    the results with the original PyTorch model.
     """
 
     def test_autoimport_fullyconv_layer(self):
+        import onnxruntime as ort
         for i, model in enumerate([
-                       ToySequentialConv2d_v2, ToySequentialConv2d,ToySequentialFullyConv2d,
+                       TutorialModel,
+                       ToySequentialConv2d_v2,
+                       ToySequentialConv2d,
+                       ToySequentialFullyConv2d,
                        ToySequentialFullyConv2dDil,
                       ]):
-            for signed in [False]:
+            for signed in [True, False]:
                 print()
                 print(f"Test {i} - {model.__name__} - signed: {signed}", end ="\n")
                 # Instantiate toy model
@@ -83,11 +89,6 @@ class TestBackendONNX(unittest.TestCase):
                     backend_kwargs={"signed": signed},
                     remove_input_quantizer=True,
                 )
-                integer_nn2= integerize_arch(
-                    quantized_nn,
-                    Backend.MAUPITI,
-                )
-
                 inp_quant = PACTAct(bits, init_clip_val=1, dequantize=False)
 
                 # Dummy inference
@@ -108,7 +109,6 @@ class TestBackendONNX(unittest.TestCase):
                 exporter.export(
                     integer_nn, dummy_inp.shape, Path("."), input_bits=bits, input_signed=signed
                 )
-                import onnxruntime as ort
 
                 session = ort.InferenceSession(f"./{integer_nn.__class__.__name__}.onnx")
                 input_name = session.get_inputs()[0].name
@@ -123,4 +123,4 @@ class TestBackendONNX(unittest.TestCase):
                     ),
                     "Mismatch between integer and ONNX outputs",
                 )
-                # Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
+                Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
