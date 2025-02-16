@@ -20,8 +20,9 @@
 from .module import ONNXModule
 from .conv2d import ONNXConv2d
 from .linear import ONNXLinear
+from .add import ONNXAdd
 
 __all__ = [
     'ONNXModule', 'ONNXConv2d',
-    'ONNXLinear',
+    'ONNXLinear', 'ONNXAdd'
 ]
