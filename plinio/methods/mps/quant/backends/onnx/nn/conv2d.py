@@ -80,8 +80,12 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
 
         # No more properties to avoid a conditioonal in the forward
         if type(self.out_quantizer) == DummyQuantizer:
-            self.clip_inf = torch.tensor(-(2 ** (32 - 1)), device=self.device)
-            self.clip_sup = torch.tensor(2 ** (32 - 1) - 1, device=self.device)
+            if self.signed:
+                self.clip_sup = torch.tensor(2**(self.in_quantizer.precision - 1) - 1, device=self.device)
+                self.clip_inf = torch.tensor(-2 **(self.in_quantizer.precision - 1), device=self.device)
+            else:
+                self.clip_sup = torch.tensor(2**self.out_quantizer.precision - 1, device=self.device)
+                self.clip_inf = torch.tensor(0, device=self.device)
         elif self.signed:
             self.clip_inf = torch.tensor(
                 -(2 ** (self.out_quantizer.precision - 1)), device=self.device

@@ -113,8 +113,13 @@ class ONNXLinear(nn.Linear, ONNXModule):
         self.scale = self.scale.view(1, self.out_features)
         # Define ReLU superior extreme
         if self.last_layer:
-            self.clip_sup = torch.tensor(2**(32 - 1) - 1, device=self.device)
-            self.clip_inf = torch.tensor(-(2 ** (32 - 1)), device=self.device)
+            # TODO: Why in_quantizer?
+            if self.signed:
+                self.clip_sup = torch.tensor(2**(self.in_quantizer.precision - 1) - 1, device=self.device)
+                self.clip_inf = torch.tensor(-2 **(self.in_quantizer.precision - 1), device=self.device)
+            else:
+                self.clip_sup = torch.tensor(2**self.out_quantizer.precision - 1, device=self.device)
+                self.clip_inf = torch.tensor(0, device=self.device)
 
         elif self.signed:
             self.clip_sup = torch.tensor(
@@ -141,10 +146,9 @@ class ONNXLinear(nn.Linear, ONNXModule):
                     1, self.out_features
                 )
             else:
-                self._zero_point = self.bias -(
+                self._zero_point = self.add_bias -(
                     self.clip_inf * torch.sum(self.weight, dim=1).view(1, self.out_features)
                 )
-            self.add_bias += self._zero_point
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of integer linear layer.
