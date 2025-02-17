@@ -496,8 +496,8 @@ def add_input_quantizer(
             shared_q_a = sq_dict[n][0]
             msg = (
                 "\nConversion failed. "
-                f"Quantizer for input node {n} must be shared with activations quantizer of nodes {
-                    [k for k in sq_dict if (sq_dict[k][0] is sq_dict[n][0])]}, "
+                "Quantizer for input node {n} must be shared with activations quantizer of nodes"
+                f"{[k for k in sq_dict if (sq_dict[k][0] is sq_dict[n][0])]}, "
                 f"but qinfo dictionary imposes two different types of quantizers {q_a}\nand\n{shared_q_a}\n"
                 "for input nodes ('input_default') and the other nodes ('layer_default')."
             )
