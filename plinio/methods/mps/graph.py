@@ -251,6 +251,21 @@ def build_shared_mps_qtz_map(
             for i in pred:
                 sharing_graph.remove_edge(i, n)
 
+    # handle the case of a forward function with multiple outputs (returned as a tuple or list) with
+    # possibly independent shapes. In this case, the graph will contain a final output node that is
+    # difficult to treat and we remove in this step, treating each single output independently.
+    nodes_to_remove = []
+    for n in sharing_graph.nodes:
+        if n in get_graph_outputs(mod.graph) and len(n.meta["tensor_meta"]) > 1:
+            # tag each predecessor as output-connected
+            pred = list(sharing_graph.predecessors(n))
+            for i in pred:
+                i.meta["output_connected"] = True
+            # add the node to the removal list
+            nodes_to_remove.append(n)
+    for n in nodes_to_remove:
+        sharing_graph.remove_node(n)
+
     # each weakly connected component of the sharing graph must share the same quantizers
     sq_dict = {}
     for c in nx.weakly_connected_components(sharing_graph):
@@ -264,6 +279,9 @@ def build_shared_mps_qtz_map(
             if (n.meta["features_defining"] or n.meta["untouchable"]) and (
                 sq_a is None or sq_w is None
             ):
+                output_connected = any(
+                    n in get_graph_outputs(mod.graph) for n in c
+                ) or any(n.meta.get("output_connected", False) for n in c)
                 if n.name in curr_qinfo.keys():
                     key = n.name
                 else:
@@ -277,7 +295,15 @@ def build_shared_mps_qtz_map(
                 # Build activation shared quantizer
                 cout = n.meta["tensor_meta"].shape[1]
                 a_quantizer_kwargs["cout"] = cout
-                sq_a = MPSPerLayerQtz(a_mps_precision, a_quantizer, a_quantizer_kwargs)
+
+                if not output_connected or quantize_output:
+                    sq_a = MPSPerLayerQtz(
+                        a_mps_precision, a_quantizer, a_quantizer_kwargs
+                    )
+                else:
+                    # If `c` contains an output node the output is not quantized
+                    # precision ignored
+                    sq_a = MPSPerLayerQtz((-1,), DummyQuantizer)
                 # Build weight shared quantizer
                 w_quantizer_kwargs["cout"] = cout
                 if w_search_type == MPSType.PER_LAYER:
@@ -285,37 +311,12 @@ def build_shared_mps_qtz_map(
                         w_mps_precision, w_quantizer, w_quantizer_kwargs
                     )
                 elif w_search_type == MPSType.PER_CHANNEL:
+                    if output_connected:
+                        # remove the precision '0' from `weight_precisions`
+                        w_mps_precision = tuple(p for p in w_mps_precision if p != 0)
                     sq_w = MPSPerChannelQtz(
                         w_mps_precision, w_quantizer, w_quantizer_kwargs
                     )
-            if n in get_graph_outputs(mod.graph):
-                # distinguish the case in which the number of features must "frozen"
-                # i.e., the case of input-connected or output-connected components,
-                # this may overwrite previously set "sq_w" and "sq_a"
-                # In this case we simply remove the precision '0' from `weight_precisions`
-                # if present and if mixprec search is PER_CHANNEL
-                if n.name in curr_qinfo.keys():
-                    key = n.name
-                else:
-                    key = "layer_default"
-                w_quantizer = curr_qinfo[key]["weight"]["quantizer"]
-                w_quantizer_kwargs = curr_qinfo[key]["weight"]["kwargs"]
-                w_mps_precision = curr_qinfo[key]["weight"]["search_precision"]
-                cout = n.meta["tensor_meta"].shape[1]
-                w_quantizer_kwargs["cout"] = cout
-                if w_search_type == MPSType.PER_CHANNEL:
-                    new_w_mps_precision = tuple(p for p in w_mps_precision if p != 0)
-                    sq_w = MPSPerChannelQtz(
-                        new_w_mps_precision, w_quantizer, w_quantizer_kwargs
-                    )
-                elif w_search_type == MPSType.PER_LAYER:
-                    sq_w = MPSPerLayerQtz(
-                        w_mps_precision, w_quantizer, w_quantizer_kwargs
-                    )
-                # If `c` contains an output node the output is not quantized
-                # precision ignored
-                if not quantize_output:
-                    sq_a = MPSPerLayerQtz((-1,), DummyQuantizer)
         for n in c:
             # if the flag 'disable_shared_quantizers' is set to True, then we can keep one quantizer
             # per connected component, which is the one defined in the previous for loop. Otherwise,
@@ -478,6 +479,9 @@ def add_input_quantizer(
         # Create quantizer
         if n.name in qinfo.keys():
             key = n.name
+            if qinfo[key] is None:
+                # Do not quantize the `key` input
+                continue
         elif "input_default" not in qinfo.keys():
             return  # no quantizer for input
         else:
@@ -491,13 +495,15 @@ def add_input_quantizer(
         inp_qtz = MPSIdentity(q_a)
 
         # Check if sq_dict contains a quantizer for the `n` node which is shared with other nodes
-        if n in sq_dict.keys() and any([(k != n) and (sq_dict[k][0] is sq_dict[n][0]) for k in sq_dict]):
+        if n in sq_dict.keys() and any(
+            [(k != n) and (sq_dict[k][0] is sq_dict[n][0]) for k in sq_dict]
+        ):
             # Check that if the shared quantizer is of the same type of `q_a` defined above
             shared_q_a = sq_dict[n][0]
             msg = (
                 "\nConversion failed. "
-                f"Quantizer for input node {n} must be shared with activations quantizer of nodes {
-                    [k for k in sq_dict if (sq_dict[k][0] is sq_dict[n][0])]}, "
+                f"Quantizer for input node {n} must be shared with activations quantizer of "
+                f"nodes {[k for k in sq_dict if (sq_dict[k][0] is sq_dict[n][0])]}, "
                 f"but qinfo dictionary imposes two different types of quantizers {q_a}\nand\n{shared_q_a}\n"
                 "for input nodes ('input_default') and the other nodes ('layer_default')."
             )
@@ -628,12 +634,16 @@ def _compare_quantizers(q1: MPSPerLayerQtz, q2: MPSPerLayerQtz) -> bool:
     :rtype: bool
     """
     # Extracting directly the parameters of the quantizers (quantizers have the same kwargs for
-    # all the considered precisions). This is needed because the quantizer_kwargs contains only 
+    # all the considered precisions). This is needed because the quantizer_kwargs contains only
     # explicitly set parameters and not default ones. Thus, even if the parameters of the two
     # quantizers are the same, the MPSPerLayerQtz objects might have different 'quantizer_kwargs'
-    # values. 
-    q1_formatted_params = {k: v.item() for k, v in getattr(q1.qtz_funcs[0], '_parameters').items()}
-    q2_formatted_params = {k: v.item() for k, v in getattr(q2.qtz_funcs[0], '_parameters').items()}
+    # values.
+    q1_formatted_params = {
+        k: v.item() for k, v in getattr(q1.qtz_funcs[0], "_parameters").items()
+    }
+    q2_formatted_params = {
+        k: v.item() for k, v in getattr(q2.qtz_funcs[0], "_parameters").items()
+    }
     return (
         q1.quantizer == q2.quantizer
         and (q1.precision == q2.precision).item()
