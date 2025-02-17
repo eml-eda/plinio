@@ -51,6 +51,9 @@ class ONNXExporter:
         opset_version: int = 10,
         input_bits: int = 8,
         input_signed: bool = False,
+        output_bits: int = 32,
+        output_signed: bool = True,
+        integerize_onnx: bool = False,
     ):
         onnxname = name if name is not None else network.__class__.__name__
         self._onnxname = onnxname
@@ -66,15 +69,23 @@ class ONNXExporter:
         # Export network to onnx file
         torch.onnx.export(
             network,
-            torch.randn(input_shape, device=next(iter(network.parameters())).device),
+            (torch.randn(input_shape, device=next(iter(network.parameters())).device),),
             str(onnxfilepath),
             export_params=True,
             do_constant_folding=True,
             opset_version=opset_version,
-            verbose = False,
+            verbose=False,
         )
         # Annotate the onnx file with backend-specific information
-        self._annotator.annotate(network, onnxfilepath, input_bits, input_signed)
+        self._annotator.annotate(
+            network,
+            onnxfilepath,
+            input_bits,
+            input_signed,
+            output_bits,
+            output_signed,
+            integerize_onnx,
+        )
 
     @staticmethod
     def dump_features(

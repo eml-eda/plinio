@@ -47,11 +47,11 @@ class TestBackendONNX(unittest.TestCase):
     def test_autoimport_fullyconv_layer(self):
         import onnxruntime as ort
         for i, model in enumerate([
-                       TutorialModel,
                        ToySequentialConv2d_v2,
                        ToySequentialConv2d,
                        ToySequentialFullyConv2d,
                        ToySequentialFullyConv2dDil,
+                       TutorialModel,
                       ]):
             for signed in [True, False]:
                 print()
@@ -110,7 +110,7 @@ class TestBackendONNX(unittest.TestCase):
                     integer_nn, dummy_inp.shape, Path("."), input_bits=bits, input_signed=signed
                 )
 
-                session = ort.InferenceSession(f"./{integer_nn.__class__.__name__}.onnx")
+                session = ort.InferenceSession(f"./{integer_nn.__class__.__name__}.onnx", providers=["CPUExecutionProvider"])
                 input_name = session.get_inputs()[0].name
                 input_data = dummy_inp.numpy()
                 output_ort = session.run(None, {input_name: input_data})
