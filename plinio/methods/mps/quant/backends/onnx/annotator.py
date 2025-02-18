@@ -283,6 +283,7 @@ class ONNXAnnotator:
                     new_op_type,
                     inputs=node.input,
                     outputs=node.output,
+                    name = node.name.replace("Conv", "ConvInteger").replace("MatMul", "MatMulInteger"),
                 )
                 new_node.attribute.extend(node.attribute)
                 onnxproto.graph.node.remove(node)
@@ -349,13 +350,13 @@ class ONNXAnnotator:
                     name=node.name + "_min",
                     data_type=dtype,
                     dims=[],
-                    vals=[int(node.attribute[0].f)],
+                    vals=[int(node.attribute[1].f)],
                 )
                 max_tens = onnx.helper.make_tensor(
                     name=node.name + "_max",
                     data_type=dtype,
                     dims=[],
-                    vals=[int(node.attribute[1].f)],
+                    vals=[int(node.attribute[0].f)],
                 )
                 new_node = onnx_helper.make_node(
                     "Clip",
@@ -364,7 +365,7 @@ class ONNXAnnotator:
                     outputs=node.output,
                     name=node.name,
                 )
-                new_cast_output = node.output[0] + "_cast"
+                new_cast_output = node.output[0].replace("Clip", "Cast").replace("clip", "cast")
                 prec_out = metadata[node.output[0]]["precision"]
                 signed_out = metadata[node.output[0]]["signed"]
                 new_cast_node = onnx_helper.make_node(
@@ -372,7 +373,7 @@ class ONNXAnnotator:
                     inputs=[node.output[0]],
                     outputs=[new_cast_output],
                     to=self._bound_to_onnx(prec_out, signed_out),
-                    name=node.name + "_cast",
+                    name=node.name.replace("Clip", "Cast").replace("clip", "cast"),
                 )
                 cast_to_add_map[node.output[0]] = new_cast_output
                 cast_to_add.append(new_cast_node)
@@ -393,6 +394,7 @@ class ONNXAnnotator:
         for node in nodes_to_prune:
             onnxproto.graph.node.remove(node)
         onnxproto.graph.node.extend(cast_to_add)
+        onnxproto = self._topological_sort(onnxproto)
         # Clear the value_info
         onnxproto.graph.ClearField("value_info")
         # Re-infer shapes and dtypes
@@ -421,4 +423,46 @@ class ONNXAnnotator:
         else:
             dtype = onnx.TensorProto.UINT32
         return dtype
+
+    def _topological_sort(self, onnxproto : onnx.ModelProto):
+        """
+        Perform a topological sort of the ONNX graph
+        """
+        from collections import defaultdict, deque
+        graph = onnxproto.graph
+        adj_list = defaultdict(list)
+        in_degree = defaultdict(int)
+        node_map = {node.name: node for node in graph.node}
+
+
+        # Adjacency list
+        for node in graph.node:
+            for output in node.output:
+                for next_node in graph.node:
+                    if output in next_node.input:
+                        adj_list[node.name].append(next_node.name)
+                        in_degree[next_node.name] += 1
+
+        queue = deque([node.name for node in graph.node if in_degree[node.name] == 0])
+        print(queue)
+        print(adj_list)
+        print(in_degree)
+
+        sorted_nodes = []
+        while queue:
+            node_name = queue.popleft()
+            sorted_nodes.append(node_map[node_name])
+
+            for neighbour in adj_list[node_name]:
+                in_degree[neighbour] -= 1
+                if in_degree[neighbour] == 0:
+                    queue.append(neighbour)
+
+        if len(sorted_nodes) != len(graph.node):
+            print(len(sorted_nodes), len(graph.node))
+            raise ValueError("Graph contains a cycle, something broke")
+
+        graph.ClearField("node")
+        graph.node.extend(sorted_nodes)
+        return onnxproto
 
