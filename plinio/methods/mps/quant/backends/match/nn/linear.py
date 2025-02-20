@@ -41,22 +41,25 @@ class MATCHLinear(nn.Linear, MATCHModule):
     :param b_quantizer: bias quantizer
     :type b_quantizer: Type[Quantizer]
     """
-    def __init__(self,
-                 linear: nn.Linear,
-                 in_quantizer: Quantizer,
-                 out_quantizer: Quantizer,
-                 w_quantizer: Quantizer,
-                 b_quantizer: Optional[Quantizer],
-                 scale_bit: int = 24,
-                 shift_pos: int = 24
-                 ):
+
+    def __init__(
+        self,
+        linear: nn.Linear,
+        in_quantizer: Quantizer,
+        out_quantizer: Quantizer,
+        w_quantizer: Quantizer,
+        b_quantizer: Optional[Quantizer],
+        scale_bit: int = 24,
+        shift_pos: int = 24,
+        dequantize_output: bool = False,
+    ):
         super(MATCHLinear, self).__init__(
-            linear.in_features,
-            linear.out_features,
-            linear.bias is not None)
+            linear.in_features, linear.out_features, linear.bias is not None
+        )
 
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
+        self.dequantize_output = dequantize_output
 
         # Store precisions and quantizers
         self.in_quantizer = in_quantizer
@@ -84,7 +87,7 @@ class MATCHLinear(nn.Linear, MATCHModule):
             self.s_y = self.out_quantizer.scale
             self.last_layer = False
         else:
-            self.s_y = torch.tensor(1., device=self.device)
+            self.s_y = torch.tensor(1.0, device=self.device)
             self.last_layer = True
 
         # Copy and integerize pretrained biases
@@ -94,8 +97,9 @@ class MATCHLinear(nn.Linear, MATCHModule):
                 int_bias = self.b_quantizer(linear.bias, self.s_x, self.s_w)
                 int_bias = cast(torch.Tensor, int_bias)
 
-        self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y,
-                                                             int_bias)
+        self.scale, self.shift = self._integer_approximation(
+            self.s_w, self.s_x, self.s_y, int_bias
+        )
         with torch.no_grad():
             if linear.bias is not None:
                 if not self.last_layer:
@@ -129,9 +133,11 @@ class MATCHLinear(nn.Linear, MATCHModule):
         if self.last_layer:
             # Add bias
             out = out + self.add_bias
+            if self.dequantize_output:
+                out = out * self.s_w.view(1, -1) * self.s_x
         else:
             # Multiply scale factor, sum bias, shift
-            out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+            out = (out * self.scale + self.add_bias) / (2**self.shift)
             # Compute floor
             out = torch.floor(out)
             # Compute relu
@@ -146,10 +152,10 @@ class MATCHLinear(nn.Linear, MATCHModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'out_quantizer': self.out_quantizer.summary(),
-            'w_quantizer': self.w_quantizer.summary(),
-            'scale_factor': self.scale_fact,
-            'shift': self.shift,
+            "out_quantizer": self.out_quantizer.summary(),
+            "w_quantizer": self.w_quantizer.summary(),
+            "scale_factor": self.scale_fact,
+            "shift": self.shift,
         }
 
     @property
@@ -159,22 +165,23 @@ class MATCHLinear(nn.Linear, MATCHModule):
     @property
     def clip_inf(self):
         # Define ReLU inferior extreme
-        return torch.tensor(0., device=self.device)
+        return torch.tensor(0.0, device=self.device)
 
     @property
     def clip_sup(self):
         # Define ReLU superior extreme
         if self.last_layer:
-            return torch.tensor(2 ** 32 - 1, device=self.device)
+            return torch.tensor(2**32 - 1, device=self.device)
         else:
-            return torch.tensor(2 ** self.out_quantizer.precision - 1, device=self.device)
+            return torch.tensor(2**self.out_quantizer.precision - 1, device=self.device)
 
-    def _integer_approximation(self,
-                               s_w: torch.Tensor,
-                               s_x: torch.Tensor,
-                               s_y: torch.Tensor,
-                               int_bias: torch.Tensor
-                               ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _integer_approximation(
+        self,
+        s_w: torch.Tensor,
+        s_x: torch.Tensor,
+        s_y: torch.Tensor,
+        int_bias: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute an approximation of `s_w * s_x / s_y` as `scale` / 2**`shift`
         where scale is a vector of len(s_w) integer on 32bits and shift is
         a scalar between [0, 31].
@@ -217,20 +224,19 @@ class MATCHLinear(nn.Linear, MATCHModule):
         for sh in range(self.shift_pos):
             diff = []
             for idx in range(len(target)):
-                diff.append(
-                    abs(params[sh][idx] / 2**sh - target[idx].item())
-                )
+                diff.append(abs(params[sh][idx] / 2**sh - target[idx].item()))
             avg_diff[sh] = sum(diff) / len(diff)
         # Find the `shift` amount minimizing the avg difference between integer
         # approximation and targets
-        min_diff = float('inf')
+        min_diff = float("inf")
         min_scale, min_shift = None, None
         for key, val in avg_diff.items():
             scale = params[key]
             shift = key
             scaled_bias = int_bias * torch.tensor(scale)
-            overflow = any(torch.logical_or(scaled_bias > 2**31-1,
-                                            scaled_bias < -2**31))
+            overflow = any(
+                torch.logical_or(scaled_bias > 2**31 - 1, scaled_bias < -(2**31))
+            )
             if val < min_diff and (not overflow):
                 min_diff = val
                 min_scale = scale
@@ -238,5 +244,10 @@ class MATCHLinear(nn.Linear, MATCHModule):
 
         # Build tensors with selected quantities, move to `device` and return
         scale_t = torch.tensor(min_scale, device=device)
-        shift_t = torch.tensor([min_shift, ], device=device)
+        shift_t = torch.tensor(
+            [
+                min_shift,
+            ],
+            device=device,
+        )
         return scale_t, shift_t

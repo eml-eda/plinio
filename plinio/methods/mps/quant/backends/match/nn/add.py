@@ -42,10 +42,12 @@ class MATCHAdd(nn.Module, MATCHModule):
         quantizer: Quantizer,
         scale_bit: int = 24,
         shift_pos: int = 24,
+        dequantize_output: bool = False,
     ):
         super(MATCHAdd, self).__init__()
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
+        self.dequantize_output = dequantize_output
 
         self.quantizer = quantizer
         self.s_x = quantizer.scale
