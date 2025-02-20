@@ -17,6 +17,7 @@
 # * Author: Matteo Risso <matteo.risso@polito.it>                              *
 # *----------------------------------------------------------------------------*
 
+import copy
 from pathlib import Path
 import unittest
 
@@ -34,6 +35,7 @@ from unit_test.models import (
     ToyResNet_inp_conn,
     ToyResNet_inp_conn_add_out,
 )
+from .utils import capture_outputs, compare_outputs
 
 
 class TestBackendMATCH(unittest.TestCase):
@@ -454,21 +456,25 @@ class TestBackendMATCH(unittest.TestCase):
         )
 
         # Convert to integer MATCH-compliant model
-        integer_nn = integerize_arch(quantized_nn, Backend.MATCH)
+        integer_nn = integerize_arch(copy.deepcopy(quantized_nn), Backend.MATCH)
         # Dummy inference
         with torch.no_grad():
             out_int = integer_nn(dummy_inp)
         # self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
         #                 "Mismatch between fake-quantized and integer outputs")
-        # self.assertTrue(
-        #     out_quant.argmax() == out_int.argmax(),
-        #     "Mismatch between fake-quantized and integer outputs",
-        # )
+        self.assertTrue(
+            out_quant.argmax() == out_int.argmax(),
+            "Mismatch between fake-quantized and integer outputs",
+        )
+        # with torch.no_grad():
+        #     all_out_mps = capture_outputs(mixprec_nn.seed, dummy_inp, dequantize=False)
+        #     all_out_int = capture_outputs(integer_nn, dummy_inp)
+        #     compare_outputs(all_out_mps, all_out_int)
 
         # Convert to onnx
         exporter = MATCHExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path("."))
-        # Path(f"./{integer_nn.__class__.__name__}.onnx").unlink()
+        Path(f"./{integer_nn.__class__.__name__}.onnx").unlink()
 
     def test_autoimport_resnet_output_add(self):
         """Test the conversion of a more complex model with resnet-like arch
@@ -512,12 +518,12 @@ class TestBackendMATCH(unittest.TestCase):
             out_int = integer_nn(dummy_inp)
         # self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
         #                 "Mismatch between fake-quantized and integer outputs")
-        # self.assertTrue(
-        #     out_quant.argmax() == out_int.argmax(),
-        #     "Mismatch between fake-quantized and integer outputs",
-        # )
+        self.assertTrue(
+            out_quant.argmax() == out_int.argmax(),
+            "Mismatch between fake-quantized and integer outputs",
+        )
 
         # Convert to onnx
         exporter = MATCHExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path("."))
-        # Path(f"./{integer_nn.__class__.__name__}.onnx").unlink()
+        Path(f"./{integer_nn.__class__.__name__}.onnx").unlink()
