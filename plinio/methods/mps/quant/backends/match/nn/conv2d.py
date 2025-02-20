@@ -41,15 +41,18 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
     :param b_quantizer: bias quantizer
     :type b_quantizer: Type[Quantizer]
     """
-    def __init__(self,
-                 conv: nn.Conv2d,
-                 in_quantizer: Quantizer,
-                 out_quantizer: Quantizer,
-                 w_quantizer: Quantizer,
-                 b_quantizer: Optional[Quantizer],
-                 scale_bit: int = 24,
-                 shift_pos: int = 24
-                 ):
+
+    def __init__(
+        self,
+        conv: nn.Conv2d,
+        in_quantizer: Quantizer,
+        out_quantizer: Quantizer,
+        w_quantizer: Quantizer,
+        b_quantizer: Optional[Quantizer],
+        scale_bit: int = 24,
+        shift_pos: int = 24,
+        dequantize_output: bool = False,
+    ):
         super(MATCHConv2d, self).__init__(
             conv.in_channels,
             conv.out_channels,
@@ -59,10 +62,12 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
             conv.dilation,
             conv.groups,
             conv.bias is not None,
-            conv.padding_mode)
+            conv.padding_mode,
+        )
 
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
+        self.dequantize_output = dequantize_output
 
         # Store precisions and quantizers
         self.in_quantizer = in_quantizer
@@ -90,7 +95,7 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
             self.s_y = self.out_quantizer.scale
             self.skip_requant = False
         else:
-            self.s_y = torch.tensor(1., device=self.device)
+            self.s_y = torch.tensor(1.0, device=self.device)
             self.skip_requant = True
 
         # Copy and integerize pretrained biases
@@ -100,8 +105,9 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
                 int_bias = self.b_quantizer(conv.bias, self.s_x, self.s_w)
                 int_bias = cast(torch.Tensor, int_bias)
 
-        self.scale, self.shift = self._integer_approximation(self.s_w, self.s_x, self.s_y,
-                                                             int_bias)
+        self.scale, self.shift = self._integer_approximation(
+            self.s_w, self.s_x, self.s_y, int_bias
+        )
         with torch.no_grad():
             if conv.bias is not None:
                 if not self.skip_requant:
@@ -121,11 +127,15 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
         if maybe_pad_dil:
             pad_dim = 0 if self.dilation[0] != 1 else 1
             with torch.no_grad():
-                padded_weights = self._pad_dilation_in_weight(self.dilation[0], self.kernel_size[0], pad_dim)
+                padded_weights = self._pad_dilation_in_weight(
+                    self.dilation[0], self.kernel_size[0], pad_dim
+                )
                 self.weight.data = padded_weights
             self.dilation = (1, 1)
-            self.kernel_size = (self.kernel_size[0] * self.dilation[0] - (self.dilation[0] - 1),
-                                self.kernel_size[1] * self.dilation[1] - (self.dilation[1] - 1))
+            self.kernel_size = (
+                self.kernel_size[0] * self.dilation[0] - (self.dilation[0] - 1),
+                self.kernel_size[1] * self.dilation[1] - (self.dilation[1] - 1),
+            )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         """The forward function of integer conv2d layer.
@@ -147,18 +157,34 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
 
         if not self.skip_requant:  # This should happen on the last layer
             # Convolution
-            out = F.conv2d(input, self.weight, None, self.stride,
-                           self.padding, self.dilation, self.groups)
+            out = F.conv2d(
+                input,
+                self.weight,
+                None,
+                self.stride,
+                self.padding,
+                self.dilation,
+                self.groups,
+            )
             # Multiply scale factor, sum bias, shift
-            out = (out * self.scale + self.add_bias) / (2 ** self.shift)
+            out = (out * self.scale + self.add_bias) / (2**self.shift)
             # Compute floor
             out = torch.floor(out)
             # Compute relu
             out = torch.clip(out, self.clip_inf, self.clip_sup)
         else:
             # Convolution
-            out = F.conv2d(input, self.weight, self.bias, self.stride,
-                           self.padding, self.dilation, self.groups)
+            out = F.conv2d(
+                input,
+                self.weight,
+                self.bias,
+                self.stride,
+                self.padding,
+                self.dilation,
+                self.groups,
+            )
+            if self.dequantize_output:
+                out = out * self.s_w.view(1, -1, 1, 1) * self.s_x
 
         return out
 
@@ -169,10 +195,10 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
         :rtype: Dict[str, Any]
         """
         return {
-            'out_quantizer': self.out_quantizer.summary(),
-            'w_quantizer': self.w_quantizer.summary(),
-            'scale_factor': self.scale_fact,
-            'shift': self.shift,
+            "out_quantizer": self.out_quantizer.summary(),
+            "w_quantizer": self.w_quantizer.summary(),
+            "scale_factor": self.scale_fact,
+            "shift": self.shift,
         }
 
     @property
@@ -182,19 +208,22 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
     @property
     def clip_inf(self):
         # Define ReLU inferior extreme
-        return torch.tensor(0., device=self.device)
+        return torch.tensor(0.0, device=self.device)
 
     @property
     def clip_sup(self):
         # Define ReLU superior extreme
-        return torch.tensor(2 ** cast(int, self.out_quantizer.precision) - 1, device=self.device)
+        return torch.tensor(
+            2 ** cast(int, self.out_quantizer.precision) - 1, device=self.device
+        )
 
-    def _integer_approximation(self,
-                               s_w: torch.Tensor,
-                               s_x: torch.Tensor,
-                               s_y: torch.Tensor,
-                               int_bias: torch.Tensor
-                               ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _integer_approximation(
+        self,
+        s_w: torch.Tensor,
+        s_x: torch.Tensor,
+        s_y: torch.Tensor,
+        int_bias: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute an approximation of `s_w * s_x / s_y` as `scale` / 2**`shift`
         where scale is a vector of len(s_w) integer on 32bits and shift is
         a scalar between [0, 31].
@@ -237,20 +266,19 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
         for sh in range(self.shift_pos):
             diff = []
             for idx in range(len(target)):
-                diff.append(
-                    abs(params[sh][idx] / 2**sh - target[idx].item())
-                )
+                diff.append(abs(params[sh][idx] / 2**sh - target[idx].item()))
             avg_diff[sh] = sum(diff) / len(diff)
         # Find the `shift` amount minimizing the avg difference between integer
         # approximation and targets
-        min_diff = float('inf')
+        min_diff = float("inf")
         min_scale, min_shift = None, None
         for key, val in avg_diff.items():
             scale = params[key]
             shift = key
             scaled_bias = int_bias * torch.tensor(scale)
-            overflow = any(torch.logical_or(scaled_bias > 2**31-1,
-                                            scaled_bias < -2**31))
+            overflow = any(
+                torch.logical_or(scaled_bias > 2**31 - 1, scaled_bias < -(2**31))
+            )
             if val < min_diff and (not overflow):
                 min_diff = val
                 min_scale = scale
@@ -258,7 +286,12 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
 
         # Build tensors with selected quantities, move to `device` and return
         scale_t = torch.tensor(min_scale, device=device)
-        shift_t = torch.tensor([min_shift, ], device=device)
+        shift_t = torch.tensor(
+            [
+                min_shift,
+            ],
+            device=device,
+        )
         return scale_t, shift_t
 
     def _check_dil_kernel_combination(self) -> bool:
@@ -272,16 +305,24 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
         :rtype: bool
         """
         if self.dilation[0] != 1 and self.dilation[1] != 1:
-            raise ValueError("Currently only dilation factors different from 1 in only one dimension are supported")
-        if (self.dilation[0] != 1 and self.kernel_size[1] != 1) or (self.dilation[1] != 1 and self.kernel_size[0] != 1):
-            msg = ("Currently if dilation factor is different from 1 in one dimension "
-                   "the kernel size must be 1 in the other dimension")
+            raise ValueError(
+                "Currently only dilation factors different from 1 in only one dimension are supported"
+            )
+        if (self.dilation[0] != 1 and self.kernel_size[1] != 1) or (
+            self.dilation[1] != 1 and self.kernel_size[0] != 1
+        ):
+            msg = (
+                "Currently if dilation factor is different from 1 in one dimension "
+                "the kernel size must be 1 in the other dimension"
+            )
             raise ValueError(msg)
         if self.dilation[0] == 1 and self.dilation[1] == 1:
             return False
         return True
 
-    def _pad_dilation_in_weight(self, dilation: int, kernel_size: int, pad_dim: int) -> torch.Tensor:
+    def _pad_dilation_in_weight(
+        self, dilation: int, kernel_size: int, pad_dim: int
+    ) -> torch.Tensor:
         """Pad the weight tensor to take into account the dilation factor.
         Each kernel is replaced with a zeroes array of size
         `kernel_size * dilation - (dilation - 1)` and the original kernels' weights
@@ -293,20 +334,30 @@ class MATCHConv2d(nn.Conv2d, MATCHModule):
         :type kernel_size: int
         """
         if pad_dim == 0:
-            padded_weights = torch.zeros(self.out_channels, self.in_channels,
-                                         kernel_size * dilation - (dilation - 1),
-                                         1,
-                                         device=self.device)
+            padded_weights = torch.zeros(
+                self.out_channels,
+                self.in_channels,
+                kernel_size * dilation - (dilation - 1),
+                1,
+                device=self.device,
+            )
         else:
-            padded_weights = torch.zeros(self.out_channels, self.in_channels,
-                                         1,
-                                         kernel_size * dilation - (dilation - 1),
-                                         device=self.device)
+            padded_weights = torch.zeros(
+                self.out_channels,
+                self.in_channels,
+                1,
+                kernel_size * dilation - (dilation - 1),
+                device=self.device,
+            )
         for c_out in range(self.out_channels):
             for c_in in range(self.in_channels):
                 for i in range(kernel_size):
                     if pad_dim == 0:
-                        padded_weights[c_out, c_in, i * dilation] = self.weight[c_out, c_in, i]
+                        padded_weights[c_out, c_in, i * dilation] = self.weight[
+                            c_out, c_in, i
+                        ]
                     else:
-                        padded_weights[c_out, c_in, 0, i * dilation] = self.weight[c_out, c_in, i]
+                        padded_weights[c_out, c_in, 0, i * dilation] = self.weight[
+                            c_out, c_in, i
+                        ]
         return padded_weights
