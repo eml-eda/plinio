@@ -52,16 +52,29 @@ class ONNXAdd(nn.Module, ONNXModule):
         self.quantizer = quantizer
         self.s_x = quantizer.scale
         if self.signed:
-            self.clip_inf = torch.tensor(-2**(self.quantizer.precision - 1), device=self.device)
-            self.clip_sup = torch.tensor(2**(self.quantizer.precision - 1) - 1, device=self.device)
+            self.clip_inf = torch.tensor(
+                -(2 ** (self.quantizer.precision - 1)), device=self.device
+            )
+            self.clip_sup = torch.tensor(
+                2 ** (self.quantizer.precision - 1) - 1, device=self.device
+            )
         else:
             self.clip_inf = torch.tensor(0.0, device=self.device)
-            self.clip_sup = torch.tensor(2**self.quantizer.precision - 1, device=self.device)
-        self.scale, self.shift = self._integer_approximation(self.s_x)
-
+            self.clip_sup = torch.tensor(
+                2**self.quantizer.precision - 1, device=self.device
+            )
+        # self.scale, self.shift = self._integer_approximation(self.s_x)
+        # NOTE: from graph construction we now that we will requantize in the same way
+        # as the inputs, so we can just skip requantization on the add node.
+        # The operation is kept only to generate the correct pattern in the ONNX
+        self.scale, self.shift = (
+            torch.tensor(1.0, device=self.device),
+            torch.tensor(0.0, device=self.device),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = (self.scale * x) / (2**self.shift)
+        out = torch.floor(out)
         out = torch.clip(out, self.clip_inf, self.clip_sup)
         return out
 
