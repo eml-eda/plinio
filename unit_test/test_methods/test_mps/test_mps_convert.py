@@ -579,7 +579,7 @@ class TestMPSConvert(unittest.TestCase):
                          conv1.out_features_eff.item() * 10 * 10)
 
     # TODO: Here we have an error due to FQWeight quantizer which is poorly tested
-    # (and basically never used in the daily isage)
+    # (and basically never used in the daily usage)
     def test_qinfo_layer(self):
         nn_ut = SimpleNN2D()
         my_qinfo = get_default_qinfo()

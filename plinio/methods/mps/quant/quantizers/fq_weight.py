@@ -76,7 +76,7 @@ class FQWeight(Quantizer):
         # Quantize
         input_q = FQQuantSTE.apply(input_scaled,
                                    self.quant_bins)
-        self._scale = exp_scale_param / self.quant_bins
+        self._scale = self.scale_param / self.quant_bins #self.scale_param instead of exp_scale_param: changing shape of scale so test_mps/test_qinfo_layer doesn't crash
         if self.dequantize:
             return input_q * exp_scale_param
         else:
