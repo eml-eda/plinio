@@ -21,11 +21,12 @@ from typing import Tuple, Optional, Dict
 import torch
 from plinio.methods import DNAS
 
+
 class DUCCIO():
     def __init__(self,
                  targets: Dict[str, torch.Tensor],
                  task_loss: Optional[torch.Tensor] = None,
-                 final_strengths: Optional[Tuple[torch.Tensor,...]] = None):
+                 final_strengths: Optional[Tuple[torch.Tensor, ...]] = None):
         """An implementation of the DUCCIO regularization method proposed in:
             https://arxiv.org/abs/2206.00302
         The regularization loss term computed by DUCCIO is:

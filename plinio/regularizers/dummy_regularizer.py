@@ -21,25 +21,10 @@ import torch
 from plinio.methods import DNAS
 
 
-class BaseRegularizer():
-    def __init__(self, cost_name: str = 'params', strength: float = 1e-3):
-        """A simple regularizer that computes a loss term that depends on a single cost metric,
-        multiplied by a fixed strength factor.
-
-        :param cost_name: the name of the cost metric to use, defaults to 'params'
-        :type cost_name: str, optional
-        :param strength: the strength factor, defaults to 1e-3
-        :type strength: float, optional
-        """
-        self.cost_name = cost_name
-        self.strength = strength
+class DummyRegularizer():
+    def __init__(self):
+        """A dummy regularizer that does nothing and can be used to keep training
+        loops identical with and without PLiNIO."""
 
     def __call__(self, model: DNAS) -> torch.Tensor:
-        """Computes the regularization loss term.
-
-        :param model: the model to regularize
-        :type model: DNAS
-        :return: the regularization loss value
-        :rtype: torch.Tensor
-        """
-        return model.get_cost(self.cost_name) * self.strength
+        return torch.tensor(0.0)
