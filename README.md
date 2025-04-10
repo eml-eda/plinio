@@ -83,7 +83,9 @@ $ python setup.py install
 
 Jupyter notebooks showing examples on how to use PLiNIO can be found in the `examples/` folder. Specifically, the folder currently contains examples of:
 - [Channel Pruning with PIT](examples/channel_pruning_pit.ipynb)
+- [Quantization-aware Training using MPS](examples/qat.ipynb)
 - More will be added soon...
+
 Other examples can be found in [this](https://github.com/eml-eda/oenne/) repository, which contains hands-on exercises of the "Optimized Execution of Neural Networks at the Edge" Ph.D. Course at Politecnico di Torino.
 
 # Publications based on PLiNIO
