@@ -68,8 +68,8 @@ class ONNXExporter:
 
         # Export network to onnx file
         torch.onnx.export(
-            network,
-            (torch.randn(input_shape, device=next(iter(network.parameters())).device),),
+            network.cpu(),
+            (torch.randn(input_shape, device="cpu"),),
             str(onnxfilepath),
             export_params=True,
             do_constant_folding=True,
@@ -78,7 +78,7 @@ class ONNXExporter:
         )
         # Annotate the onnx file with backend-specific information
         self._annotator.annotate(
-            network,
+            network.cpu(),
             onnxfilepath,
             input_bits,
             input_signed,
