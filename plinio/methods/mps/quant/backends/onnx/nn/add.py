@@ -43,11 +43,13 @@ class ONNXAdd(nn.Module, ONNXModule):
         scale_bit: int = 24,
         shift_pos: int = 24,
         signed: bool = False,
+        dequantize_output: bool = False,
     ):
         super(ONNXAdd, self).__init__()
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
         self.signed = signed
+        self.dequantize_output = dequantize_output
 
         self.quantizer = quantizer
         self.s_x = quantizer.scale
@@ -59,21 +61,25 @@ class ONNXAdd(nn.Module, ONNXModule):
                 2 ** (self.quantizer.precision - 1) - 1, device=self.device
             )
         else:
-            self.clip_inf = torch.tensor(0.0, device=self.device)
-            self.clip_sup = torch.tensor(
-                2**self.quantizer.precision - 1, device=self.device
-            )
+            self.clip_inf = 0.0
+            self.clip_sup = 2**self.quantizer.precision - 1
         # self.scale, self.shift = self._integer_approximation(self.s_x)
         # NOTE: from graph construction we now that we will requantize in the same way
         # as the inputs, so we can just skip requantization on the add node.
         # The operation is kept only to generate the correct pattern in the ONNX
-        self.scale, self.shift = (
-            torch.tensor(1.0, device=self.device),
-            torch.tensor(0.0, device=self.device),
-        )
+        self.scale, self.shift = 1, 0
+        if not self.signed:
+            self._zero_point = 0
+        else:
+            # Negated zero point, so we have an add in the forward pass
+            self._zero_point = -(-2**(self.quantizer.precision - 1))
+
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = (self.scale * x) / (2**self.shift)
+        out = torch.mul(self.scale, x)
+        out = out.to(torch.int32)
+        out = (out + self._zero_point)/ (2**self.shift)
         out = torch.floor(out)
         out = torch.clip(out, self.clip_inf, self.clip_sup)
         return out
