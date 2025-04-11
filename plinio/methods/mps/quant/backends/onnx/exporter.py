@@ -68,8 +68,8 @@ class ONNXExporter:
 
         # Export network to onnx file
         torch.onnx.export(
-            network.cpu(),
-            (torch.randn(input_shape, device="cpu"),),
+            network,
+            (torch.randn(input_shape, device = next(network.parameters()).device),),
             str(onnxfilepath),
             export_params=True,
             do_constant_folding=True,
