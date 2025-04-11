@@ -98,7 +98,7 @@ class ONNXAnnotator:
 
         # Define backend-specific supported ONNX nodes. The nodes belonging to
         # different node classes will be annotated using a class-specific logic.
-        PLINIO_QNODES = {"Conv", "Gemm", "MatMul"}
+        PLINIO_QNODES = {"Conv", "Gemm", "MatMul", "Add"}
 
         # Graph input
         inp_node = onnxproto.graph.input[0].name
@@ -338,6 +338,22 @@ class ONNXAnnotator:
                 onnxproto.graph.node.remove(node)
                 onnxproto.graph.node.insert(idx, new_node)
 
+            #elif node.op_type in ["Add"]:
+            #    # Add > 14 : supports INT8
+            #    prec = metadata[node.output[0]]["precision"]
+            #    # Only quantized ADD must be updated
+            #    if prec is None or prec > 8:
+            #        continue
+            #    new_node = onnx_helper.make_node(
+            #        "Add",
+            #        inputs=node.input,
+            #        outputs=node.output,
+            #        name=node.name,
+            #    )
+            #    new_node.attribute.extend(node.attribute)
+            #    onnxproto.graph.node.remove(node)
+            #    onnxproto.graph.node.insert(idx, new_node)
+
             elif node.op_type in ["Clip"]:
                 # Another node changing with opset 11
                 prec = metadata[node.output[0]]["precision"]
@@ -444,9 +460,6 @@ class ONNXAnnotator:
                         in_degree[next_node.name] += 1
 
         queue = deque([node.name for node in graph.node if in_degree[node.name] == 0])
-        print(queue)
-        print(adj_list)
-        print(in_degree)
 
         sorted_nodes = []
         while queue:
