@@ -49,7 +49,6 @@ class ONNXAdd(nn.Module, ONNXModule):
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
         self.signed = signed
-        self.dequantize_output = dequantize_output
 
         self.quantizer = quantizer
         self.s_x = quantizer.scale

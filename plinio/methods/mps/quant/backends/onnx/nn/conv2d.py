@@ -52,6 +52,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         scale_bit: int = 24,
         shift_pos: int = 24,
         signed: bool = False,
+        dequantize_output: bool = False,
     ):
         super(ONNXConv2d, self).__init__(
             conv.in_channels,

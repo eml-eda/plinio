@@ -52,6 +52,7 @@ class ONNXLinear(nn.Linear, ONNXModule):
         scale_bit: int = 24,
         shift_pos: int = 24,
         signed: bool = False,
+        dequantize_output: bool = False,
     ):
         super(ONNXLinear, self).__init__(
             linear.in_features, linear.out_features, linear.bias is not None,
@@ -63,6 +64,7 @@ class ONNXLinear(nn.Linear, ONNXModule):
         self.signed = signed
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
+        self.dequantize_output : bool = dequantize_output
 
         # Store precisions and quantizers
         self.in_quantizer = in_quantizer
@@ -167,6 +169,8 @@ class ONNXLinear(nn.Linear, ONNXModule):
         if self.last_layer:
             # Add bias
             out = out + self._zero_point
+            if self.dequantize_output:
+                out = (out * self.scale) / (2**self.shift)
         else:
             # Multiply scale factor, sum bias, shift
             out = (out * self.scale + self._zero_point) / (2**self.shift)
