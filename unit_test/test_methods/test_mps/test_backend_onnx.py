@@ -87,7 +87,7 @@ class TestBackendONNX(unittest.TestCase):
                 integer_nn = integerize_arch(
                     quantized_nn,
                     Backend.ONNX,
-                    backend_kwargs={"signed": signed},
+                    backend_kwargs={"signed": signed, "dequantize_output": False},
                     remove_input_quantizer=True,
                 )
 
