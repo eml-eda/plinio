@@ -35,6 +35,7 @@ from unit_test.models import (
 )
 import numpy as np
 from unit_test.models.miniresnet import MiniResNet
+import onnxruntime as ort
 
 
 class TestBackendONNX(unittest.TestCase):
@@ -45,10 +46,10 @@ class TestBackendONNX(unittest.TestCase):
     """
 
     def test_autoimport_fullyconv_layer(self):
-        import onnxruntime as ort
+        integerize_onnx = False
         for i, model in enumerate([
-                        MiniResNet
-                        , ToySequentialFullyConv2d,
+                        MiniResNet,
+                        ToySequentialFullyConv2d,
                         ToySequentialFullyConv2dDil,
                         ToySequentialConv2d,
                         TutorialModel,
@@ -108,20 +109,20 @@ class TestBackendONNX(unittest.TestCase):
                 # Convert to onnx
                 exporter = ONNXExporter()
                 exporter.export(
-                    integer_nn, dummy_inp.shape, Path("."), input_bits=bits, input_signed=signed, integerize_onnx=False
+                    integer_nn, dummy_inp.shape, Path("."), input_bits=bits, input_signed=signed, integerize_onnx=integerize_onnx
                 )
+                if not integerize_onnx:
+                    session = ort.InferenceSession(f"./{integer_nn.__class__.__name__}.onnx", providers=["CPUExecutionProvider"])
+                    input_name = session.get_inputs()[0].name
+                    input_data = dummy_inp.numpy()
+                    output_ort = session.run(None, {input_name: input_data})
 
-                session = ort.InferenceSession(f"./{integer_nn.__class__.__name__}.onnx", providers=["CPUExecutionProvider"])
-                input_name = session.get_inputs()[0].name
-                input_data = dummy_inp.numpy()
-                output_ort = session.run(None, {input_name: input_data})
-
-                self.assertTrue(
-                    torch.allclose(
-                        out_int,
-                        torch.tensor(np.array(output_ort)).reshape_as(out_int),
-                        rtol=0.0001,
-                    ),
-                    "Mismatch between integer and ONNX outputs",
-                )
+                    self.assertTrue(
+                        torch.allclose(
+                            out_int,
+                            torch.tensor(np.array(output_ort)).reshape_as(out_int),
+                            rtol=0.0001,
+                        ),
+                        "Mismatch between integer and ONNX outputs",
+                    )
                 Path(f'./{integer_nn.__class__.__name__}.onnx').unlink()
