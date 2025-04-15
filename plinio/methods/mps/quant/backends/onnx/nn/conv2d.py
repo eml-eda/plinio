@@ -180,7 +180,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         if self.padding == "same":
             raise NotImplementedError("Same padding is not supported yet")
         if self.padding == "valid":
-            self.pad = nn.ConstantPad2d(0, 0)
+            self.pad = nn.Identity()
         else:
             # From self.padding to the 4-tuple padding
             padding = (0, 0, 0, 0)
@@ -195,7 +195,11 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                     self.padding[0],
                 )
 
-            self.pad = nn.ConstantPad2d(padding, self.pad_inf)
+
+            if sum(list(padding)) == 0:
+                self.pad = nn.Identity()
+            else:
+                self.pad = nn.ConstantPad2d(padding, self.pad_inf)
             self.padding = "valid"
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
