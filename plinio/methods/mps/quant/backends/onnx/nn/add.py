@@ -77,7 +77,6 @@ class ONNXAdd(nn.Module, ONNXModule):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = torch.mul(self.scale, x)
-        out = out.to(torch.int32)
         out = (out + self._zero_point)/ (2**self.shift)
         out = torch.floor(out)
         out = torch.clip(out, self.clip_inf, self.clip_sup)
