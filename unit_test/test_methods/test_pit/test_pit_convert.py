@@ -36,6 +36,9 @@ from unit_test.test_methods.test_pit.utils import compare_prepared, check_target
         check_batchnorm_folding, check_batchnorm_unfolding, check_batchnorm_memory, \
         compare_identical
 
+from unit_test.models import ToyGroupedConv_1D, ToyGroupedConv_2D, ToyMultiGroupConv_1D, ToyIndexingConv_1D
+from unit_test.models.resnet1d_ppgbp import ResNet1D
+from unit_test.models.unet1d_ppgbp import UNet1d
 
 class TestPITConvert(unittest.TestCase):
     """Test conversion operations to/from nn.Module from/to PIT"""
@@ -93,6 +96,39 @@ class TestPITConvert(unittest.TestCase):
             'out': fc_in_feats,
         }
         check_input_features(self, new_nn, expected_features)
+
+    def test_autoimport_group_conv(self):
+        """Test the conversion of a simple model with grouped convolutions"""
+        nn_ut = ToyGroupedConv_1D()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=4)
+        #check_target_layers(self, new_nn, exp_tgt=9, unique=True)
+
+    def test_autoimport_resnet1d(self):
+        """Test the conversion of a ResNet-like model with group convolution"""
+        nn_ut=ResNet1D(use_plinio='pit', is_se= False)
+        new_nn = PIT(nn_ut, input_shape=(1,625))
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=9)
+        check_target_layers(self, new_nn, exp_tgt=9, unique=True)
+
+    def test_autoimport_resnet1d_squeeze_excitation(self):
+        """Test the conversion of a ResNet-like model with with group convolution and squeeze-excitation"""
+        nn_ut=ResNet1D(use_plinio='pit', is_se= True)
+        new_nn = PIT(nn_ut, input_shape=(1,625))
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=11)
+        check_target_layers(self, new_nn, exp_tgt=11, unique=True)
+
+    def test_autoimport_unet1d(self):
+        """Test the conversion of a UNet-like model using instancenorm and prelu"""
+        nn_ut=UNet1d()
+        new_nn = PIT(nn_ut, input_shape=(1,625))
+        compare_prepared(self, nn_ut, new_nn.seed)
+        # 8 convolutional layers, 20 including instancenorm and prelu
+        check_target_layers(self, new_nn, exp_tgt=20)
+        check_target_layers(self, new_nn, exp_tgt=20, unique=True)
 
     def test_raised_err_complex_shape(self):
         """Test that PIT raises TypeError"""
@@ -273,6 +309,13 @@ class TestPITConvert(unittest.TestCase):
         exported_nn = new_nn.export()
         compare_identical(self, nn_ut, exported_nn)
 
+    def test_export_initial_group_conv(self):
+        """Test the conversion of a model with grouped convolutions, just after import"""
+        nn_ut = ToyGroupedConv_1D()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        exported_nn = new_nn.export()
+        compare_identical(self, nn_ut, exported_nn)
+
     def test_export_with_masks(self):
         """Test the conversion of a simple model after forcing the mask values in some layers"""
         nn_ut = SimpleNN()
@@ -370,7 +413,7 @@ class TestPITConvert(unittest.TestCase):
         self.assertEqual(mod.in_channels, 36, "Wrong input channels exported")
         self.assertEqual(mod.kernel_size, (2,), "Wrong kernel size exported")
         self.assertEqual(mod.dilation, (2,), "Wrong dilation exported")
-        # check that the output sequence length is the expecyed one
+        # check that the output sequence length is the expected one
         # N.B., the tcn1 layer of TCResNet14 converges on a node sum of
         # a residual branch with stride=2. To sum toghether the sequences
         # their lenghts must match.
@@ -393,7 +436,7 @@ class TestPITConvert(unittest.TestCase):
         self.assertEqual(mod.in_channels, 36, "Wrong input channels exported")
         self.assertEqual(mod.kernel_size, (7,), "Wrong kernel size exported")
         self.assertEqual(mod.dilation, (2,), "Wrong dilation exported")
-        # check that the output sequence length is the expecyed one
+        # check that the output sequence length is the expected one
         # N.B., the tcn1 layer of TCResNet14 converges on a node sum of
         # a residual branch with stride=1. To sum toghether the sequences
         # their lenghts must match.
@@ -432,6 +475,302 @@ class TestPITConvert(unittest.TestCase):
                 # check that PIT's 4th channel weights are now stored in the 3rd channel
                 self.assertTrue(torch.all(child.weight[2, :, :, :] == pit_child.weight[3, :, :, :]),
                                 "Wrong weight values in channel 2")
+
+    def test_export_with_masks_groupconv(self):
+        """Test the conversion of a model with grouped convolutions after forcing the
+        mask values in some layers, check that correct_get_item functio is properly adjusting indexes"""
+        nn_ut = ToyGroupedConv_1D()
+        self.assertEqual(nn_ut(torch.randn(1,16,2)).shape, (1, 16, 2), "Output shape is not as expected")
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+
+        conv0 = cast(PITConv1d, new_nn.seed.conv0)
+        conv0.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, 0, 0, 1] *4, dtype=torch.float))
+        conv0.timestep_masker.beta = nn.parameter.Parameter(
+            torch.tensor([0, 0, 1, 1, 1], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+        self.assertEqual(exported_nn(torch.randn(1,16,2)).shape, (1, 16, 2), "Output shape is not as expected")
+
+        conv1 = cast(PITConv1d, new_nn.seed.conv1)
+        conv1.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([0, 1, 1, 1], dtype=torch.float))
+        conv1.dilation_masker.gamma = nn.parameter.Parameter(
+            torch.tensor([0, 1], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv0':
+                child = cast(nn.Conv1d, child)
+                pit_child = cast(PITConv1d, new_nn.seed._modules[name])
+                self.assertEqual(child.out_channels, 8, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 16, "Wrong input channels exported")
+                self.assertEqual(child.kernel_size, (3,), "Wrong kernel size exported")
+                self.assertEqual(child.dilation, (1,), "Wrong dilation exported")
+                # check that first two timesteps of channel 0 are identical
+                self.assertTrue(torch.all(child.weight[0, :, ] == pit_child.weight[0, :, -3:]),
+                                "Wrong weight values in channel 0")
+                # check that PIT's 4th channel weights are now stored in the 3rd channel
+                self.assertTrue(torch.all(child.weight[2, :, ] == pit_child.weight[4, :, -3:]),
+                                "Wrong weight values in channel 2")
+            if name == 'conv1':
+                child = cast(nn.Conv1d, child)
+                pit_child = cast(PITConv1d, new_nn.seed._modules[name])
+                self.assertEqual(child.out_channels, 3, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 4, "Wrong input channels exported")
+                self.assertEqual(child.kernel_size, (2,), "Wrong kernel size exported")
+                self.assertEqual(child.dilation, (2,), "Wrong dilation exported")
+                # check that weights are correctly saved with dilation. In this case the
+                # number of input channels changed, so we can only check one Cin at a time
+                self.assertTrue(
+                    torch.all(child.weight[:, :, 0:2] == pit_child.weight[1:, [0,3,4,7], 0:3:2]),
+                    "Wrong weight values for Cin=0")
+
+    def test_export_with_masks_resnet1d(self):
+        """Test the conversion of a ResNet model with group convolution and squeeze-excitation
+        after forcing the mask values in some layers"""
+        nn_ut = ResNet1D(is_se=True)
+        #self.assertEqual(nn_ut(torch.randn(1,1,625)).shape, (1, 1, 625), "Output shape is not as expected")
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape[1:])
+
+        first_conv = cast(PITConv1d, new_nn.seed.first_block_conv.conv)
+        first_conv.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, 0, 0, 1] *8, dtype=torch.float))
+        first_conv.timestep_masker.beta = nn.parameter.Parameter(
+            torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 1], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+        self.assertEqual(exported_nn(torch.randn(1,1,625)).shape, (1, 2), "Output shape is not as expected")
+
+        first_block_conv_l = cast(PITConv1d, new_nn.seed.basicblock_list._modules['0'].conv1.conv_l)
+        first_block_conv_l.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([0, 1, 1, 1] *4, dtype=torch.float))
+        #ceil(log2(Fseed))=ceil(log2(5))=
+        first_block_conv_l.dilation_masker.gamma = nn.parameter.Parameter(
+            torch.tensor([0, 1, 0], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+
+        for name, child in exported_nn.named_children():
+            if name == 'first_block_conv':
+                child = cast(nn.Conv1d, child.conv)
+                pit_child = cast(PITConv1d, new_nn.seed._modules[name].conv)
+                self.assertEqual(child.out_channels, 16, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 1, "Wrong input channels exported")
+                self.assertEqual(child.kernel_size, (5,), "Wrong kernel size exported")
+                self.assertEqual(child.dilation, (1,), "Wrong dilation exported")
+                # check that first two timesteps of channel 0 are identical
+                self.assertTrue(torch.all(child.weight[0, :, ] == pit_child.weight[0, :, -5:]),
+                                "Wrong weight values in channel 0")
+                # check that PIT's 4th channel weights are now stored in the 3rd channel
+                self.assertTrue(torch.all(child.weight[2, :, ] == pit_child.weight[4, :, -5:]),
+                                "Wrong weight values in channel 2")
+            if name == 'basicblock_list':
+                child = cast(nn.Conv1d, child._modules['0'].conv1.conv_l)
+                pit_child = cast(PITConv1d, new_nn.seed._modules[name]._modules['0'].conv1.conv_l)
+                self.assertEqual(child.out_channels, 12, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 8, "Wrong input channels exported")
+                self.assertEqual(child.kernel_size, (3,), "Wrong kernel size exported")
+                self.assertEqual(child.dilation, (2,), "Wrong dilation exported")
+                # check that weights are correctly saved with dilation. In this case the
+                # number of input channels changed, so we can only check one Cin at a time
+                self.assertTrue(
+                    torch.all(child.weight[:, 0, :] == pit_child.weight[[1,2,3,5,6,7,9,10,11,13,14,15], 0, 0:5:2]),
+                    "Wrong weight values for Cin=0")
+
+    def test_export_with_masks_unet1d(self):
+        """Test the conversion of a UNet model with InstanceNorm and PReLU after forcing the
+        mask values in some layers"""
+        nn_ut = UNet1d()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape[1:])
+
+        first_conv = cast(PITConv1d, new_nn.seed.conv_first._modules['1'])
+        first_conv.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, 0, 0, 1] *32, dtype=torch.float))
+        first_conv.timestep_masker.beta = nn.parameter.Parameter(
+            torch.tensor([0, 0, 1, 1, 1], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+        self.assertEqual(exported_nn(torch.randn(1,1,625)).shape, (1, 1, 625), "Output shape is not as expected")
+
+        first_block_conv = cast(PITConv1d, new_nn.seed.conv_down_list._modules['0'].conv_list._modules['0'].mconv._modules['2'])
+        first_block_conv.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([0, 1, 1, 1] *32, dtype=torch.float))
+        #ceil(log2(Fseed))=ceil(log2(5))=
+        first_block_conv.dilation_masker.gamma = nn.parameter.Parameter(
+            torch.tensor([0, 1], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv_first':
+                child = cast(nn.Conv1d, child._modules['1'])
+                pit_child = cast(PITConv1d, new_nn.seed._modules[name]._modules['1'])
+                self.assertEqual(child.out_channels, 64, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 1, "Wrong input channels exported")
+                self.assertEqual(child.kernel_size, (3,), "Wrong kernel size exported")
+                self.assertEqual(child.dilation, (1,), "Wrong dilation exported")
+                # check that first two timesteps of channel 0 are identical
+                self.assertTrue(torch.all(child.weight[0, :, ] == pit_child.weight[0, :, -3:]),
+                                "Wrong weight values in channel 0")
+                # check that PIT's 4th channel weights are now stored in the 3rd channel
+                self.assertTrue(torch.all(child.weight[2, :, ] == pit_child.weight[4, :, -3:]),
+                                "Wrong weight values in channel 2")
+            if name == 'conv_down_list':
+                child = cast(nn.Conv1d, child._modules['0'].conv_list._modules['0'].mconv._modules['2'])
+                pit_child = cast(PITConv1d, new_nn.seed.conv_down_list._modules['0'].conv_list._modules['0'].mconv._modules['2'])
+                self.assertEqual(child.out_channels, 96, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 64, "Wrong input channels exported")
+                self.assertEqual(child.kernel_size, (2,), "Wrong kernel size exported")
+                self.assertEqual(child.dilation, (2,), "Wrong dilation exported")
+                # check that weights are correctly saved with dilation. In this case the
+                # number of input channels changed, so we can only check one Cin at a time
+                self.assertTrue(
+                    torch.all(child.weight[:, 0, :] == pit_child.weight[[_ for _ in range(0,128) if _ not in range(0,128,4)], 0, 0:5:2]),
+                    "Wrong weight values for Cin=0")
+
+    def test_export_with_masks_multigroupconv(self):
+        in_channels=3*5*7
+        out_channels=2*in_channels
+        for groups in [3,5,7,15,21,35]:
+
+            nn_ut = ToyMultiGroupConv_1D(in_channels=in_channels, out_channels=out_channels, groups=groups)
+            self.assertEqual(nn_ut(torch.randn(1,*nn_ut.input_shape)).shape, (1,*nn_ut.input_shape), "Output shape is not as expected")
+            new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+
+            conv0 = cast(PITConv1d, new_nn.seed.conv0)
+            out_feats_mask = [1, 0, 0, 1, 1] * 21
+            conv0.out_features_masker.alpha = nn.parameter.Parameter(
+                torch.tensor(out_feats_mask, dtype=torch.float))
+            conv0.timestep_masker.beta = nn.parameter.Parameter(
+                torch.tensor([0, 0, 1, 1, 1], dtype=torch.float))
+
+            #self.assertEqual(new_nn(torch.randn(1,16,2)).shape, (1, 16, 2), "Output shape is not as expected")
+            exported_nn = new_nn.export()
+            self.assertEqual(exported_nn(torch.randn(1,*nn_ut.input_shape)).shape, (1,*nn_ut.input_shape), "Output shape is not as expected")
+
+            groupconv3 = cast(PITConv1d, new_nn.seed.groupconvs._modules['2'])
+            groupconv3.out_features_masker.alpha = nn.parameter.Parameter(
+                torch.tensor([0, 1] * (in_channels//groups), dtype=torch.float))
+            groupconv3.dilation_masker.gamma = nn.parameter.Parameter(
+                torch.tensor([0, 1], dtype=torch.float))
+
+            exported_nn = new_nn.export()
+
+            for name, child in exported_nn.named_children():
+                if name == 'conv0':
+                    child = cast(nn.Conv1d, child)
+                    pit_child = cast(PITConv1d, new_nn.seed._modules[name])
+                    # output channels are 21*3 (# of active channels in the mask)
+                    self.assertEqual(child.out_channels, 63, "Wrong output channels exported")
+                    self.assertEqual(child.in_channels, in_channels, "Wrong input channels exported")
+                    self.assertEqual(child.kernel_size, (3,), "Wrong kernel size exported")
+                    self.assertEqual(child.dilation, (1,), "Wrong dilation exported")
+                    # check that first two timesteps of channel 0 are identical
+                    self.assertTrue(torch.all(child.weight[0, :, ] == pit_child.weight[0, :, -3:]),
+                                    "Wrong weight values in channel 0")
+                    # check that PIT's 4th channel weights are now stored in the 2nd channel
+                    self.assertTrue(torch.all(child.weight[1, :, ] == pit_child.weight[3, :, -3:]),
+                                    "Wrong weight values in channel 2")
+                if name == 'groupconvs':
+
+                    child = cast(nn.Conv1d, child._modules['2'])
+                    pit_child = cast(PITConv1d, new_nn.seed._modules[name]._modules['2'])
+                    selected_out_chs = out_feats_mask[2*in_channels//groups:3*in_channels//groups]
+                    self.assertEqual(child.out_channels, out_channels//groups//2, "Wrong output channels exported")
+                    self.assertEqual(child.in_channels, sum(selected_out_chs), "Wrong input channels exported")
+                    self.assertEqual(child.kernel_size, (2,), "Wrong kernel size exported")
+                    self.assertEqual(child.dilation, (2,), "Wrong dilation exported")
+                    # check that weights are correctly saved with dilation.
+                    self.assertTrue(
+                        torch.all(child.weight[:, :, :] == pit_child.weight[1::2, list(map(bool, selected_out_chs)), 0:3:2]),
+                        "Wrong weight values for Cin=0")
+
+    def test_export_with_masks_groupconv2D(self):
+        nn_ut = ToyGroupedConv_2D()
+        self.assertEqual(nn_ut(torch.randn(1, *nn_ut.input_shape)).shape, (1, *nn_ut.input_shape), "Output shape is not as expected")
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+
+        conv0 = cast(PITConv2d, new_nn.seed.conv0)
+        conv0.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([1, 0, 0, 1] *4, dtype=torch.float))
+
+        exported_nn = new_nn.export()
+        self.assertEqual(exported_nn(torch.randn(1, *nn_ut.input_shape)).shape, (1, *nn_ut.input_shape), "Output shape is not as expected")
+
+        conv1 = cast(PITConv2d, new_nn.seed.conv1)
+        conv1.out_features_masker.alpha = nn.parameter.Parameter(
+            torch.tensor([0, 1, 1, 1], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv0':
+                child = cast(nn.Conv2d, child)
+                pit_child = cast(PITConv2d, new_nn.seed._modules[name])
+                self.assertEqual(child.out_channels, 8, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 16, "Wrong input channels exported")
+
+                # check that PIT's 4th channel weights are now stored in the 3rd channel
+                self.assertTrue(torch.all(child.weight[2, :, ] == pit_child.weight[4, :, :]),
+                                "Wrong weight values in channel 2")
+            if name == 'conv1':
+                child = cast(nn.Conv2d, child)
+                pit_child = cast(PITConv2d, new_nn.seed._modules[name])
+                self.assertEqual(child.out_channels, 3, "Wrong output channels exported")
+                self.assertEqual(child.in_channels, 4, "Wrong input channels exported")
+
+    def test_export_with_masks_indexing(self):
+        indexing_modes= [ 'tensor', 'slice', 'list', 'int', 'bool'] # 'tensor',
+        for mode in indexing_modes:
+            nn_ut = ToyIndexingConv_1D(slicing_mode=mode)
+            self.assertEqual(nn_ut(torch.randn(1,16,2)).shape, (1, 16, 2), "Output shape is not as expected")
+            new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+
+            conv0 = cast(PITConv1d, new_nn.seed.conv0)
+            conv0.out_features_masker.alpha = nn.parameter.Parameter(
+                torch.tensor([1, 0, 0, 1] *4, dtype=torch.float))
+            conv0.timestep_masker.beta = nn.parameter.Parameter(
+                torch.tensor([0, 0, 1, 1, 1], dtype=torch.float))
+
+            exported_nn = new_nn.export()
+            self.assertEqual(exported_nn(torch.randn(1,16,2)).shape, (1, 16, 2), "Output shape is not as expected")
+
+            conv1 = cast(PITConv1d, new_nn.seed.conv1)
+            conv1.out_features_masker.alpha = nn.parameter.Parameter(
+                torch.tensor([0, 1, 1, 1], dtype=torch.float))
+            conv1.dilation_masker.gamma = nn.parameter.Parameter(
+                torch.tensor([0, 1], dtype=torch.float))
+
+            exported_nn = new_nn.export()
+
+            for name, child in exported_nn.named_children():
+                if name == 'conv0':
+                    child = cast(nn.Conv1d, child)
+                    pit_child = cast(PITConv1d, new_nn.seed._modules[name])
+                    self.assertEqual(child.out_channels, 8, "Wrong output channels exported")
+                    self.assertEqual(child.in_channels, 16, "Wrong input channels exported")
+                    self.assertEqual(child.kernel_size, (3,), "Wrong kernel size exported")
+                    self.assertEqual(child.dilation, (1,), "Wrong dilation exported")
+                    # check that first two timesteps of channel 0 are identical
+                    self.assertTrue(torch.all(child.weight[0, :, ] == pit_child.weight[0, :, -3:]),
+                                    "Wrong weight values in channel 0")
+                    # check that PIT's 4th channel weights are now stored in the 3rd channel
+                    self.assertTrue(torch.all(child.weight[2, :, ] == pit_child.weight[4, :, -3:]),
+                                    "Wrong weight values in channel 2")
+                if name == 'conv1':
+                    child = cast(nn.Conv1d, child)
+                    pit_child = cast(PITConv1d, new_nn.seed._modules[name])
+                    self.assertEqual(child.out_channels, 3, "Wrong output channels exported")
+                    self.assertEqual(child.in_channels, 1, "Wrong input channels exported")
+                    self.assertEqual(child.kernel_size, (2,), "Wrong kernel size exported")
+                    self.assertEqual(child.dilation, (2,), "Wrong dilation exported")
+                    # check that weights are correctly saved with dilation. In this case the
+                    # number of input channels changed, so we can only check one Cin at a time
+                    self.assertTrue(
+                        torch.all(child.weight[:, :, 0:2] == pit_child.weight[1:, [0], 0:3:2]),
+                        "Wrong weight values for Cin=0")
 
     def test_arch_summary(self):
         """Test the summary report for a simple sequential model"""
