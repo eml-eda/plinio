@@ -20,6 +20,7 @@ from abc import abstractmethod
 from typing import List, cast
 import torch
 import torch.nn as nn
+import torch.fx as fx
 
 
 class FeaturesCalculator:
@@ -130,7 +131,7 @@ class ModAttrFeaturesCalculator(FeaturesCalculator):
 
     @property
     def features_mask(self) -> torch.Tensor:
-        return getattr(self.mod, self.mask_attr_name)
+        return getattr(self.mod, self.mask_attr_name, None)
 
     def register(self, mod: nn.Module, prefix: str = ""):
         # nothing to do here. we assume the mod attr is always a registered buffer
@@ -207,3 +208,39 @@ class ConcatFeaturesCalculator(FeaturesCalculator):
         for i, fc in enumerate(self.inputs):
             prefix = f"prev_{i}" + prefix
             fc.register(mod, prefix)
+
+class GetitemFeaturesCalculator(FeaturesCalculator):
+    """A `FeaturesCalculator` that computes the number of features for a getitem operation on features.
+
+    For getitem, the output features is a reduced set of the predecessor's output features.
+
+    :param input_node: the `FeaturesCalculator` instance relative to the predecessor, it's only one.
+    :type inputs: FeaturesCalculator
+    :param index: a tuple of slices to be applied, one for each tensor dimension
+    :type index: tuple
+    """
+    def __init__(self, input_node: FeaturesCalculator, index: tuple, parent: fx.GraphModule): #Union[tuple, int]
+        super(GetitemFeaturesCalculator, self).__init__()
+        self.input = input_node
+        self.index = index[1] #slice on the first dimension, channels
+        if isinstance(index[1], torch.fx.node.Node):
+            #if index[1]['meta']['type']==torch.Tensor:
+            self.index = getattr(parent, index[1].target)
+
+    @property
+    def features(self) -> torch.Tensor:
+
+        return torch.sum(self.features_mask)
+
+    @property
+    def features_mask(self) -> torch.Tensor:
+
+        prev_mask = self.input.features_mask
+        if prev_mask is None:
+            prev_mask = torch.Tensor([1 for _ in range(self.input.features)])
+        mask = prev_mask[self.index]
+        return mask
+
+    def register(self, mod: nn.Module, prefix: str = ""):
+        prefix = "prev_0" + prefix
+        self.input.register(mod, prefix)
