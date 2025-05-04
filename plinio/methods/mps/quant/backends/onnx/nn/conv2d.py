@@ -52,6 +52,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         scale_bit: int = 24,
         shift_pos: int = 24,
         signed: bool = False,
+        dequantize_output: bool = False,
     ):
         super(ONNXConv2d, self).__init__(
             conv.in_channels,
@@ -63,8 +64,10 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode,
+            device = conv.weight.device,
         )
 
+        #self.device = conv.weight.device
         self.signed = signed
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
@@ -81,35 +84,23 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         # No more properties to avoid a conditioonal in the forward
         if type(self.out_quantizer) == DummyQuantizer:
             if self.signed:
-                self.clip_sup = torch.tensor(
-                    2 ** (self.in_quantizer.precision - 1) - 1, device=self.device
-                )
-                self.clip_inf = torch.tensor(
-                    -(2 ** (self.in_quantizer.precision - 1)), device=self.device
-                )
+                self.clip_sup = 2 ** (self.in_quantizer.precision - 1) - 1
+                self.clip_inf = -(2 ** (self.in_quantizer.precision - 1))
             else:
-                self.clip_sup = torch.tensor(
-                    2**self.out_quantizer.precision - 1, device=self.device
-                )
-                self.clip_inf = torch.tensor(0, device=self.device)
+                self.clip_sup = 2**self.out_quantizer.precision - 1
+                self.clip_inf = 0
         elif self.signed:
-            self.clip_inf = torch.tensor(
-                -(2 ** (self.out_quantizer.precision - 1)), device=self.device
-            )
-            self.clip_sup = torch.tensor(
-                2 ** (self.out_quantizer.precision - 1) - 1, device=self.device
-            )
+            self.clip_inf = -(2 ** (self.out_quantizer.precision - 1))
+            self.clip_sup = 2 ** (self.out_quantizer.precision - 1) - 1
         else:
-            self.clip_inf = torch.tensor(0.0, device=self.device)
-            self.clip_sup = torch.tensor(
-                2 ** cast(int, self.out_quantizer.precision) - 1, device=self.device
-            )
+            self.clip_inf = 0
+            self.clip_sup = 2 ** self.out_quantizer.precision - 1
 
-        self.pad_inf = (
-            torch.tensor(-(2 ** (self.in_quantizer.precision - 1)), device=self.device)
-            if self.signed
-            else torch.tensor(0.0, device=self.device)
-        )
+
+        if self.signed:
+            self.pad_inf = -(2 ** (self.in_quantizer.precision - 1))
+        else:
+            self.pad_inf = 0
 
         # Copy and integerize pretrained weights
         # N.B., is mandatory to first integerize weight
@@ -120,6 +111,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             int_weight = self.w_quantizer(conv.weight)
             int_weight = cast(torch.Tensor, int_weight)
             self.weight.copy_(int_weight)
+            #self.weight.to(self.device)
 
         # Compute self.scale_fact and self.shift
         self.s_w = self.w_quantizer.scale
@@ -137,10 +129,12 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                 self.b_quantizer.dequantize = False
                 int_bias = self.b_quantizer(conv.bias, self.s_x, self.s_w)
                 int_bias = cast(torch.Tensor, int_bias)
+                #int_bias = int_bias.to(self.device)
 
         self.scale, self.shift = self._integer_approximation(
             self.s_w, self.s_x, self.s_y, int_bias
         )
+
         with torch.no_grad():
             if conv.bias is not None:
                 if not self.skip_requant:
@@ -171,6 +165,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                         1, self.out_channels, 1, 1
                     )
                 )
+                self._zero_point= self._zero_point.to(self.device)
         else:
             with torch.no_grad():
                 self._zero_point = self.bias.view(
@@ -178,13 +173,14 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                 ) - self.clip_inf * torch.sum(self.weight, dim=(1, 2, 3)).view(
                     1, self.out_channels, 1, 1
                 )
+                self._zero_point= self._zero_point.to(self.device)
 
         # Padding is now external, for simplicity
         # Adjust manually the padding to be based upon `self.clip_inf` value
         if self.padding == "same":
             raise NotImplementedError("Same padding is not supported yet")
         if self.padding == "valid":
-            self.pad = nn.ConstantPad2d(0, 0)
+            self.pad = nn.Identity()
         else:
             # From self.padding to the 4-tuple padding
             padding = (0, 0, 0, 0)
@@ -199,7 +195,11 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                     self.padding[0],
                 )
 
-            self.pad = nn.ConstantPad2d(padding, self.pad_inf)
+
+            if sum(list(padding)) == 0:
+                self.pad = nn.Identity()
+            else:
+                self.pad = nn.ConstantPad2d(padding, self.pad_inf)
             self.padding = "valid"
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:

@@ -25,6 +25,7 @@ from onnx import helper as onnx_helper
 import torch.nn as nn
 import itertools
 from typing import Optional
+from plinio.methods.mps.quant.backends.onnx.nn.add import ONNXAdd
 
 
 class ONNXAnnotator:
@@ -78,11 +79,10 @@ class ONNXAnnotator:
             return next(iter(filter(lambda a: (a.name == name), node.attribute)))
 
         def find_pytorch_module(
-            module, node, initializers_names
+            module, node, initializers_names, add_map
         ) -> Optional[nn.Module]:
             # Find the layer in the pytorch model
             # It may be either the layer operation or a part of it
-            # We care about only nodes with weights :)
             for idx, tensor_name in enumerate(node.input):
                 # Convolution
                 if "Conv" in node.name and tensor_name in initializers_names:
@@ -94,11 +94,41 @@ class ONNXAnnotator:
                     op_name = layer_name.split("/")[1]
                     return module.get_submodule(op_name)
 
+            # Only Add nodes with two inputs are quantized here
+            if "Add" in node.name and node.name in add_map:
+                # NB : Going back to the correct Add module is complex, as the names
+                # are generated automatically...
+                return add_map[node.name]
+
             return None
+
+
+        def add_finder(network, onnxgraph, constant_names):
+            # Find the add nodes in the ONNX and match them with the pytorch module
+
+            add_map = {}
+            nodes, modules = [*onnxgraph.graph.node], [x for x in network.modules() if isinstance(x, ONNXAdd)]
+
+            matched_nodes = 0
+            for idx,node in enumerate(nodes):
+                if node.op_type == "Add":
+                    # TODO: Support the following
+                    # Exclude Requantization adds, i.e. Mul->Add->Div patterns should
+                    # excluded
+
+                    # NOTE: Now it works as follows
+                    # This excludes nodes with constant inputs
+                    if len(node.input) == 2 and not (node.input[0] in constant_names or node.input[1] in constant_names):
+                        add_map[node.name]= modules[matched_nodes]
+
+
+            return add_map
+
+
 
         # Define backend-specific supported ONNX nodes. The nodes belonging to
         # different node classes will be annotated using a class-specific logic.
-        PLINIO_QNODES = {"Conv", "Gemm", "MatMul"}
+        PLINIO_QNODES = {"Conv", "Gemm", "MatMul", "Add"}
 
         # Graph input
         inp_node = onnxproto.graph.input[0].name
@@ -124,11 +154,14 @@ class ONNXAnnotator:
         # Generally weights have the correct name
 
         initializers_names = [init.name for init in onnxproto.graph.initializer]
+        # Get only constant nodes
+        constant_names = [init.output[0] for init in onnxproto.graph.node if "Constant" in init.op_type]
+        add_map = add_finder(network, onnxproto, constant_names)
         # Now all the other tensors
         for node in onnxproto.graph.node:
             layer_name = node.name or node.output[0]
             op_type = node.op_type
-            pytorch_module = find_pytorch_module(network, node, initializers_names)
+            pytorch_module = find_pytorch_module(network, node, initializers_names, add_map=add_map)
 
             # Iterate over inputs and outputs
             for idx, tensor_name in enumerate(list(node.input) + list(node.output)):
@@ -180,6 +213,11 @@ class ONNXAnnotator:
                     elif onnx_op in PLINIO_QNODES and pytorch_module is not None:
                         if hasattr(pytorch_module, "out_quantizer"):
                             # A quantized node
+                            tns_meta["precision"] = self._requantization_bits
+                            tns_meta["signed"] = True
+                            layer_input_precision = tns_meta["precision"]
+                            layer_input_signed = tns_meta["signed"]
+                        elif hasattr(pytorch_module, "quantizer") and onnx_op == "Add":
                             tns_meta["precision"] = self._requantization_bits
                             tns_meta["signed"] = True
                             layer_input_precision = tns_meta["precision"]
@@ -252,7 +290,8 @@ class ONNXAnnotator:
         cast_to_add = []
         cast_to_add_map = {}
 
-        for idx, node in enumerate(onnxproto.graph.node):
+        nodes_to_visit = [*onnxproto.graph.node]
+        for idx, node in enumerate(nodes_to_visit):
             # Iterate over the nodes and change the dtypes of the tensors
             if node.op_type == "Constant":
                 # Constant buffers are updated to the correct dtype
@@ -335,6 +374,55 @@ class ONNXAnnotator:
                 onnxproto.graph.initializer.extend(
                     [value_tensor_proto, pads_tensor_proto]
                 )
+                onnxproto.graph.node.remove(node)
+                onnxproto.graph.node.insert(idx, new_node)
+
+            elif node.op_type in ["Add"]:
+                # Add > 14 : supports INT8
+                prec = metadata[node.input[0]]["precision"]
+                # Only quantized ADD must be updated,
+                # Input @ 8 bit Output @ 32 bit
+                if prec is None or prec != 8:
+                    continue
+                # Cast the inputs to 32 bit, then insert the new Add node
+
+                cast_out = []
+                cast_out.append(node.input[0]+ "_cast")
+                cast_out.append(node.input[1]+ "_cast")
+
+                new_node_cast1 = onnx_helper.make_node(
+                    "Cast",
+                    inputs=[node.input[0] if node.input[0] not in cast_to_add_map else cast_to_add_map[node.input[0]]],
+                    outputs=[cast_out[0]],
+                    to=self._bound_to_onnx(32, True),
+                    name=node.name.replace("Add", "Cast").replace("add", "cast") + "_0",
+                )
+                new_node_cast2 = onnx_helper.make_node(
+                    "Cast",
+                    inputs=[node.input[1] if node.input[1] not in cast_to_add_map else cast_to_add_map[node.input[1]]],
+                    outputs=[cast_out[1]],
+                    to=self._bound_to_onnx(32, True),
+                    name=node.name.replace("Add", "Cast").replace("add", "cast") + "_1",
+                )
+
+                if node.input[0] in cast_to_add_map:
+                    # This is a casted input, we need to change the output of the cast
+                    # to the new one
+                    # cast_out[0] = cast_to_add_map[node.input[0]]
+                    cast_to_add_map[node.input[0]] = cast_out[0]
+                if node.input[1] in cast_to_add_map:
+                    cast_to_add_map[node.input[1]] = cast_out[1]
+                #cast_to_add_map[node.input[0]] = cast_out[1]
+                cast_to_add.append(new_node_cast1)
+                cast_to_add.append(new_node_cast2)
+
+                new_node = onnx_helper.make_node(
+                    "Add",
+                    inputs=[cast_out[0], cast_out[1]],
+                    outputs=node.output,
+                    name=node.name,
+                )
+                new_node.attribute.extend(node.attribute)
                 onnxproto.graph.node.remove(node)
                 onnxproto.graph.node.insert(idx, new_node)
 
@@ -444,9 +532,6 @@ class ONNXAnnotator:
                         in_degree[next_node.name] += 1
 
         queue = deque([node.name for node in graph.node if in_degree[node.name] == 0])
-        print(queue)
-        print(adj_list)
-        print(in_degree)
 
         sorted_nodes = []
         while queue:

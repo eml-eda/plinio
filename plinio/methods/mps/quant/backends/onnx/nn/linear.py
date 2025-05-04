@@ -52,15 +52,19 @@ class ONNXLinear(nn.Linear, ONNXModule):
         scale_bit: int = 24,
         shift_pos: int = 24,
         signed: bool = False,
+        dequantize_output: bool = False,
     ):
         super(ONNXLinear, self).__init__(
-            linear.in_features, linear.out_features, linear.bias is not None
+            linear.in_features, linear.out_features, linear.bias is not None,
+            device = linear.weight.device,
         )
 
+        # Copy the original device of the layer
+        #self.device = linear.weight.device
         self.signed = signed
-        self._device = linear.weight.device
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
+        self.dequantize_output : bool = dequantize_output
 
         # Store precisions and quantizers
         self.in_quantizer = in_quantizer
@@ -80,6 +84,8 @@ class ONNXLinear(nn.Linear, ONNXModule):
             int_weight = self.w_quantizer(linear.weight)
             int_weight = cast(torch.Tensor, int_weight)
             self.weight.copy_(int_weight)
+            # Move them to the correct device, they are on cpu by default
+            #self.weight.to(self.device)
 
         # Compute self.scale_fact and self.shift
         self.s_w = self.w_quantizer.scale
@@ -115,27 +121,18 @@ class ONNXLinear(nn.Linear, ONNXModule):
         if self.last_layer:
             # TODO: Why in_quantizer?
             if self.signed:
-                self.clip_sup = torch.tensor(2**(self.in_quantizer.precision - 1) - 1, device=self.device)
-                self.clip_inf = torch.tensor(-2 **(self.in_quantizer.precision - 1), device=self.device)
+                self.clip_sup = 2**(self.in_quantizer.precision - 1) - 1
+                self.clip_inf = -2 **(self.in_quantizer.precision - 1)
             else:
-                self.clip_sup = torch.tensor(2**self.out_quantizer.precision - 1, device=self.device)
-                self.clip_inf = torch.tensor(0, device=self.device)
+                self.clip_sup = 2**self.out_quantizer.precision - 1
+                self.clip_inf = 0
 
         elif self.signed:
-            self.clip_sup = torch.tensor(
-                2 ** (self.out_quantizer.precision - 1) - 1, device=self.device
-            )
-            self.clip_inf = torch.tensor(
-                -(2 ** (self.out_quantizer.precision - 1)), device=self.device
-            )
+            self.clip_sup = 2 ** (self.out_quantizer.precision - 1) - 1
+            self.clip_inf = -(2 ** (self.out_quantizer.precision - 1))
         else:
-            self.clip_sup = torch.tensor(
-                2**self.out_quantizer.precision - 1, device=self.device
-            )
-            self.clip_inf = torch.tensor(
-                -(2**self.out_quantizer.precision) - 1, device=self.device
-            )
-        # Define ReLU inferior extreme
+            self.clip_sup = 2**self.out_quantizer.precision - 1
+            self.clip_inf = -(2**self.out_quantizer.precision) - 1
 
         # TODO: Signed changes from here!
         with torch.no_grad():
@@ -172,6 +169,8 @@ class ONNXLinear(nn.Linear, ONNXModule):
         if self.last_layer:
             # Add bias
             out = out + self._zero_point
+            if self.dequantize_output:
+                out = (out * self.scale) / (2**self.shift)
         else:
             # Multiply scale factor, sum bias, shift
             out = (out * self.scale + self._zero_point) / (2**self.shift)
