@@ -30,8 +30,11 @@ from .nn.conv2d import PITConv2d
 from .nn.linear import PITLinear
 from .nn.batchnorm_1d import PITBatchNorm1d
 from .nn.batchnorm_2d import PITBatchNorm2d
+from .nn.instancenorm_1d import PITInstanceNorm1d
+from .nn.prelu import PITPReLU
+
 from .nn.module import PITModule
-from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
+from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker, PITConcatFeaturesMasker
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
     associate_input_features, clean_up_propagated_shapes
 from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
@@ -40,6 +43,8 @@ from plinio.graph.transformation import fuse_consecutive_layers
 from plinio.graph.features_calculation import ModAttrFeaturesCalculator
 from plinio.graph.utils import fx_to_nx_graph, NamedLeafModules
 
+import numpy as np #needed for correct_get_item
+
 # add new supported layers here:
 pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {
     nn.Conv1d: PITConv1d,
@@ -47,6 +52,8 @@ pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {
     nn.Linear: PITLinear,
     nn.BatchNorm1d: PITBatchNorm1d,
     nn.BatchNorm2d: PITBatchNorm2d,
+    nn.InstanceNorm1d: PITInstanceNorm1d,
+    nn.PReLU: PITPReLU,
 }
 
 
@@ -102,6 +109,8 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
     if conversion_type in ('autoimport', 'export'):
         # dictionary of shared feature maskers. Used only in 'autoimport' mode.
         sm_dict = {} if conversion_type != 'autoimport' else build_shared_features_map(mod)
+        if conversion_type == 'export':
+            add_features_calculator(mod, [pit_features_calc])
         convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types, fold_bn)
     if conversion_type in ('autoimport', 'import'):
         fuse_pit_modules(mod, fold_bn)
@@ -286,6 +295,10 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
     :param exclude_types: the types of `model` submodules that should be ignored by the NAS
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
+    #convert getitem before convolutional layers, modifying the slice
+    if n.meta.get('features_slicing'):
+        correct_get_item(n, mod)
+
     if is_inherited_layer(n, mod, (PITModule,)):
         if exclude(n, mod, exclude_names, exclude_types):
             return
@@ -299,7 +312,7 @@ def remove_bn_inplace(lin: nn.Module, bn: nn.Module, fold: bool):
     layer, otherwise, it is just added as a field of the linear layer.
     """
     assert (isinstance(lin, PITConv1d) or isinstance(lin, PITConv2d) or isinstance(lin, PITLinear))
-    assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
+    assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d) or isinstance(bn, nn.InstanceNorm1d))
     if not bn.track_running_stats:
         raise AttributeError("BatchNorm folding requires track_running_stats = True")
     with torch.no_grad():
@@ -341,6 +354,11 @@ def fuse_pit_modules(mod: fx.GraphModule, fold_bn: bool) -> None:
     fuse_consecutive_layers(mod, PITLinear, nn.BatchNorm1d,
                             lambda x, y: remove_bn_inplace(x, y, fold_bn))
 
+    fuse_consecutive_layers(mod, PITLinear, nn.InstanceNorm1d,
+                            lambda x, y: remove_bn_inplace(x, y, fold_bn))
+    fuse_consecutive_layers(mod, PITConv1d, nn.BatchNorm1d,
+                            lambda x, y: remove_bn_inplace(x, y, fold_bn))
+
 
 def register_input_features(mod: fx.GraphModule):
     for n in mod.graph.nodes:
@@ -360,10 +378,46 @@ def pit_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeatur
     :return: optional feature calculator object for PIT node
     :rtype: ModAttrFeaturesCalculator
     """
-    if is_inherited_layer(n, mod, (PITModule,)) and not (is_inherited_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d))):
+    if is_inherited_layer(n, mod, (PITModule,)) and not (is_inherited_layer(n, mod, (PITBatchNorm1d, PITBatchNorm2d, PITInstanceNorm1d, PITPReLU))):
         # For PIT NAS-able layers, the "active" output features are stored in the
         # out_features_eff attribute, and the binary mask is in features_mask
         sub_mod = mod.get_submodule(str(n.target))
         return ModAttrFeaturesCalculator(sub_mod, 'out_features_eff', 'features_mask')
     else:
         return None
+
+from plinio.graph.utils import try_get_args
+
+def correct_get_item(n: fx.Node, mod: fx.GraphModule):
+    """
+    fix indexes of an indexing operation, according to pruned channels of previous layer
+    :param n: node
+    :type n: fx.Node
+    :param mod: the parent module
+    :type mod: fx.GraphModule
+    :return: optional feature calculator object for PIT node
+    :rtype: ModAttrFeaturesCalculator
+    """
+    """
+    retrieve the mask of the previous layers, subtract -1 so we separate pruned channels from
+    substitute all 0s (the surviving channels) with a growing number, starting from 0,
+    that will be their future index. Then apply previous slice and remove -1, obtaining
+    indices of the surviving channels of this slice.
+    The indices could be translated to a slice if the original step is 1 or -1 only.
+    We replace the slice with the list of indices, because indexing with a list is supported for a torch tensor.
+    """
+    indices = try_get_args(n, mod, 1, 'dim', None) #n.args[1]
+    if isinstance(indices[1], torch.fx.node.Node):
+        indices = (indices[0], getattr(mod, indices[1].target), indices[2:])
+
+    bin_alpha = n.all_input_nodes[0].meta['features_calculator'].features_mask #indexing has always one input only, no need to call associate_input_features
+    #convert 0 to -1 and 1 to 0, to avoid confusion with indices
+    bin_alpha=np.array(bin_alpha.tolist(),dtype=int)-1
+    #replace non pruned channels with their future index, equal to the number of survived channels before them
+    bin_alpha[np.where(bin_alpha!=-1)]=list(range(sum(bin_alpha!=-1))) #idx_alpha = (np.cumsum(bin_alpha)*bin_alpha)-1
+    #select slice of the mask
+    selected = bin_alpha[indices[1]]
+    #retrieve non pruned channels indexes only
+    selected = selected[selected!=-1]
+
+    n.args=(n.args[0],(indices[0], selected.tolist()))
