@@ -34,7 +34,7 @@ from .nn.instancenorm_1d import PITInstanceNorm1d
 from .nn.prelu import PITPReLU
 
 from .nn.module import PITModule
-from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker, PITConcatFeaturesMasker
+from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
     associate_input_features, clean_up_propagated_shapes
 from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
