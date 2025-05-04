@@ -52,6 +52,10 @@ from .toy_models import (
     ToyResNet_1D,
     ToyResNet_inp_conn,
     ToyResNet_inp_conn_add_out,
+    ToyGroupedConv_1D,
+    ToyGroupedConv_2D,
+    ToyMultiGroupConv_1D,
+    ToyIndexingConv_1D
 )
 from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR

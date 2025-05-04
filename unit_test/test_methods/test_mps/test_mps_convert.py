@@ -28,10 +28,14 @@ from plinio.methods.mps.nn.qtz import MPSBaseQtz
 import plinio.methods.mps.quant.nn as qnn
 from plinio.methods.mps.quant.quantizers import FQWeight, MinMaxWeight, DummyQuantizer, PACTAct
 from unit_test.models import SimpleNN, SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyAdd_2D, \
-    SimpleMPSNN, SimpleExportedNN1D, SimpleExportedNN2D, SimpleExportedNN2D_ch, SimpleNN2D_NoBN
+    SimpleMPSNN, SimpleExportedNN1D, SimpleExportedNN2D, SimpleExportedNN2D_ch, SimpleNN2D_NoBN, \
+    ToyGroupedConv_1D
 from unit_test.test_methods.test_mps.utils import compare_prepared, \
         check_target_layers, check_shared_quantizers, check_add_quant_prop, \
         check_layers_exclusion, compare_exported
+
+from unit_test.models.resnet1d_ppgbp import ResNet1D
+from unit_test.models.unet1d_ppgbp import UNet1d
 
 
 class TestMPSConvert(unittest.TestCase):
@@ -265,6 +269,24 @@ class TestMPSConvert(unittest.TestCase):
         exported_nn = new_nn.export()
         expected_exported_nn = SimpleExportedNN1D()
         compare_exported(self, exported_nn, expected_exported_nn)
+
+    def test_export_initial_groupconv_1d(self):
+        """Test the conversion and export of a simple model with group convolutions
+        test that GetItemFeaturesCalculator works with mask=None"""
+        nn_ut = ToyGroupedConv_1D() #ResNet1D() #UNet1d() # ResNet1D()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(4, 8)),
+                     w_search_type=MPSType.PER_LAYER )
+        prev_feature_mask = new_nn.seed.conv1.input_features_calculator.input.features_mask
+        self.assertEqual(prev_feature_mask, None, "conv features mask in MPS should be None")
+        feature_mask = new_nn.seed.conv1.input_features_calculator.features_mask
+        self.assertTrue(
+            torch.all(feature_mask==torch.tensor([1.,] * 8)),
+                                   "conv features mask in MPS should be None")
+        feature_number = new_nn.seed.conv1.input_features_calculator.features
+        self.assertEqual(feature_number, 8, "Wrong number of input features")
+
+
 
     def test_export_initial_simple_channel(self):
         """test the export of a simple sequential model, just after import
