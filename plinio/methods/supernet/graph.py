@@ -108,14 +108,17 @@ def export_graph(mod: fx.GraphModule):
     """
     # TODO: relies on the attribute name sn_branches. Not nice, but didn't find
     # a better solution that remains flexible.
+    # Now uses the branch index too. This can be done because all_input_nodes
+    # function returns the list of nodes in the args and kwargs, preserving their order.
+    # see torch fx doc: https://pytorch.org/docs/stable/fx.html PROPERTY all_input_nodes
     for n in mod.graph.nodes:
         if is_layer(n, mod, (SuperNetCombiner,)):
             sub_mod = cast(SuperNetCombiner, mod.get_submodule(n.target))
             best_idx = sub_mod.best_layer_index()
             best_branch_name = 'sn_branches.' + str(best_idx)
             to_erase = []
-            for ni in n.all_input_nodes:
-                if best_branch_name in str(ni.target):
+            for i,ni in enumerate(n.all_input_nodes):
+                if best_branch_name in str(ni.target) or i==best_idx:
                     n.replace_all_uses_with(ni)
                 else:
                     to_erase.append(ni)
