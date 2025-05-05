@@ -18,15 +18,15 @@
 # *----------------------------------------------------------------------------*
 from typing import List, Callable
 import math
+import torch
 import torch.fx as fx
 from .features_calculation import FlattenFeaturesCalculator, ConcatFeaturesCalculator, \
-    ConstFeaturesCalculator
+    ConstFeaturesCalculator, GetitemFeaturesCalculator
 from .utils import try_get_args
 from .inspection import is_features_propagating_op, is_features_defining_op, \
     is_shared_input_features_op, is_flatten, is_squeeze, is_unsqueeze, \
-    is_features_concatenate, is_non_tensor_op, \
-    is_untouchable_op, is_zero_or_one_input_op, get_graph_inputs, all_output_nodes
-
+    is_features_concatenate, is_features_getitem, \
+    is_untouchable_op, is_zero_or_one_input_op, get_graph_inputs, all_output_nodes, is_non_tensor_op \
 
 def add_node_properties(mod: fx.GraphModule):
     """Adds properties to a dict of each node in the graph by calling ad-hoc function
@@ -49,7 +49,8 @@ def add_single_node_properties(n: fx.Node, mod: fx.GraphModule):
     n.meta['features_concatenate'] = is_features_concatenate(n, mod)
     n.meta['untouchable'] = is_untouchable_op(n)
     n.meta['zero_or_one_input'] = is_zero_or_one_input_op(n)
-    n.meta['non_tensor_op'] = is_non_tensor_op(n)
+    n.meta['non_tensor_op'] = is_non_tensor_op(n, mod)
+    n.meta['features_slicing'] = is_features_getitem(n, mod)
 
 
 def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = []):
@@ -69,8 +70,11 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
         n = queue.pop(0)
         if n in visited:
             continue
+
+        # remove from inputs constant nodes, needed in case of indexing using a torch tensor
+        input_nodes = [_ for _ in n.all_input_nodes if _.all_input_nodes!=[] or _.op=='placeholder']
         # skip nodes for which predecessors have not yet been processed completely
-        if any(['features_calculator' not in _.meta for _ in n.all_input_nodes]):
+        if any(['features_calculator' not in _.meta for _ in input_nodes]):
             continue
 
         # handle extra rules
@@ -138,6 +142,17 @@ def add_features_calculator(mod: fx.GraphModule, extra_rules: List[Callable] = [
                 [prev.meta['features_calculator'] for prev in n.all_input_nodes]
             )
             n.meta['features_calculator'] = ifc
+        elif n.meta['features_slicing']:
+            # For slicing operation over the features axis.
+            # The number of output features is a slicing
+            # of the features of preceding layer,
+            # indexing operation has always one input.
+            dim = try_get_args(n, mod, 1, 'dim', None)
+
+            ifc = GetitemFeaturesCalculator(
+                n.all_input_nodes[0].meta['features_calculator'], dim, mod
+            )
+            n.meta['features_calculator'] = ifc
         elif n.meta['shared_input_features']:
             # for nodes that require identical number of features in all their inputs (e.g., add)
             # we simply assume that we can take any of the output features calculators from
@@ -178,8 +193,11 @@ def associate_input_features(mod: fx.GraphModule):
         n = queue.pop(0)
         if n in visited:
             continue
+
+        # remove from inputs constant nodes, needed in case of indexing using a torch tensor
+        input_nodes = [_ for _ in n.all_input_nodes if _.all_input_nodes!=[] or _.op=='placeholder']
         # skip nodes for which predecessors have not yet been processed completely
-        if any(['input_features_set_by' not in _.meta for _ in n.all_input_nodes]):
+        if any(['input_features_set_by' not in _.meta for _ in input_nodes]): #exclude constant tensors that may be indexes
             continue
 
         prev = n if len(n.all_input_nodes) == 0 else n.all_input_nodes[0]
@@ -222,6 +240,8 @@ def associate_input_features(mod: fx.GraphModule):
             else:
                 n.meta['input_features_set_by'] = prev.meta['input_features_set_by']
         elif prev.meta['features_concatenate']:
+            n.meta['input_features_set_by'] = prev
+        elif prev.meta['features_slicing']:
             n.meta['input_features_set_by'] = prev
         elif prev.meta['features_defining']:
             n.meta['input_features_set_by'] = prev

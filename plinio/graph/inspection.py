@@ -168,7 +168,7 @@ def is_untouchable_op(n: fx.Node) -> bool:
     return False
 
 
-def is_non_tensor_op(n: fx.Node) -> bool:
+def is_non_tensor_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` is a non-tensor operation (e.g. get_attr, getitem)
 
     :param n: the target node
@@ -176,14 +176,37 @@ def is_non_tensor_op(n: fx.Node) -> bool:
     :return: `True` if `n` is a non-tensor op
     :rtype: bool
     """
+    if is_features_getitem(n, parent):
+        return False
     if n.op == 'get_attr':
         return True
     if n.op == 'call_function' and n.target == getattr:
         return True
-    if n.op == 'call_function' and n.target == operator.getitem:
-        return True
     return False
 
+def is_features_getitem(n: fx.Node, parent: fx.GraphModule) -> bool:
+    """Checks if a `torch.fx.Node` instance corresponds to a getitem operation
+    over the features axis.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return:- `True` if `n` corresponds to a getitem op on the features.
+    :rtype: bool
+    """
+    if n.op == 'call_function' and n.target == operator.getitem:
+        slices = try_get_args(n, parent, 1, None, 0)
+        if isinstance(slices, int): #getitem not applied on tensors, which have 3 dim min
+            return False
+        if slices[0] != slice(None,None,None):
+            msg = "slicing batch size not supported!"   # raise Error
+            raise AttributeError(msg)
+
+        is_features_dim = slices[1] != slice(None,None,None)
+        if is_features_dim:
+            return True
+    return False
 
 def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` corresponds to an operation that requires all its inputs to
@@ -220,7 +243,6 @@ def is_shared_input_features_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     # if n.op == 'call_method':
     return False
 
-
 def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` corresponds to an operation that "defines" the number of
     features for successors.
@@ -253,7 +275,6 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         if isinstance(submodule, nn.Linear):
             return True
     return False
-
 
 def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` corresponds to an operation that "propagates" the number of
@@ -318,6 +339,12 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
                 return False
         if isinstance(submodule, nn.Upsample):
             return True
+        if isinstance(submodule, nn.Sigmoid):
+            return True
+        if isinstance(submodule, nn.InstanceNorm1d):
+            return True
+        if isinstance(submodule, nn.PReLU):
+            return True
         # add others
     if n.op == 'call_function':
         if n.target == F.log_softmax:
@@ -342,10 +369,17 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if n.target == torch.tanh:
             return True
+        if n.target==F.pad:
+            return not is_features_pad(n,parent)
+        if n.target==torch.mean:
+            return not is_features_mean(n,parent)
+        if n.target == torch.multiply:
+            return True
+        if n.target ==operator.getitem:
+            return not is_features_getitem(n,parent)
     if is_concatenate(n, parent):  # cat NOT along features' dimension
         return True
     return False
-
 
 def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` instance corresponds to a flatten operation.
@@ -367,7 +401,6 @@ def is_flatten(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     return False
 
-
 def is_unsqueeze(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` instance corresponds to an unsqueeze operation.
 
@@ -383,7 +416,6 @@ def is_unsqueeze(n: fx.Node, parent: fx.GraphModule) -> bool:
     if n.op == 'call_function' and n.target == torch.unsqueeze:
         return True
     return False
-
 
 def is_squeeze(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` instance corresponds to a squeeze operation.
@@ -401,7 +433,6 @@ def is_squeeze(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     return False
 
-
 def is_features_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` instance corresponds to a concat operation
     over the features axis.
@@ -418,7 +449,6 @@ def is_features_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     return False
 
-
 def is_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
     """Checks if a `torch.fx.Node` instance corresponds to a concat operation.
 
@@ -433,6 +463,46 @@ def is_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     return False
 
+def is_features_pad(n: fx.node, parent: fx.GraphModule) ->bool:
+    """Checks if a `torch.fx.Node` instance corresponds to a pad operation
+    over the features axis.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a pad op on the features.
+    :rtype: bool
+    """
+    if n.op == 'call_function' and n.target == F.pad:
+        pad = try_get_args(n, parent, 1, None, 0)
+        #check if length of padding exceed the [H] [D] W dimensions of the input vector
+        if floor(len(pad)/2) > len(n.all_input_nodes[0].meta['tensor_meta'].shape)-2: #subtract batch_size, #channels
+            return True
+        #is_features_dim = slices[1] != slice(None,None,None)
+        #if is_features_dim:
+        #    return True
+    elif n.op == 'call_module':
+        submodule = parent.get_submodule(str(n.target))
+        if isinstance(submodule, nn.ConstantPad1d): #if floor(len(pad)/2) > len(n.all_input_nodes[0].meta['tensor_meta'].shape)-2:
+            return floor(len(submodule.padding)/2) > len(n.all_input_nodes[0].meta['tensor_meta'].shape)-2
+    return False
+
+def is_features_mean(n: fx.node, parent: fx.GraphModule) ->bool:
+    """Checks if a `torch.fx.Node` instance corresponds to a mean operation
+    over the features axis.
+
+    :param n: the target node
+    :type n: fx.Node
+    :param parent: the parent sub-module
+    :type parent: fx.GraphModule
+    :return: `True` if `n` corresponds to a mean op on the features.
+    :rtype: bool
+    """
+    dim = try_get_args(n, parent, 1, None, 0)
+    if n.op == 'call_function' and n.target==torch.mean and dim==1:
+        return True
+    return False
 
 def parent_name(target: str) -> Tuple[str, str]:
     """
