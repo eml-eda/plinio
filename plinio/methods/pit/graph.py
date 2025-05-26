@@ -27,6 +27,7 @@ from torch.fx.passes.shape_prop import ShapeProp
 
 from .nn.conv1d import PITConv1d
 from .nn.conv2d import PITConv2d
+from .nn.conv3d import PITConv3d
 from .nn.linear import PITLinear
 from .nn.batchnorm_1d import PITBatchNorm1d
 from .nn.batchnorm_2d import PITBatchNorm2d
@@ -44,6 +45,7 @@ from plinio.graph.utils import fx_to_nx_graph, NamedLeafModules
 pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {
     nn.Conv1d: PITConv1d,
     nn.Conv2d: PITConv2d,
+    nn.Conv3d: PITConv3d,
     nn.Linear: PITLinear,
     nn.BatchNorm1d: PITBatchNorm1d,
     nn.BatchNorm2d: PITBatchNorm2d,
