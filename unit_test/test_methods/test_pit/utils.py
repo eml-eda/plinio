@@ -23,7 +23,7 @@ import random
 import torch
 import torch.nn as nn
 from plinio.methods import PIT
-from plinio.methods.pit.nn import PITModule, PITConv1d, PITConv2d, PITLinear
+from plinio.methods.pit.nn import PITModule, PITConv1d, PITConv2d, PITConv3d, PITLinear
 from plinio.methods.pit.nn.features_masker import PITFrozenFeaturesMasker
 
 
@@ -92,6 +92,42 @@ def compare_prepared(test: unittest.TestCase,
         if isinstance(child, nn.Conv1d):
             if (base_name + name not in exclude_names) and not isinstance(child, exclude_types):
                 test.assertTrue(isinstance(new_child, PITConv1d),
+                                f"Layer {name} not converted")
+                test.assertEqual(child.out_channels, new_child.out_channels,
+                                 f"Layer {name} wrong output channels")
+                test.assertEqual(child.kernel_size, new_child.kernel_size,
+                                 f"Layer {name} wrong kernel size")
+                test.assertEqual(child.dilation, new_child.dilation,
+                                 f"Layer {name} wrong dilation")
+                test.assertEqual(child.padding_mode, new_child.padding_mode,
+                                 f"Layer {name} wrong padding mode")
+                test.assertEqual(child.padding, new_child.padding,
+                                 f"Layer {name} wrong padding")
+                test.assertEqual(child.stride, new_child.stride,
+                                 f"Layer {name} wrong stride")
+                test.assertEqual(child.groups, new_child.groups,
+                                 f"Layer {name} wrong groups")
+        if isinstance(child, nn.Conv2d):
+            if (base_name + name not in exclude_names) and not isinstance(child, exclude_types):
+                test.assertTrue(isinstance(new_child, PITConv2d),
+                                f"Layer {name} not converted")
+                test.assertEqual(child.out_channels, new_child.out_channels,
+                                 f"Layer {name} wrong output channels")
+                test.assertEqual(child.kernel_size, new_child.kernel_size,
+                                 f"Layer {name} wrong kernel size")
+                test.assertEqual(child.dilation, new_child.dilation,
+                                 f"Layer {name} wrong dilation")
+                test.assertEqual(child.padding_mode, new_child.padding_mode,
+                                 f"Layer {name} wrong padding mode")
+                test.assertEqual(child.padding, new_child.padding,
+                                 f"Layer {name} wrong padding")
+                test.assertEqual(child.stride, new_child.stride,
+                                 f"Layer {name} wrong stride")
+                test.assertEqual(child.groups, new_child.groups,
+                                 f"Layer {name} wrong groups")
+        if isinstance(child, nn.Conv3d):
+            if (base_name + name not in exclude_names) and not isinstance(child, exclude_types):
+                test.assertTrue(isinstance(new_child, PITConv3d),
                                 f"Layer {name} not converted")
                 test.assertEqual(child.out_channels, new_child.out_channels,
                                  f"Layer {name} wrong output channels")
