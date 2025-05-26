@@ -56,6 +56,7 @@ from .toy_models import (
 from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR
 from .cnn_3d import CNN3D
+from .cnn_3d_mps import ExportedCNN3D
 
 __all__ = [
     "TCResNet14",

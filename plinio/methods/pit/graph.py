@@ -297,11 +297,16 @@ def export_node(n: fx.Node, mod: fx.GraphModule,
 
 def remove_bn_inplace(lin: nn.Module, bn: nn.Module, fold: bool):
     """
-    Removes BN layer followin linear layers. If fold is True, the BN layer is folded into the linear
+    Removes BN layer following linear layers. If fold is True, the BN layer is folded into the linear
     layer, otherwise, it is just added as a field of the linear layer.
     """
-    assert (isinstance(lin, PITConv1d) or isinstance(lin, PITConv2d) or isinstance(lin, PITLinear))
-    assert (isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d))
+    assert (isinstance(lin, PITConv1d) or
+            isinstance(lin, PITConv2d) or 
+            isinstance(lin, PITConv3d) or 
+            isinstance(lin, PITLinear))
+    assert (isinstance(bn, nn.BatchNorm1d) or
+            isinstance(bn, nn.BatchNorm2d) or
+            isinstance(bn, nn.BatchNorm3d))
     if not bn.track_running_stats:
         raise AttributeError("BatchNorm folding requires track_running_stats = True")
     with torch.no_grad():
@@ -339,6 +344,8 @@ def fuse_pit_modules(mod: fx.GraphModule, fold_bn: bool) -> None:
     fuse_consecutive_layers(mod, PITConv1d, nn.BatchNorm1d,
                             lambda x, y: remove_bn_inplace(x, y, fold_bn))
     fuse_consecutive_layers(mod, PITConv2d, nn.BatchNorm2d,
+                            lambda x, y: remove_bn_inplace(x, y, fold_bn))
+    fuse_consecutive_layers(mod, PITConv3d, nn.BatchNorm3d,
                             lambda x, y: remove_bn_inplace(x, y, fold_bn))
     fuse_consecutive_layers(mod, PITLinear, nn.BatchNorm1d,
                             lambda x, y: remove_bn_inplace(x, y, fold_bn))
