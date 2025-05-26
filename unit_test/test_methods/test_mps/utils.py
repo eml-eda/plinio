@@ -22,7 +22,7 @@ import torch
 from torch.fx import Interpreter, GraphModule
 import torch.nn as nn
 from plinio.methods import MPS
-from plinio.methods.mps.nn import MPSConv1d, MPSConv2d, MPSLinear, MPSModule
+from plinio.methods.mps.nn import MPSConv1d, MPSConv2d, MPSConv3d, MPSLinear, MPSModule
 from plinio.methods.mps.quant.quantizers import DummyQuantizer
 import plinio.methods.mps.quant.nn as qnn
 
@@ -84,6 +84,40 @@ def compare_prepared(
             ):
                 test.assertTrue(
                     isinstance(new_child, MPSConv1d), f"Layer {name} not converted"
+                )
+                test.assertEqual(
+                    child.out_channels,
+                    new_child.out_channels,
+                    f"Layer {name} wrong output channels",
+                )
+                test.assertEqual(
+                    child.kernel_size,
+                    new_child.kernel_size,
+                    f"Layer {name} wrong kernel size",
+                )
+                test.assertEqual(
+                    child.dilation, new_child.dilation, f"Layer {name} wrong dilation"
+                )
+                test.assertEqual(
+                    child.padding_mode,
+                    new_child.padding_mode,
+                    f"Layer {name} wrong padding mode",
+                )
+                test.assertEqual(
+                    child.padding, new_child.padding, f"Layer {name} wrong padding"
+                )
+                test.assertEqual(
+                    child.stride, new_child.stride, f"Layer {name} wrong stride"
+                )
+                test.assertEqual(
+                    child.groups, new_child.groups, f"Layer {name} wrong groups"
+                )
+        if isinstance(child, nn.Conv3d):
+            if (base_name + name not in exclude_names) and not isinstance(
+                child, exclude_types
+            ):
+                test.assertTrue(
+                    isinstance(new_child, MPSConv3d), f"Layer {name} not converted"
                 )
                 test.assertEqual(
                     child.out_channels,
@@ -229,23 +263,65 @@ def compare_exported(
     for name, child in expected_mod.named_children():
         new_child = cast(nn.Module, exported_mod._modules[name])
         # test._compare_exported(child, new_child)
+        if isinstance(child, qnn.QuantConv1d):
+            check_conv1d(test, child, new_child)
         if isinstance(child, qnn.QuantConv2d):
             check_conv2d(test, child, new_child)
+        if isinstance(child, qnn.QuantConv3d):
+            check_conv3d(test, child, new_child)
         if isinstance(child, qnn.QuantLinear):
             check_linear(test, child, new_child)
         if isinstance(child, qnn.QuantList):
             test.assertIsInstance(new_child, qnn.QuantList, "Wrong layer type")
             new_child = cast(qnn.QuantList, new_child)
             for layer, new_layer in zip(child, new_child):
+                if isinstance(layer, qnn.QuantConv1d):
+                    check_conv1d(test, layer, new_layer)
                 if isinstance(layer, qnn.QuantConv2d):
                     check_conv2d(test, layer, new_layer)
+                if isinstance(layer, qnn.QuantConv3d):
+                    check_conv3d(test, layer, new_layer)
                 if isinstance(layer, qnn.QuantLinear):
                     check_linear(test, layer, new_layer)
+
+
+def check_conv1d(test: unittest.TestCase, child, new_child):
+    """Collection of checks on QuantConv1d"""
+    test.assertIsInstance(new_child, qnn.QuantConv1d, "Wrong layer type")
+    # Check layer geometry
+    test.assertTrue(child.in_channels == new_child.in_channels)
+    test.assertTrue(child.out_channels == new_child.out_channels)
+    test.assertTrue(child.kernel_size == new_child.kernel_size)
+    test.assertTrue(child.stride == new_child.stride)
+    test.assertTrue(child.padding == new_child.padding)
+    test.assertTrue(child.dilation == new_child.dilation)
+    test.assertTrue(child.groups == new_child.groups)
+    test.assertTrue(child.padding_mode == new_child.padding_mode)
+    # Check qtz param
+    test.assertTrue(child.out_quantizer.precision == new_child.out_quantizer.precision)
+    test.assertTrue(child.w_quantizer.precision == new_child.w_quantizer.precision)
 
 
 def check_conv2d(test: unittest.TestCase, child, new_child):
     """Collection of checks on QuantConv2d"""
     test.assertIsInstance(new_child, qnn.QuantConv2d, "Wrong layer type")
+    # Check layer geometry
+    test.assertTrue(child.in_channels == new_child.in_channels)
+    test.assertTrue(child.out_channels == new_child.out_channels)
+    test.assertTrue(child.kernel_size == new_child.kernel_size)
+    test.assertTrue(child.stride == new_child.stride)
+    test.assertTrue(child.padding == new_child.padding)
+    test.assertTrue(child.dilation == new_child.dilation)
+    test.assertTrue(child.groups == new_child.groups)
+    test.assertTrue(child.padding_mode == new_child.padding_mode)
+    # Check qtz param
+    test.assertTrue(child.out_quantizer.precision == new_child.out_quantizer.precision)
+    test.assertTrue(child.w_quantizer.precision == new_child.w_quantizer.precision)
+
+
+def check_conv3d(test: unittest.TestCase, child, new_child):
+    """Collection of checks on QuantConv3d"""
+    test.assertIsInstance(new_child, qnn.QuantConv3d, "Wrong layer type")
     # Check layer geometry
     test.assertTrue(child.in_channels == new_child.in_channels)
     test.assertTrue(child.out_channels == new_child.out_channels)

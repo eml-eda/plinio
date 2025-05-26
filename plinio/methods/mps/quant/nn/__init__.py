@@ -23,6 +23,7 @@ from .add import QuantAdd
 from .linear import QuantLinear
 from .conv1d import QuantConv1d
 from .conv2d import QuantConv2d
+from .conv3d import QuantConv3d
 from .list import QuantList
 
 __all__ = [
@@ -31,6 +32,7 @@ __all__ = [
     "QuantLinear",
     "QuantConv1d",
     "QuantConv2d",
+    "QuantConv3d",
     "QuantList",
     "QuantAdd",
 ]
