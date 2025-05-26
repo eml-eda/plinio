@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 from . import CostSpec
-from .pattern import Conv1dGeneric, Conv2dGeneric, LinearGeneric, \
+from .pattern import Conv1dGeneric, Conv2dGeneric, Conv3dGeneric, LinearGeneric, \
         Conv1dDW, Conv2dDW
 
 
@@ -38,6 +38,16 @@ def _ops_conv2d_generic(spec):
     out_shape = spec['output_shape']
     cost = cout * (cin * k[0] * k[1] + (1 if spec['_parameters']['bias'] is not None else 0))
     cost = cost * out_shape[2] * out_shape[3]
+    return cost
+
+
+def _ops_conv3d_generic(spec):
+    cin = spec['in_channels']
+    cout = spec['out_channels']
+    k = spec['kernel_size']
+    out_shape = spec['output_shape']
+    cost = cout * (cin * k[0] * k[1] * k[2] + (1 if spec['_parameters']['bias'] is not None else 0))
+    cost = cost * out_shape[2] * out_shape[3] * out_shape[4]
     return cost
 
 
@@ -69,6 +79,7 @@ def _ops_linear_generic(spec):
 ops = CostSpec(shared=False, default_behavior='zero')
 ops[Conv1dGeneric] = _ops_conv1d_generic
 ops[Conv2dGeneric] = _ops_conv2d_generic
+ops[Conv3dGeneric] = _ops_conv3d_generic
 ops[Conv1dDW] = _ops_conv1d_dw
 ops[Conv2dDW] = _ops_conv2d_dw
 ops[LinearGeneric] = _ops_linear_generic

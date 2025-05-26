@@ -50,6 +50,7 @@ def conv_3_constraint(spec: PatternSpec):
 # Patterns/constraints pairs definition
 Conv1dGeneric = (nn.Conv1d, None)
 Conv2dGeneric = (nn.Conv2d, None)
+Conv3dGeneric = (nn.Conv3d, None)
 LinearGeneric = (nn.Linear, None)
 Conv1dDW = (nn.Conv1d, conv_dw_constraint)
 Conv2dDW = (nn.Conv2d, conv_dw_constraint)
