@@ -26,12 +26,12 @@ from plinio.methods.mps.quant.backends.utils import binary_search
 from .module import ONNXModule
 
 
-class ONNXConv2d(nn.Conv2d, ONNXModule):
-    """A nn.Module implementing an integer quantized Conv2d layer compatible
+class ONNXConv3d(nn.Conv3d, ONNXModule):
+    """A nn.Module implementing an integer quantized Conv3d layer compatible
     with the ONNX backend.
 
-    :param conv: the inner `nn.Conv2d` layer
-    :type conv: nn.Conv2d
+    :param conv: the inner `nn.Conv3d` layer
+    :type conv: nn.Conv3d
     :param in_quantizer: input activation quantizer
     :type in_quantizer: Type[Quantizer]
     :param out_quantizer: output activation quantizer
@@ -44,7 +44,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
 
     def __init__(
         self,
-        conv: nn.Conv2d,
+        conv: nn.Conv3d,
         in_quantizer: Quantizer,
         out_quantizer: Quantizer,
         w_quantizer: Quantizer,
@@ -54,7 +54,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         signed: bool = False,
         dequantize_output: bool = False,
     ):
-        super(ONNXConv2d, self).__init__(
+        super(ONNXConv3d, self).__init__(
             conv.in_channels,
             conv.out_channels,
             conv.kernel_size,
@@ -139,7 +139,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             if conv.bias is not None:
                 if not self.skip_requant:
                     int_bias = int_bias * self.scale
-                    self.add_bias = int_bias.view(1, self.out_channels, 1, 1)
+                    self.add_bias = int_bias.view(1, self.out_channels, 1, 1, 1)
                 else:
                     self.bias = cast(torch.Tensor, self.bias)
                     self.bias.copy_(int_bias)
@@ -147,7 +147,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                 self.add_bias = None
 
         # Done here to avoid the reshape op in fwd
-        self.scale = self.scale.view(1, self.out_channels, 1, 1)
+        self.scale = self.scale.view(1, self.out_channels, 1, 1, 1)
 
         # Dilation should be handled by the backend
 
@@ -161,17 +161,17 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                     + (self.clip_inf * 2**self.shift)
                     - self.clip_inf
                     * self.scale
-                    * torch.sum(self.weight, dim=(1, 2, 3)).view(
-                        1, self.out_channels, 1, 1
+                    * torch.sum(self.weight, dim=(1, 2, 3, 4)).view(
+                        1, self.out_channels, 1, 1, 1
                     )
                 )
                 self._zero_point= self._zero_point.to(self.device)
         else:
             with torch.no_grad():
                 self._zero_point = self.bias.view(
-                    1, self.out_channels, 1, 1
-                ) - self.clip_inf * torch.sum(self.weight, dim=(1, 2, 3)).view(
-                    1, self.out_channels, 1, 1
+                    1, self.out_channels, 1, 1, 1
+                ) - self.clip_inf * torch.sum(self.weight, dim=(1, 2, 3, 4)).view(
+                    1, self.out_channels, 1, 1, 1
                 )
                 self._zero_point= self._zero_point.to(self.device)
 
@@ -182,13 +182,15 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         if self.padding == "valid":
             self.pad = nn.Identity()
         else:
-            # From self.padding to the 4-tuple padding
-            padding = (0, 0, 0, 0)
+            # From self.padding to the 6-tuple padding
+            padding = (0,) * 6
             if isinstance(self.padding, int):
-                padding = (self.padding, self.padding, self.padding, self.padding)
-            elif len(self.padding) == 2:
-                # H,W padding to W, H
+                padding = (self.padding,) * 6
+            elif len(self.padding) == 3:
+                # D, H,W padding (used by conv3d) to W, H, D (used by Pad3d)
                 padding = (
+                    self.padding[2],
+                    self.padding[2],
                     self.padding[1],
                     self.padding[1],
                     self.padding[0],
@@ -201,11 +203,11 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             else:
                 # TODO: This assumes zero padding, but this is not the only possible
                 # padding value.
-                self.pad = nn.ConstantPad2d(padding, self.pad_inf)
+                self.pad = nn.ConstantPad3d(padding, self.pad_inf)
             self.padding = "valid"
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of integer conv2d layer.
+        """The forward function of integer conv3d layer.
 
         It performs:
         - Convolution of the input with the integerized `self.weight` tensor.
@@ -226,7 +228,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             # Convolution
             # Padding is always done externaly to handle the signed case
             input = self.pad(input)
-            out = F.conv2d(
+            out = F.conv3d(
                 input,
                 self.weight,
                 None,
@@ -244,7 +246,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         else:
             # Convolution
             input = self.pad(input)
-            out = F.conv2d(
+            out = F.conv3d(
                 input,
                 self.weight,
                 None,
