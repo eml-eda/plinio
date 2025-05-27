@@ -32,6 +32,7 @@ from unit_test.models import (
     TutorialModel,
     ToySequentialFullyConv2dDil,
     ToySequentialConv2d_v2,
+    CNN3D,
 )
 import numpy as np
 from unit_test.models.miniresnet import MiniResNet
@@ -48,6 +49,7 @@ class TestBackendONNX(unittest.TestCase):
     def test_autoimport_fullyconv_layer(self):
         integerize_onnx = False
         for i, model in enumerate([
+                        CNN3D,
                         MiniResNet,
                         ToySequentialFullyConv2d,
                         ToySequentialFullyConv2dDil,
@@ -61,7 +63,10 @@ class TestBackendONNX(unittest.TestCase):
                 # Instantiate toy model
                 bits = 8
                 nn_ut = model()
-                input_shape = nn_ut.input_shape if hasattr(nn_ut, "input_shape") else (3, 32, 32)
+                input_shape = nn_ut.input_shape if hasattr(nn_ut, "input_shape") else (
+                        (nn_ut.in_channel, nn_ut.patch_size, nn_ut.patch_size) if isinstance(nn_ut, CNN3D) 
+                        else (3, 32, 32)
+                )
 
                 # Convert to mixprec searchable model
                 mixprec_nn = MPS(
