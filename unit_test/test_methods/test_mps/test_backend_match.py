@@ -34,6 +34,7 @@ from unit_test.models import (
     ToyResNet,
     ToyResNet_inp_conn,
     ToyResNet_inp_conn_add_out,
+    CNN3D,
 )
 from .utils import capture_outputs, compare_outputs
 
@@ -527,3 +528,50 @@ class TestBackendMATCH(unittest.TestCase):
         exporter = MATCHExporter()
         exporter.export(integer_nn, dummy_inp.shape, Path("."))
         Path(f"./{integer_nn.__class__.__name__}.onnx").unlink()
+
+    def test_autoimport_conv3d(self):
+        """Test the conversion of a simple 3D CNN
+        with layer autoconversion with PER_LAYER weight mixed-precision (default)"""
+        # Instantiate toy model
+        nn_ut = CNN3D()
+        input_shape = (nn_ut.in_channel, nn_ut.patch_size, nn_ut.patch_size)
+
+        # Convert to mixprec searchable model
+        mixprec_nn = MPS(
+            nn_ut,
+            input_shape=input_shape,
+            qinfo=get_default_qinfo(w_precision=(8,), a_precision=(8,)),
+            w_search_type=MPSType.PER_LAYER,
+        )
+        # Dummy inference
+        dummy_inp = torch.rand((1,) + input_shape)
+        with torch.no_grad():
+            out_mixprec = mixprec_nn(dummy_inp)
+
+        # Convert to (fake) quantized model
+        quantized_nn = mixprec_nn.export()
+        # Dummy inference
+        with torch.no_grad():
+            out_quant = quantized_nn(dummy_inp)
+        self.assertTrue(
+            torch.all(out_mixprec == out_quant),
+            "Mismatch between mixprec and fake-quantized outputs",
+        )
+
+        # Convert to integer MATCH-compliant model
+        integer_nn = integerize_arch(quantized_nn, Backend.MATCH)
+        # Dummy inference
+        with torch.no_grad():
+            out_int = integer_nn(dummy_inp)
+        # self.assertTrue(torch.all((100 * abs(out_quant - out_int) / out_quant) < 0.01),
+        #                 "Mismatch between fake-quantized and integer outputs")
+        self.assertTrue(
+            out_quant.argmax() == out_int.argmax(),
+            "Mismatch between fake-quantized and integer outputs",
+        )
+
+        # Convert to onnx
+        exporter = MATCHExporter()
+        exporter.export(integer_nn, dummy_inp.shape, Path("."))
+        Path(f"./{integer_nn.__class__.__name__}.onnx").unlink()
+
