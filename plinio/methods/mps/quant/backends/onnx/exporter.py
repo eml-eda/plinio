@@ -58,7 +58,7 @@ class ONNXExporter:
         onnxname = name if name is not None else network.__class__.__name__
         self._onnxname = onnxname
         onnxfilename = onnxname + ".onnx"
-        onnxfilepath = path / onnxfilename
+        onnxfilepath = Path(path) / onnxfilename
         self._onnxfilepath = onnxfilepath
 
         # Remove input quantizer from `network`
