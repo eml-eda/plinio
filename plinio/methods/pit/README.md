@@ -67,7 +67,7 @@ class Net(nn.Module):
         self.lin2 = nn.Linear()
 
 net = Net()
-exclude_types = (nn.Conv1d)
+exclude_types = (nn.Conv1d,)
 pit_net = PIT(net, exclude_types=exclude_types)
 ```
 
