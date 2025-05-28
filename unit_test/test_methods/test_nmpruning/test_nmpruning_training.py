@@ -51,7 +51,7 @@ class TestNMPruningTraining(unittest.TestCase):
         exported = new_nn.export()
         check_sparsity_conv2d(self, exported, n=1, m=4)
 
-    def test_train_one_miniepoch_cnn(self):
+    def test_train_one_miniepoch_fc(self):
         nn_ut = SimpleMlpNMPruning()
         new_nn = NMPruning(nn_ut, n=1, m=4, input_shape=nn_ut.input_shape)
 

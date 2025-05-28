@@ -46,7 +46,7 @@ class NMPruningTracer(fx.Tracer):
         super().__init__()  # type: ignore
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-        if isinstance(m, NMPruningTracer):
+        if isinstance(m, NMPruningModule):
             return True
         else:
             return m.__module__.startswith('torch.nn') and not isinstance(m, torch.nn.Sequential)
@@ -196,17 +196,18 @@ def autoimport_node(node: fx.Node,
     :type n: fx.Node
     :param mod: the parent module, where the new node has to be optionally inserted
     :type mod: fx.GraphModule
-    :param exclude_names: the names of `model` submodules that should be ignored by the NAS
+    :param exclude_names: the names of `model` submodules that should be ignored by the pruning
     when auto-converting layers, defaults to ()
     :type exclude_names: Iterable[str], optional
-    :param exclude_types: the types of `model` submodules that should be ignored by the NAS
+    :param exclude_types: the types of `model` submodules that should be ignored by the pruning
     :type exclude_types: Iterable[Type[nn.Module]], optional
     """
     if is_layer(node, mod, tuple(nmpruning_layer_map.keys())) and \
        not exclude(node, mod, exclude_names, exclude_types):
         module_type = nmpruning_layer_map[type(mod.get_submodule(str(node.target)))]
     elif is_function(node, tuple(nmpruning_function_map.keys())):
-        module_type = nmpruning_function_map[cast(Callable, node.target)]
+        raise NotImplementedError("Per-node autoimport for functions is not supported yet")
+        # module_type = nmpruning_function_map[cast(Callable, node.target)]
     else:
         return
 

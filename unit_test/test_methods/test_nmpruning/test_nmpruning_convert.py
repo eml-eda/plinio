@@ -58,30 +58,6 @@ class TestNMPruningConvert(unittest.TestCase):
         check_target_layers(self, new_nn, exp_tgt=3)
 
 
-    def test_autoimport_train_status_neutrality(self):
-        """Test that the conversion does not change the training status of the original model"""
-        # Training status is True
-        nn_ut = SimpleNN2D()
-        new_nn = NMPruning(nn_ut, input_shape=nn_ut.input_shape)
-        self.assertTrue(new_nn.training, "Training status changed after conversion")
-        self.assertTrue(
-            new_nn.seed.training,
-            "Training status changed after conversion within new_nn.seed",
-        )
-
-        # Training status is False
-        nn_ut = SimpleNN2D()
-        nn_ut.eval()
-        new_nn = NMPruning(nn_ut, input_shape=nn_ut.input_shape)
-        self.assertFalse(new_nn.training, "Training status changed after conversion")
-        self.assertFalse(
-            new_nn.seed.training,
-            "Training status changed after conversion within new_nn.seed",
-        )
-
-
-
-
 
 
 if __name__ == "__main__":

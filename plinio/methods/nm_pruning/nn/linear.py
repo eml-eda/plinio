@@ -94,6 +94,9 @@ class NMPruningLinear(nn.Linear, NMPruningModule):
         # Support check
         # Compatible dimensions check
         if (submodule.in_features) % m != 0:
+            print(
+                f"Layer {node.target} cannot be pruned with N={n} and M={m}, skipping"
+            )
             return
         new_submodule = NMPruningLinear(submodule, n, m, pruning_decay)
         mod.add_submodule(str(node.target), new_submodule)
@@ -118,6 +121,7 @@ class NMPruningLinear(nn.Linear, NMPruningModule):
             submodule.out_features,
             submodule.bias is not None,
         )
+        new_submodule.weight = torch.nn.Parameter(submodule.get_sparse_weights())
         mod.add_submodule(str(node.target), new_submodule)
 
     @staticmethod

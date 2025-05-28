@@ -109,9 +109,11 @@ def check_sparsity_conv2d(
     test: unittest.TestCase, exp_mod, n: int, m: int
 ):
     """Check sparsity of all Conv2d layers"""
+    has_checked_one = False
     for name, child in exp_mod.named_children():
         print(isinstance(child, nn.Conv2d),child)
         if isinstance(child, nn.Conv2d) and NMPruningConv2d.is_prunable(child, n, m):
+            has_checked_one = True
             print("Checking sparsity of", name)
             w = child.weight.permute(0, 2, 3, 1) # NCHW -> NHWC
             # Assert that the N:M sparsity is correct
@@ -122,14 +124,20 @@ def check_sparsity_conv2d(
             test.assertTrue(
                 torch.equal(count, n_nonzero), "Wrong number of non-zero parameters"
             )
+    test.assertTrue(
+        has_checked_one,
+        "No Conv2d layers with N:M pruning found, check the model and the parameters",
+    )
 
 def check_sparsity_linear(
         test: unittest.TestCase, exp_mod, n: int, m: int
 ):
     """Check sparsity of all Linear layers"""
+    has_checked_one = False
     for name, child in exp_mod.named_children():
         if isinstance(child, nn.Linear) and NMPruningLinear.is_prunable(child, n, m):
-            w = child.weight.permute(1, 0)  # (in, out) -> (out, in)
+            has_checked_one = True
+            w = child.weight
 
             fout, fin = w.shape
             rw = w.reshape(fout, -1, m).reshape(-1, m)
@@ -139,3 +147,7 @@ def check_sparsity_linear(
                 torch.equal(count, n_nonzero), "Wrong number of non-zero parameters"
             )
 
+    test.assertTrue(
+        has_checked_one,
+        "No Linear layers with N:M pruning found, check the model and the parameters",
+    )

@@ -145,6 +145,9 @@ class NMPruningConv2d(nn.Conv2d, NMPruningModule):
 
         # Support check
         if not NMPruningConv2d.is_prunable(submodule, n, m):
+            print(
+                f"Layer {node.target} cannot be pruned with N={n} and M={m}, skipping"
+            )
             return
         new_submodule = NMPruningConv2d(submodule, n, m, pruning_decay)
         mod.add_submodule(str(node.target), new_submodule)
@@ -177,8 +180,9 @@ class NMPruningConv2d(nn.Conv2d, NMPruningModule):
         )
         # Set bias and weights
         new_submodule.bias = submodule.bias
-        new_submodule.weight = submodule.get_sparse_weights().permute(0, 3, 1, 2)
-        print(new_submodule.weight)
+        new_submodule.weight = torch.nn.Parameter(
+            submodule.get_sparse_weights()
+        )
         mod.add_submodule(str(node.target), new_submodule)
 
     @staticmethod

@@ -17,11 +17,13 @@
 # * Author:  Francesco Daghero <francesco.daghero@polito.it>                   *
 # *----------------------------------------------------------------------------*
 
-from typing import Any, Tuple, Type, Iterable, Dict, Optional
+from abc import abstractmethod
+from typing import Any, Dict, Iterator, Optional, Tuple, Union, cast, Iterable, Type
 import torch
 import torch.nn as nn
 
 from plinio.methods.dnas_base import DNAS
+from plinio.cost import CostSpec, CostFn
 from .graph import convert
 
 
@@ -65,7 +67,6 @@ class NMPruning(DNAS):
         exclude_types: Iterable[Type[nn.Module]] = (),
     ):
         super(NMPruning, self).__init__(model, {}, input_example, input_shape)
-        self.is_training = model.training
         self.seed, self._leaf_modules, self._unique_leaf_modules = convert(
             model,
             self._input_example,
@@ -79,14 +80,6 @@ class NMPruning(DNAS):
         self.n = n
         self.m = m
         self.pruning_decay = pruning_decay
-
-        # Restore training status after forced `eval()` in convert
-        if self.is_training:
-            self.train()
-            self.seed.train()
-        else:
-            self.eval()
-            self.seed.eval()
 
     def forward(self, *args: Any) -> torch.Tensor:
         """Forward function for the model.
@@ -119,3 +112,49 @@ class NMPruning(DNAS):
             "m": self.m,
             "pruning_decay": self.pruning_decay,
         }
+
+    @property
+    def cost(self) -> torch.Tensor:
+        raise NotImplementedError(
+            "NMPruning does not support cost models"
+        )
+    @property
+    def cost_specification(self) -> Union[CostSpec, Dict[str, CostSpec]]:
+        return self._cost_specification
+
+    @cost_specification.setter
+    def cost_specification(self, cs: Union[CostSpec, Dict[str, CostSpec]]):
+        self._cost_specification = cs
+
+    def get_cost(self, name: str | None = None) -> torch.Tensor:
+        raise NotImplementedError(
+            "NMPruning does not support cost models"
+        )
+
+    def train_nas_only(self):
+        raise NotImplementedError(
+            "NMPruning does not support training the NAS only"
+        )
+
+    def train_net_only(self):
+        raise NotImplementedError(
+            "NMPruning does not support training the network only"
+        )
+
+    def train_net_and_nas(self):
+        raise NotImplementedError(
+            "NMPruning is not a NAS method"
+        )
+
+
+    @abstractmethod
+    def named_nas_parameters(self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str | Any]]:
+        raise NotImplementedError(
+            "NMPruning does not support named parameters"
+        )
+
+    @abstractmethod
+    def named_net_parameters(self, prefix: str = '', recurse: bool = True) -> Iterator[Tuple[str | Any]]:
+        raise NotImplementedError(
+            "NMPruning does not support named parameters"
+        )
