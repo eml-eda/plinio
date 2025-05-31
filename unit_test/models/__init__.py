@@ -57,6 +57,7 @@ from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR
 from .cnn_3d import CNN3D
 from .cnn_3d_mps import ExportedCNN3D
+from .simple_nns_nmpruning import SimpleCnnNMPruning, SimpleMlpNMPruning
 
 __all__ = [
     "TCResNet14",
