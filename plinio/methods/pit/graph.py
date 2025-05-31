@@ -42,8 +42,9 @@ from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_la
 from plinio.graph.transformation import fuse_consecutive_layers
 from plinio.graph.features_calculation import ModAttrFeaturesCalculator
 from plinio.graph.utils import fx_to_nx_graph, NamedLeafModules
-
-import numpy as np #needed for correct_get_item
+#following needed for correct_get_item
+import numpy as np
+from plinio.graph.utils import try_get_args
 
 # add new supported layers here:
 pit_layer_map: Dict[Type[nn.Module], Type[PITModule]] = {
@@ -111,6 +112,8 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
         sm_dict = {} if conversion_type != 'autoimport' else build_shared_features_map(mod)
         if conversion_type == 'export':
             add_features_calculator(mod, [pit_features_calc])
+            associate_input_features(mod)
+            register_input_features(mod)
         convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types, fold_bn)
     if conversion_type in ('autoimport', 'import'):
         fuse_pit_modules(mod, fold_bn)
@@ -356,7 +359,9 @@ def fuse_pit_modules(mod: fx.GraphModule, fold_bn: bool) -> None:
 
     fuse_consecutive_layers(mod, PITLinear, nn.InstanceNorm1d,
                             lambda x, y: remove_bn_inplace(x, y, fold_bn))
-    fuse_consecutive_layers(mod, PITConv1d, nn.BatchNorm1d,
+    fuse_consecutive_layers(mod, PITConv1d, nn.InstanceNorm1d,
+                            lambda x, y: remove_bn_inplace(x, y, fold_bn))
+    fuse_consecutive_layers(mod, PITConv2d, nn.InstanceNorm2d,
                             lambda x, y: remove_bn_inplace(x, y, fold_bn))
 
 
@@ -385,8 +390,6 @@ def pit_features_calc(n: fx.Node, mod: fx.GraphModule) -> Optional[ModAttrFeatur
         return ModAttrFeaturesCalculator(sub_mod, 'out_features_eff', 'features_mask')
     else:
         return None
-
-from plinio.graph.utils import try_get_args
 
 def correct_get_item(n: fx.Node, mod: fx.GraphModule):
     """
