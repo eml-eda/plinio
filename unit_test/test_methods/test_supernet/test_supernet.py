@@ -10,6 +10,7 @@ from unit_test.models.icl_sn_model import ResNet8SN
 from unit_test.models.vww_sn_model import MobileNetSN
 
 from unit_test.models.resnet1d_ppgbp import ResNet1D
+from unit_test.models import ToySupernetGroupedConv_1D
 
 class TestSuperNet(unittest.TestCase):
 
@@ -147,7 +148,7 @@ class TestSuperNet(unittest.TestCase):
         self.assertTrue(out1.shape == out2.shape, "Different output shapes")
 
 
-    def test_groupconv_export(self):
+    def test_resnet_export(self):
         """
         Test the export of a model with a group conv module that require
         supernet export_graph function to be based on best branch index instead of name.
@@ -165,6 +166,21 @@ class TestSuperNet(unittest.TestCase):
         # that will have as name just 'cat', without the branch number
         exp = sn_model.export()
         out2 = exp(dummy_inp)
+        self.assertTrue(out1.shape == out2.shape, "Different output shapes")
+
+    def test_groupconv_export(self):
+        """
+        Test the export of a simple group conv module that require
+        supernet export_graph function to be based on best branch index instead of name.
+        """
+        nn_ut = ToySupernetGroupedConv_1D()
+        sn_model = SuperNet(nn_ut, input_shape=nn_ut.input_shape)
+        dummy_inp = torch.rand([1,*nn_ut.input_shape])
+        out1 = sn_model(dummy_inp)
+        self.assertEqual(out1.shape, (1,16,2), "unexpected output shape")
+        sn_model.get_cost()
+        exported_nn = sn_model.export()
+        out2 = exported_nn(dummy_inp)
         self.assertTrue(out1.shape == out2.shape, "Different output shapes")
 
     def test_icl_pitsn_export(self):

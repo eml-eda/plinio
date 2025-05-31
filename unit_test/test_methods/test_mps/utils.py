@@ -37,7 +37,7 @@ def compare_prepared(
 ):
     """Compare a nn.Module and its MixPrec-converted version"""
     for name, child in old_mod.named_children():
-        if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
+        if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d, nn.InstanceNorm1d)):
             # BN cannot be compared due to folding
             continue
         new_child = cast(nn.Module, new_mod._modules[name])

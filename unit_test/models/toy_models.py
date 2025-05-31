@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from plinio.methods.supernet import SuperNetModule
 
 
 class ToySequentialConv1d(nn.Module):
@@ -463,8 +464,65 @@ class ToyResNet_1D(nn.Module):
         x3 = torch.flatten(x3, 1)
         return self.classifier(x3)
 
+class ToyResNet_chconv_1D(nn.Module):
+    def __init__(self):
+        super(ToyResNet_chconv_1D, self).__init__()
+        self.input_shape = (16, 2)
+        self.conv1 = nn.Conv1d(16, 8, 3, padding="same")
+        self.bn1 = nn.BatchNorm1d(8)
+        self.conv2 = nn.Conv1d(8, 8, 3, padding="same")
+        self.bn2 = nn.BatchNorm1d(8)
+        self.classifier = nn.Linear(8 * 2, 10)
+        self.ch_conv = nn.Conv1d(16, 8, 1, padding="same")
+
+    def forward(self, x):
+        x1 = F.relu(self.bn1(self.conv1(x)))
+        x2 = self.bn2(self.conv2(x1))
+        x_res = self.ch_conv(x)
+        x3 = F.relu(x_res + x2)
+        x3 = torch.flatten(x3, 1)
+        return self.classifier(x3)
+
+class ToyResNet_featurespad_1D(nn.Module):
+    def __init__(self, ismodule=False, numdim=1):
+        super(ToyResNet_featurespad_1D, self).__init__()
+        self.numdim= numdim
+        self.is_module= ismodule
+
+        if numdim==1:
+            self.pad_tuple= (0,0,8,8)
+            if ismodule:
+                self.pad=nn.ConstantPad2d(self.pad_tuple, 0)
+            self.input_shape = (16, 2)
+            self.layer1 = nn.Conv1d(16, 24, 3, padding="same")
+            self.bn1 = nn.BatchNorm1d(24)
+            self.layer2 = nn.Conv1d(24, 32, 3, padding="same")
+            self.bn2 = nn.BatchNorm1d(32)
+            self.classifier = nn.Linear(32 * 2, 10)
+        elif numdim==2:
+            self.pad_tuple= (0, 0, 0, 0, 8, 8)
+            if ismodule:
+                self.pad=nn.ConstantPad3d(self.pad_tuple, 0)
+            self.input_shape = (16, 2, 2)
+            self.layer1 = nn.Conv2d(16, 24, 3, padding="same")
+            self.bn1 = nn.BatchNorm2d(24)
+            self.layer2 = nn.Conv2d(24, 32, 3, padding="same")
+            self.bn2 = nn.BatchNorm2d(32)
+            self.classifier = nn.Linear(32 * 2 * 2, 10)
+
+    def forward(self, x):
+        x1 = F.relu(self.bn1(self.layer1(x)))
+        x2 = self.bn2(self.layer2(x1))
+        if self.is_module:
+            x_res = self.pad(x)
+        else:
+            x_res = F.pad(x, self.pad_tuple)
+        x3 = F.relu(x_res + x2)
+        x3 = torch.flatten(x3, 1)
+        return self.classifier(x3)
+
 class ToyGroupedConv_1D(nn.Module):
-    def __init__(self, groups=2):
+    def __init__(self,):
         super(ToyGroupedConv_1D, self).__init__()
         self.input_shape = (16, 2)
         #2 parallel conv replace a conv(groups=2)
@@ -482,6 +540,62 @@ class ToyGroupedConv_1D(nn.Module):
         x3 = torch.cat((x1, x2), dim=1)
         x4 = self.conv3(x3)
         return x4
+
+class DepthToyGroupedConv_1D(nn.Module):
+    def __init__(self,):
+        super(DepthToyGroupedConv_1D, self).__init__()
+        self.input_shape = (16, 2)
+        #2 parallel conv replace a conv(groups=2)
+        self.conv0 = nn.Conv1d(16, 16, 5, padding="same", groups=1)
+
+        self.depth_conv = nn.Conv1d(16, 16, kernel_size= 3, padding="same", groups=8) #depthwise
+        self.point_conv_l = nn.Conv1d(8, 4, kernel_size=1, stride=1, padding="same", groups=1) #pointwise
+        self.point_conv_r = nn.Conv1d(8, 4, kernel_size=1, stride=1, padding="same", groups=1) #pointwise
+
+    def forward(self, x):
+        x0  = F.relu(self.conv0(x))
+        x0  = self.depth_conv(x0)
+        x1 = x0[:,0:8]
+        x2 = x0[:,8:16]
+        x1 = F.relu(self.point_conv_l(x1))
+        x2 = F.relu(self.point_conv_r(x2))
+        x3 = torch.cat((x1, x2), dim=1)
+        return x3
+
+class SimpleGroupedConv_1D(nn.Module):
+    def __init__(self,):
+        super(SimpleGroupedConv_1D, self).__init__()
+        self.input_shape = (16, 2)
+        #2 parallel conv replace a conv(groups=2)
+        self.conv0 = nn.Conv1d(16, 16, 5, padding="same", groups=1)
+
+        self.conv_l = nn.Conv1d(8, 4, 3, padding="same", groups=1)
+        self.conv_r = nn.Conv1d(8, 4, 3, padding="same", groups=1)
+
+    def forward(self, x):
+        x0  = F.relu(self.conv0(x))
+        x1 = x0[:,0:8]
+        x2 = x0[:,8:16]
+        x1 = F.relu(self.conv_l(x1))
+        x2 = F.relu(self.conv_r(x2))
+        x3 = torch.cat((x1, x2), dim=1)
+        return x3
+
+class ToySupernetGroupedConv_1D(nn.Module):
+    def __init__(self,):
+        super(ToySupernetGroupedConv_1D, self).__init__()
+        self.input_shape = (16, 2)
+        #2 parallel conv replace a conv(groups=2)
+
+        branches=[
+            SimpleGroupedConv_1D(),
+            DepthToyGroupedConv_1D(),
+        ]
+        self.blocks=SuperNetModule(branches)
+        self.conv3= nn.Conv1d(8, 16, 3, padding="same", groups=1)
+
+    def forward(self, x):
+        return self.conv3(self.blocks(x))
 
 class ToyIndexingConv_1D(nn.Module):
     def __init__(self, groups=2, slicing_mode='slice'):
@@ -552,7 +666,7 @@ class ToyMultiGroupConv_1D(nn.Module):
         return x4
 
 class ToyGroupedConv_2D(nn.Module):
-    def __init__(self, groups=2):
+    def __init__(self):
         super(ToyGroupedConv_2D, self).__init__()
         self.input_shape = (16, 8, 8)
         #2 parallel conv replace a conv(groups=2)
@@ -570,3 +684,25 @@ class ToyGroupedConv_2D(nn.Module):
         x3 = torch.cat((x1, x2), dim=1)
         x4 = self.conv3(x3)
         return x4
+
+class ToyIndexingMLP_1D(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(ToyIndexingMLP_1D, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.input_shape = (self.in_channels,)
+
+        self.lin1 = nn.Linear(in_channels//2, out_channels)
+        self.lin2 = nn.Linear(in_channels//2, out_channels)
+        self.activation = nn.ReLU()
+        self.do= nn.Dropout(0.5)
+
+    def forward(self, x):
+        x_intidx=x[0] #test for integer indexing
+        x1 = x[:,0:self.in_channels//2]
+        x2 = x[:,self.in_channels//2:self.in_channels]
+        x1 = self.lin1(x1)
+        x2 = self.lin2(x2)
+        x = self.activation(torch.cat((x1,x2), dim=1))
+        x = self.do(x)
+        return x

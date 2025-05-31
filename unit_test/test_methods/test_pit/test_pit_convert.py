@@ -36,7 +36,8 @@ from unit_test.test_methods.test_pit.utils import compare_prepared, check_target
         check_batchnorm_folding, check_batchnorm_unfolding, check_batchnorm_memory, \
         compare_identical
 
-from unit_test.models import ToyGroupedConv_1D, ToyGroupedConv_2D, ToyMultiGroupConv_1D, ToyIndexingConv_1D
+from unit_test.models import ToyGroupedConv_1D, ToyGroupedConv_2D, ToyMultiGroupConv_1D,\
+      ToyIndexingConv_1D, ToyIndexingMLP_1D, ToyResNet_1D, ToyResNet_chconv_1D, ToyResNet_featurespad_1D
 from unit_test.models.resnet1d_ppgbp import ResNet1D
 from unit_test.models.unet1d_ppgbp import UNet1d
 
@@ -103,7 +104,6 @@ class TestPITConvert(unittest.TestCase):
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
         compare_prepared(self, nn_ut, new_nn.seed)
         check_target_layers(self, new_nn, exp_tgt=4)
-        #check_target_layers(self, new_nn, exp_tgt=9, unique=True)
 
     def test_autoimport_resnet1d(self):
         """Test the conversion of a ResNet-like model with group convolution"""
@@ -126,9 +126,9 @@ class TestPITConvert(unittest.TestCase):
         nn_ut=UNet1d()
         new_nn = PIT(nn_ut, input_shape=(1,625))
         compare_prepared(self, nn_ut, new_nn.seed)
-        # 8 convolutional layers, 20 including instancenorm and prelu
-        check_target_layers(self, new_nn, exp_tgt=20)
-        check_target_layers(self, new_nn, exp_tgt=20, unique=True)
+        # 8 convolutional layers, 14 including prelu but not instancenorm, because it has been folded
+        check_target_layers(self, new_nn, exp_tgt=14)
+        check_target_layers(self, new_nn, exp_tgt=14, unique=True)
 
     def test_raised_err_complex_shape(self):
         """Test that PIT raises TypeError"""
@@ -316,6 +316,65 @@ class TestPITConvert(unittest.TestCase):
         exported_nn = new_nn.export()
         compare_identical(self, nn_ut, exported_nn)
 
+    def test_export_getitem_mlp(self):
+        """Test the conversion of a model with getitem and linear, just after import
+           here getitem is applied directly on the input, making
+           register_input_features() necessary before export
+           Also test integer indexing"""
+        nn_ut = ToyIndexingMLP_1D(16,32)
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        exported_nn = new_nn.export()
+        compare_identical(self, nn_ut, exported_nn)
+
+    def test_export_simple_resnet1d(self):
+        """Test the conversion of a ResNet-like model with group convolution, just after import"""
+        nn_ut = ToyResNet_1D()
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        exported_nn = new_nn.export()
+        compare_identical(self, nn_ut, exported_nn)
+
+    def test_export_chconv_resnet1d(self):
+        """Test the conversion of a ResNet-like model with group convolution, just after import"""
+        nn_ut = ToyResNet_chconv_1D()
+        nn_ut(torch.randn([1,*nn_ut.input_shape]))
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        exported_nn = new_nn.export()
+        compare_identical(self, nn_ut, exported_nn)
+
+    def test_export_featurespad_resnet1d(self):
+        """Test the conversion of a ResNet-like model with padding on features, should raise NotImplementedError"""
+        #Conv1d
+        #testing F.pad
+        nn_ut = ToyResNet_featurespad_1D()
+        nn_ut(torch.randn([1,*nn_ut.input_shape]))
+        with self.assertRaises(NotImplementedError) as context:
+            PIT(nn_ut, input_shape=nn_ut.input_shape)
+        msg = 'An NotImplementedError error must be raised.'
+        self.assertTrue(isinstance(context.exception, NotImplementedError), msg)
+        #testing nn.constantpad2d
+        nn_ut = ToyResNet_featurespad_1D(ismodule=True)
+
+        with self.assertRaises(NotImplementedError) as context:
+            PIT(nn_ut, input_shape=nn_ut.input_shape)
+        msg = 'An NotImplementedError error must be raised.'
+        self.assertTrue(isinstance(context.exception, NotImplementedError), msg)
+
+        #Conv2d
+        #testing F.pad
+        nn_ut = ToyResNet_featurespad_1D(numdim=2)
+        nn_ut(torch.randn([1,*nn_ut.input_shape]))
+        with self.assertRaises(NotImplementedError) as context:
+            PIT(nn_ut, input_shape=nn_ut.input_shape)
+        msg = 'An NotImplementedError error must be raised.'
+        self.assertTrue(isinstance(context.exception, NotImplementedError), msg)
+        #testing nn.constantpad3d
+        nn_ut = ToyResNet_featurespad_1D(ismodule=True, numdim=2)
+        nn_ut(torch.randn([1,*nn_ut.input_shape]))
+        with self.assertRaises(NotImplementedError) as context:
+            PIT(nn_ut, input_shape=nn_ut.input_shape)
+        msg = 'An NotImplementedError error must be raised.'
+        self.assertTrue(isinstance(context.exception, NotImplementedError), msg)
+
     def test_export_with_masks(self):
         """Test the conversion of a simple model after forcing the mask values in some layers"""
         nn_ut = SimpleNN()
@@ -478,7 +537,7 @@ class TestPITConvert(unittest.TestCase):
 
     def test_export_with_masks_groupconv(self):
         """Test the conversion of a model with grouped convolutions after forcing the
-        mask values in some layers, check that correct_get_item functio is properly adjusting indexes"""
+        mask values in some layers, check that correct_get_item function is properly adjusting indexes"""
         nn_ut = ToyGroupedConv_1D()
         self.assertEqual(nn_ut(torch.randn(1,16,2)).shape, (1, 16, 2), "Output shape is not as expected")
         new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape)
@@ -583,7 +642,7 @@ class TestPITConvert(unittest.TestCase):
         """Test the conversion of a UNet model with InstanceNorm and PReLU after forcing the
         mask values in some layers"""
         nn_ut = UNet1d()
-        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape[1:])
+        new_nn = PIT(nn_ut, input_shape=nn_ut.input_shape[1:], fold_bn=True)
 
         first_conv = cast(PITConv1d, new_nn.seed.conv_first._modules['1'])
         first_conv.out_features_masker.alpha = nn.parameter.Parameter(

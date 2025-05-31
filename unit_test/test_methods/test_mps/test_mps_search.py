@@ -187,7 +187,7 @@ class TestMPSSearch(unittest.TestCase):
                             "Conv2 weights changing")
 
     def test_regularization_loss_weights_channel(self):
-        """Check that the weights remain equal using only the regularization los
+        """Check that the weights remain equal using only the regularization loss
         with PER_CHANNEL weight mixed-precision"""
         # we use ToyAdd_2D to verify that mask sharing does not create problems
         nn_ut = ToyAdd_2D()
