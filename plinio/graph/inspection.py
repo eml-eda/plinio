@@ -23,6 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.fx as fx
 from .utils import try_get_args, fx_to_nx_graph, NamedLeafModules
+from math import floor
 
 
 def all_output_nodes(n: fx.Node) -> List[fx.Node]:
@@ -197,7 +198,7 @@ def is_features_getitem(n: fx.Node, parent: fx.GraphModule) -> bool:
     """
     if n.op == 'call_function' and n.target == operator.getitem:
         slices = try_get_args(n, parent, 1, None, 0)
-        if isinstance(slices, int): #getitem not applied on tensors, which have 3 dim min
+        if isinstance(slices, int): #getitem not applied on tensors, which have 2 dim min
             return False
         if slices[0] != slice(None,None,None):
             msg = "slicing batch size not supported!"   # raise Error
@@ -323,7 +324,9 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         if isinstance(submodule, nn.ConstantPad1d):
             return True
         if isinstance(submodule, nn.ConstantPad2d):
-            return True
+            return not is_features_pad(n, parent)
+        if isinstance(submodule, nn.ConstantPad3d):
+            return not is_features_pad(n, parent)
         if isinstance(submodule, nn.AdaptiveAvgPool1d):
             return True
         if isinstance(submodule, nn.AdaptiveAvgPool2d):
@@ -463,7 +466,7 @@ def is_concatenate(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     return False
 
-def is_features_pad(n: fx.node, parent: fx.GraphModule) ->bool:
+def is_features_pad(n: fx.Node, parent: fx.GraphModule) ->bool:
     """Checks if a `torch.fx.Node` instance corresponds to a pad operation
     over the features axis.
 
@@ -477,18 +480,18 @@ def is_features_pad(n: fx.node, parent: fx.GraphModule) ->bool:
     if n.op == 'call_function' and n.target == F.pad:
         pad = try_get_args(n, parent, 1, None, 0)
         #check if length of padding exceed the [H] [D] W dimensions of the input vector
+        #input tensor can be [N, C, H] for conv1d, [N, C, H, W] for conv2d, [N, C, D, H, W] for conv3d
         if floor(len(pad)/2) > len(n.all_input_nodes[0].meta['tensor_meta'].shape)-2: #subtract batch_size, #channels
-            return True
-        #is_features_dim = slices[1] != slice(None,None,None)
-        #if is_features_dim:
-        #    return True
+            raise NotImplementedError("padding on features currently not supported")
     elif n.op == 'call_module':
         submodule = parent.get_submodule(str(n.target))
-        if isinstance(submodule, nn.ConstantPad1d): #if floor(len(pad)/2) > len(n.all_input_nodes[0].meta['tensor_meta'].shape)-2:
-            return floor(len(submodule.padding)/2) > len(n.all_input_nodes[0].meta['tensor_meta'].shape)-2
+        if isinstance(submodule, nn.ConstantPad2d) or isinstance(submodule, nn.ConstantPad3d):
+            #check if length of padding exceed the [H] [D] W dimensions of the input vector, subtracting batch and channel
+            if floor(len(submodule.padding)/2) > len(n.all_input_nodes[0].meta['tensor_meta'].shape)-2:
+                raise NotImplementedError("padding on features currently not supported")
     return False
 
-def is_features_mean(n: fx.node, parent: fx.GraphModule) ->bool:
+def is_features_mean(n: fx.Node, parent: fx.GraphModule) ->bool:
     """Checks if a `torch.fx.Node` instance corresponds to a mean operation
     over the features axis.
 
