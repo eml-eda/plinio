@@ -47,7 +47,7 @@ class PACTAct(Quantizer):
         self.clip_val = nn.Parameter(torch.Tensor([init_clip_val]), requires_grad=True)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of the PACT activartion quantizer.
+        """The forward function of the PACT activation quantizer.
 
         Compute quantization using the PACT strategy and implements STE
         for the backward pass

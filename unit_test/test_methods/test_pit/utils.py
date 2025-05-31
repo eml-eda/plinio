@@ -83,8 +83,8 @@ def compare_prepared(test: unittest.TestCase,
                      exclude_types: Tuple[Type[nn.Module], ...] = ()):
     """Compare a nn.Module and its PIT-converted version"""
     for name, child in old_mod.named_children():
-        if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d)):
-            # BN cannot be compared due to folding
+        if isinstance(child, (nn.BatchNorm1d, nn.BatchNorm2d, nn.InstanceNorm1d, nn.InstanceNorm2d)):
+            # BN and Instance Norm cannot be compared due to folding
             continue
         new_child = cast(nn.Module, new_mod._modules[name])
         compare_prepared(test, child, new_child, base_name + name + ".", exclude_names,

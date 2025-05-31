@@ -32,7 +32,7 @@ def fuse_consecutive_layers(mod: fx.GraphModule, first: Type[nn.Module], second:
     :type mod: fx.GraphModule
     :param first: the class of the first matched layer in the sequence
     :type first: Type[nn.Module]
-    :param second: the class of the first matched layer in the sequence
+    :param second: the class of the second matched layer in the sequence
     :type second: Type[nn.Module]
     :param fusion_fn: the function that does the fusion. if in_place is True, it is assumed that the
     function replaces the first node of the sequence
