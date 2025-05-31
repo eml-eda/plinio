@@ -502,9 +502,9 @@ def is_features_mean(n: fx.Node, parent: fx.GraphModule) ->bool:
     :return: `True` if `n` corresponds to a mean op on the features.
     :rtype: bool
     """
-    dim = try_get_args(n, parent, 1, None, 0)
+    dim = try_get_args(n, parent, 1, 'dim', 0)
     if n.op == 'call_function' and n.target==torch.mean and dim==1:
-        return True
+        raise NotImplementedError("mean reduction on features currently not supported")
     return False
 
 def parent_name(target: str) -> Tuple[str, str]:

@@ -60,6 +60,7 @@ from .toy_models import (
     ToyResNet_chconv_1D,
     ToyResNet_featurespad_1D,
     ToySupernetGroupedConv_1D,
+    Toy_featuresmean_1D
 )
 from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR
@@ -110,4 +111,5 @@ __all__ = [
     "ToyIndexingMLP_1D",
     "ToyResNet_featurespad_1D",
     "ToySupernetGroupedConv_1D",
+    "Toy_featuresmean_1D",
 ]

@@ -37,7 +37,7 @@ from unit_test.test_methods.test_pit.utils import compare_prepared, check_target
         compare_identical
 
 from unit_test.models import ToyGroupedConv_1D, ToyGroupedConv_2D, ToyMultiGroupConv_1D,\
-      ToyIndexingConv_1D, ToyIndexingMLP_1D, ToyResNet_1D, ToyResNet_chconv_1D, ToyResNet_featurespad_1D
+      ToyIndexingConv_1D, ToyIndexingMLP_1D, ToyResNet_1D, ToyResNet_chconv_1D, ToyResNet_featurespad_1D, Toy_featuresmean_1D
 from unit_test.models.resnet1d_ppgbp import ResNet1D
 from unit_test.models.unet1d_ppgbp import UNet1d
 
@@ -372,7 +372,17 @@ class TestPITConvert(unittest.TestCase):
         nn_ut(torch.randn([1,*nn_ut.input_shape]))
         with self.assertRaises(NotImplementedError) as context:
             PIT(nn_ut, input_shape=nn_ut.input_shape)
-        msg = 'An NotImplementedError error must be raised.'
+        msg = 'A NotImplementedError error must be raised.'
+        self.assertTrue(isinstance(context.exception, NotImplementedError), msg)
+
+    def test_featuresmean_1D(self):
+        """Test the conversion of a model with featuresmean, """
+        nn_ut = Toy_featuresmean_1D()
+        nn_ut(torch.randn([1,*nn_ut.input_shape]))
+
+        with self.assertRaises(NotImplementedError) as context:
+            PIT(nn_ut, input_shape=nn_ut.input_shape)
+        msg = 'A NotImplementedError error must be raised.'
         self.assertTrue(isinstance(context.exception, NotImplementedError), msg)
 
     def test_export_with_masks(self):

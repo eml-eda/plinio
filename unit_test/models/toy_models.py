@@ -521,6 +521,23 @@ class ToyResNet_featurespad_1D(nn.Module):
         x3 = torch.flatten(x3, 1)
         return self.classifier(x3)
 
+class Toy_featuresmean_1D(nn.Module):
+    def __init__(self,):
+        super(Toy_featuresmean_1D, self).__init__()
+        self.input_shape = (16, 16)
+        self.layer1 = nn.Conv1d(16, 24, 3, padding="same")
+        self.bn1 = nn.BatchNorm1d(24)
+        self.layer2 = nn.Conv1d(24, 32, 3, padding="same")
+        self.bn2 = nn.BatchNorm1d(32)
+        self.classifier = nn.Linear(16, 10)
+    def forward(self, x):
+        x1 = F.relu(self.bn1(self.layer1(x)))
+        x2 = self.bn2(self.layer2(x1))
+        x3 = torch.mean(x2, dim=1, keepdim=True)
+        x3 = torch.flatten(x3, 1)
+        return self.classifier(x3)
+
+
 class ToyGroupedConv_1D(nn.Module):
     def __init__(self,):
         super(ToyGroupedConv_1D, self).__init__()
