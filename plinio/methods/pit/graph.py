@@ -96,26 +96,24 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
 
     if conversion_type not in ('import', 'autoimport', 'export'):
         raise ValueError("Unsupported conversion type {}".format(conversion_type))
-
-    tracer = PITTracer()
-    graph = tracer.trace(model.eval())
-    name = model.__class__.__name__
-    mod = fx.GraphModule(tracer.root, graph, name)
-    if len(get_graph_inputs(mod.graph)) > 1:
-        ShapeProp(mod).propagate(*input_example)
-    else:
-        ShapeProp(mod).propagate(input_example)
-    clean_up_propagated_shapes(mod)
-    add_node_properties(mod)
-    if conversion_type in ('autoimport', 'export'):
-        # dictionary of shared feature maskers. Used only in 'autoimport' mode.
-        sm_dict = {} if conversion_type != 'autoimport' else build_shared_features_map(mod)
-        if conversion_type == 'export':
-            add_features_calculator(mod, [pit_features_calc])
-            associate_input_features(mod)
-            register_input_features(mod)
-        convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types, fold_bn)
+    if conversion_type == 'export':
+        mod = copy.deepcopy(model)
+        convert_layers(mod, conversion_type, dict(), exclude_names, exclude_types, fold_bn)
     if conversion_type in ('autoimport', 'import'):
+        tracer = PITTracer()
+        graph = tracer.trace(model.eval())
+        name = model.__class__.__name__
+        mod = fx.GraphModule(tracer.root, graph, name)
+        if len(get_graph_inputs(mod.graph)) > 1:
+            ShapeProp(mod).propagate(*input_example)
+        else:
+            ShapeProp(mod).propagate(input_example)
+        clean_up_propagated_shapes(mod)
+        add_node_properties(mod)
+        if conversion_type in ('autoimport'):
+            # dictionary of shared feature maskers. Used only in 'autoimport' mode.
+            sm_dict = build_shared_features_map(mod) #{} if conversion_type != 'autoimport' else
+            convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types, fold_bn)
         fuse_pit_modules(mod, fold_bn)
         add_features_calculator(mod, [pit_features_calc])
         associate_input_features(mod)
