@@ -229,11 +229,7 @@ def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesM
     for c in nx.weakly_connected_components(sharing_graph):
         for n in c:
             if n.meta['features_concatenate']:
-                #predecessors = n.meta['predecessors']
                 input_sm = [sm_dict[ni] for ni in n.meta['predecessors']]
-                #for i,p in enumerate(n.meta['predecessors']):
-                #    if is_layer(p, mod, tuple(pit_layer_map.values())):
-                #        input_sm[i] = mod.get_submodule(str(p.target)).out_features_masker
                 new_sm = PITConcatFeaturesMasker(input_sm)
                 for n in c:
                     sm_dict[n] = new_sm

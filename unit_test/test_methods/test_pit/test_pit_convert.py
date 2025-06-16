@@ -37,7 +37,8 @@ from unit_test.test_methods.test_pit.utils import compare_prepared, check_target
         compare_identical
 
 from unit_test.models import ToyGroupedConv_1D, ToyGroupedConv_2D, ToyMultiGroupConv_1D,\
-      ToyIndexingConv_1D, ToyIndexingMLP_1D, ToyResNet_1D, ToyResNet_chconv_1D, ToyResNet_featurespad_1D, Toy_featuresmean_1D
+      ToyIndexingConv_1D, ToyIndexingMLP_1D, ToyResNet_1D, ToyResNet_chconv_1D,\
+      ToyResNet_featurespad_1D, Toy_featuresmean_1D, ToyConcatDepthwiseConv_1D
 from unit_test.models.resnet1d_ppgbp import ResNet1D
 from unit_test.models.unet1d_ppgbp import UNet1d
 
@@ -840,6 +841,23 @@ class TestPITConvert(unittest.TestCase):
                     self.assertTrue(
                         torch.all(child.weight[:, :, 0:2] == pit_child.weight[1:, [0], 0:3:2]),
                         "Wrong weight values for Cin=0")
+
+    def test_cat_depthwise_export(self):
+        """
+        Test the export of a model with a cat layer and a depthwise conv module
+        this requires an additional check in build_shared_features_map to add
+        PitConcatFeaturesMasker
+        """
+        nn_ut = ToyConcatDepthwiseConv_1D()
+        sn_model = PIT(nn_ut, input_shape=nn_ut.input_shape)
+        dummy_inp = torch.rand([1,*nn_ut.input_shape])
+        out1 = sn_model(dummy_inp)
+        self.assertEqual(out1.shape, (1,8,2), "unexpected output shape")
+        sn_model.get_cost()
+        # without PitConcatFeaturesMasker the following doesn't find the out mask of depthwise conv
+        exported_nn = sn_model.export()
+        out2 = exported_nn(dummy_inp)
+        self.assertTrue(out1.shape == out2.shape, "Different output shapes")
 
     def test_arch_summary(self):
         """Test the summary report for a simple sequential model"""

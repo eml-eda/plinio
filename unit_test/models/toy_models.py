@@ -613,6 +613,28 @@ class ToySupernetGroupedConv_1D(nn.Module):
 
     def forward(self, x):
         return self.conv3(self.blocks(x))
+    
+class ToyConcatDepthwiseConv_1D(nn.Module):
+    def __init__(self,):
+        super(ToyConcatDepthwiseConv_1D, self).__init__()
+        self.input_shape = (16, 2)
+
+        self.conv_l = nn.Conv1d(16, 8, kernel_size=3, padding="same", groups=1)
+        self.conv_r = nn.Conv1d(16, 8, kernel_size=3, padding="same", groups=1)
+
+        self.depthwise_conv = nn.Conv1d(16, 16, 5, padding="same", groups=16)
+        self.pointwise_conv = nn.Conv1d(16, 8, 1, padding="same", groups=1)
+
+
+
+    def forward(self, x):
+        x0 = F.relu(self.conv_l(x))
+        x1 = F.relu(self.conv_r(x))
+        x2 = torch.cat((x0, x1), dim=1)
+
+        x3 = F.relu(self.depthwise_conv(x2))
+        x3 = F.relu(self.pointwise_conv(x3))
+        return x3
 
 class ToyIndexingConv_1D(nn.Module):
     def __init__(self, groups=2, slicing_mode='slice'):
