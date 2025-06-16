@@ -34,7 +34,7 @@ from .nn.instancenorm_1d import PITInstanceNorm1d
 from .nn.prelu import PITPReLU
 
 from .nn.module import PITModule
-from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker
+from .nn.features_masker import PITFeaturesMasker, PITFrozenFeaturesMasker, PITConcatFeaturesMasker
 from plinio.graph.annotation import add_features_calculator, add_node_properties, \
     associate_input_features, clean_up_propagated_shapes
 from plinio.graph.inspection import is_layer, get_graph_outputs, is_inherited_layer, \
@@ -112,7 +112,7 @@ def convert(model: nn.Module, input_example: Any, conversion_type: str,
         add_node_properties(mod)
         if conversion_type in ('autoimport'):
             # dictionary of shared feature maskers. Used only in 'autoimport' mode.
-            sm_dict = build_shared_features_map(mod) #{} if conversion_type != 'autoimport' else
+            sm_dict = build_shared_features_map(mod)
             convert_layers(mod, conversion_type, sm_dict, exclude_names, exclude_types, fold_bn)
         fuse_pit_modules(mod, fold_bn)
         add_features_calculator(mod, [pit_features_calc])
@@ -185,6 +185,8 @@ def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesM
         if n.meta['untouchable'] or n.meta['features_concatenate'] or n.meta['features_defining']:
             # remove all incoming edges to this node from the "shared features graph"
             pred = list(sharing_graph.predecessors(n))
+            if n.meta['features_concatenate']:
+                n.meta['predecessors'] = pred
             for i in pred:
                 sharing_graph.remove_edge(i, n)
 
@@ -224,6 +226,18 @@ def build_shared_features_map(mod: fx.GraphModule) -> Dict[fx.Node, PITFeaturesM
                 break
         for n in c:
             sm_dict[n] = sm
+    for c in nx.weakly_connected_components(sharing_graph):
+        for n in c:
+            if n.meta['features_concatenate']:
+                #predecessors = n.meta['predecessors']
+                input_sm = [sm_dict[ni] for ni in n.meta['predecessors']]
+                #for i,p in enumerate(n.meta['predecessors']):
+                #    if is_layer(p, mod, tuple(pit_layer_map.values())):
+                #        input_sm[i] = mod.get_submodule(str(p.target)).out_features_masker
+                new_sm = PITConcatFeaturesMasker(input_sm)
+                for n in c:
+                    sm_dict[n] = new_sm
+                break
     return sm_dict
 
 

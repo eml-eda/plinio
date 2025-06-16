@@ -3,22 +3,6 @@ import functools
 from math import floor
 import torch
 
-param_model={
-  'N_epoch': 256,
-  'batch_size': 256,
-  'lr': 0.001,
-  'input_size': 1,
-  'output_size': 625,
-  'output_channel': 128,
-  'layers': [2, 2],
-  'sample_step': 1,
-  'loss': [ 'mse', 'peak_loss'],
-  'loss_w': [1, 1, 1],
-  'layer_order': 'new',
-  'normalizer': 'pinst',
-  'activation': 'prelu',
-}
-
 def get_normalizer(normalizer):
     if normalizer == 'inst':
         return nn.InstanceNorm1d
