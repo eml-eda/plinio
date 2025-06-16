@@ -223,7 +223,15 @@ class PITConv1d(nn.Conv1d, PITModule):
                         args=n.args)
         # unfuse the BatchNorm
         if submodule.bn is not None and not submodule.fold_bn:
-            new_bn = nn.BatchNorm1d(
+            if isinstance(submodule.bn, nn.BatchNorm1d):
+                norm_layer = nn.BatchNorm1d
+            elif isinstance(submodule.bn, nn.BatchNorm2d):
+                norm_layer = nn.BatchNorm2d
+            elif isinstance(submodule.bn, nn.InstanceNorm1d):
+                norm_layer = nn.InstanceNorm1d
+            else:
+                raise ValueError(f"Unsupported normalizer type {type(submodule.bn)} for PITConv1d export")
+            new_bn = norm_layer(
                 submodule.out_features_opt,
                 eps=submodule.bn.eps,
                 momentum=submodule.bn.momentum,
