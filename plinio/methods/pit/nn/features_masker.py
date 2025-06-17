@@ -120,31 +120,20 @@ class PITFrozenFeaturesMasker(PITFeaturesMasker):
 class PITConcatFeaturesMasker(nn.Module):
     def __init__(self,
                  mask_list: list,
-                 #out_channels: int,
                  trainable: bool=True,
                  ):
         super(PITConcatFeaturesMasker, self).__init__()
-        #self.out_channels = out_channels
         self.mask_list = mask_list
-        # Parameter(
-        #    torch.empty(self.out_channels, dtype=torch.float32).fill_(1.0), requires_grad=True)
-
-        # this should be done after creating alpha
         self.trainable = trainable
-        #self.register_buffer('_keep_alive', torch.cat([m._keep_alive for m in self.mask_list]))
     @property
     def theta(self) -> torch.Tensor:
         """The forward function that generates the binary masks from the trainable floating point
-        shadow copies.
+        shadow copies. It just concatenates the input masks
 
         :return: the binary masks
         :rtype: torch.Tensor
         """
-        # this makes sure that the first "keep_alive" channels are always binarized at 1, without
-        # using ifs
-        #ka = cast(torch.Tensor, self._keep_alive) #torch.cat([m._keep_alive for m in self.mask_list])
-        #alpha = torch.cat([m.alpha for m in self.mask_list], dim=0) #.to(ka.device)
-        #keep_alive_alpha = torch.abs(alpha) * (1 - ka) + ka
+
         return torch.cat([m.theta for m in self.mask_list], dim=0)
 
     @property
@@ -159,11 +148,11 @@ class PITConcatFeaturesMasker(nn.Module):
     @trainable.setter
     def trainable(self, value: bool):
         """Set to true to make the channel masker trainable
+        Does it for all the masks in the list
 
         :param value: true to make the channel masker trainable
         :type value: bool
         """
-        #self.alpha.requires_grad = value
         for m in self.mask_list:
             m.alpha.requires_grad = value
 
