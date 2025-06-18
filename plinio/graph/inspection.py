@@ -266,13 +266,23 @@ def is_features_defining_op(n: fx.Node, parent: fx.GraphModule) -> bool:
         return True
     if n.op == 'call_module':
         submodule = parent.get_submodule(str(n.target))
-        if isinstance(submodule, nn.Conv1d) or isinstance(submodule, nn.Conv2d):
+        if (isinstance(submodule, nn.Conv1d) or 
+            isinstance(submodule, nn.Conv2d)):
             if (submodule.groups == submodule.in_channels) and (
                     submodule.groups == submodule.out_channels):
                 # this is the special case of a DepthWise Conv
                 return False
             else:
                 return True
+        # TODO: check this, but probably Conv3d is always features defining
+        if isinstance(submodule, nn.Conv3d):
+            # if (submodule.groups == submodule.in_channels) and (
+                # submodule.out_channels // submodule.groups == submodule.out_channels / submodule.groups):
+                # # this is the special case of a DepthWise Conv
+                # return False
+            # else:
+                # return True
+            return True
         if isinstance(submodule, nn.Linear):
             return True
     return False
@@ -333,13 +343,22 @@ def is_features_propagating_op(n: fx.Node, parent: fx.GraphModule) -> bool:
             return True
         if isinstance(submodule, nn.Identity):
             return True
-        if isinstance(submodule, nn.Conv1d) or isinstance(submodule, nn.Conv2d):
+        if (isinstance(submodule, nn.Conv1d) or 
+            isinstance(submodule, nn.Conv2d)):
             if (submodule.groups == submodule.in_channels) and (
                     submodule.groups == submodule.out_channels):
                 # this is the special case of a DepthWise Conv
                 return True
             else:
                 return False
+        # TODO: check this, but probably Conv3d is always features defining
+        if isinstance(submodule, nn.Conv3d):
+            # if (submodule.groups == submodule.in_channels) and (
+                # submodule.out_channels // submodule.groups == submodule.out_channels / submodule.groups):
+                # return True
+            # else:
+                # return False
+            return False
         if isinstance(submodule, nn.Upsample):
             return True
         if isinstance(submodule, nn.Sigmoid):

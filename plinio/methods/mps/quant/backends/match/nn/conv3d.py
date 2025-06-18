@@ -14,7 +14,7 @@
 # * See the License for the specific language governing permissions and        *
 # * limitations under the License.                                             *
 # *                                                                            *
-# * Author:  Francesco Daghero <francesco.daghero@polito.it>                             *
+# * Author:  Matteo Risso <matteo.risso@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
 from typing import Dict, Any, Optional, cast, Tuple
@@ -23,15 +23,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from plinio.methods.mps.quant.quantizers import Quantizer, DummyQuantizer
 from plinio.methods.mps.quant.backends.utils import binary_search
-from .module import ONNXModule
+from .module import MATCHModule
 
 
-class ONNXConv2d(nn.Conv2d, ONNXModule):
-    """A nn.Module implementing an integer quantized Conv2d layer compatible
-    with the ONNX backend.
+class MATCHConv3d(nn.Conv3d, MATCHModule):
+    """A nn.Module implementing an integer quantized Conv3d layer compatible
+    with the MATCH backend.
 
-    :param conv: the inner `nn.Conv2d` layer
-    :type conv: nn.Conv2d
+    :param conv: the inner `nn.Conv3d` layer
+    :type conv: nn.Conv3d
     :param in_quantizer: input activation quantizer
     :type in_quantizer: Type[Quantizer]
     :param out_quantizer: output activation quantizer
@@ -44,17 +44,16 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
 
     def __init__(
         self,
-        conv: nn.Conv2d,
+        conv: nn.Conv3d,
         in_quantizer: Quantizer,
         out_quantizer: Quantizer,
         w_quantizer: Quantizer,
         b_quantizer: Optional[Quantizer],
         scale_bit: int = 24,
         shift_pos: int = 24,
-        signed: bool = False,
         dequantize_output: bool = False,
     ):
-        super(ONNXConv2d, self).__init__(
+        super(MATCHConv3d, self).__init__(
             conv.in_channels,
             conv.out_channels,
             conv.kernel_size,
@@ -64,13 +63,11 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             conv.groups,
             conv.bias is not None,
             conv.padding_mode,
-            device = conv.weight.device,
         )
 
-        #self.device = conv.weight.device
-        self.signed = signed
         self.scale_bit = scale_bit
         self.shift_pos = shift_pos
+        self.dequantize_output = dequantize_output
 
         # Store precisions and quantizers
         self.in_quantizer = in_quantizer
@@ -81,27 +78,6 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
         else:
             self.b_quantizer = lambda *args: None  # Do Nothing
 
-        # No more properties to avoid a conditioonal in the forward
-        if type(self.out_quantizer) == DummyQuantizer:
-            if self.signed:
-                self.clip_sup = 2 ** (self.in_quantizer.precision - 1) - 1
-                self.clip_inf = -(2 ** (self.in_quantizer.precision - 1))
-            else:
-                self.clip_sup = 2**self.out_quantizer.precision - 1
-                self.clip_inf = 0
-        elif self.signed:
-            self.clip_inf = -(2 ** (self.out_quantizer.precision - 1))
-            self.clip_sup = 2 ** (self.out_quantizer.precision - 1) - 1
-        else:
-            self.clip_inf = 0
-            self.clip_sup = 2 ** self.out_quantizer.precision - 1
-
-
-        if self.signed:
-            self.pad_inf = -(2 ** (self.in_quantizer.precision - 1))
-        else:
-            self.pad_inf = 0
-
         # Copy and integerize pretrained weights
         # N.B., is mandatory to first integerize weight
         # compute self.scale and self.shift which depends upon
@@ -111,7 +87,6 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             int_weight = self.w_quantizer(conv.weight)
             int_weight = cast(torch.Tensor, int_weight)
             self.weight.copy_(int_weight)
-            #self.weight.to(self.device)
 
         # Compute self.scale_fact and self.shift
         self.s_w = self.w_quantizer.scale
@@ -129,17 +104,15 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                 self.b_quantizer.dequantize = False
                 int_bias = self.b_quantizer(conv.bias, self.s_x, self.s_w)
                 int_bias = cast(torch.Tensor, int_bias)
-                #int_bias = int_bias.to(self.device)
 
         self.scale, self.shift = self._integer_approximation(
             self.s_w, self.s_x, self.s_y, int_bias
         )
-
         with torch.no_grad():
             if conv.bias is not None:
                 if not self.skip_requant:
                     int_bias = int_bias * self.scale
-                    self.add_bias = int_bias.view(1, self.out_channels, 1, 1)
+                    self.add_bias = int_bias.view(1, self.out_channels, 1, 1, 1)
                 else:
                     self.bias = cast(torch.Tensor, self.bias)
                     self.bias.copy_(int_bias)
@@ -147,65 +120,14 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                 self.add_bias = None
 
         # Done here to avoid the reshape op in fwd
-        self.scale = self.scale.view(1, self.out_channels, 1, 1)
+        self.scale = self.scale.view(1, self.out_channels, 1, 1, 1)
 
-        # Dilation should be handled by the backend
+        # Raise error if dilation != 1
+        assert all(d == 1 for d in self.dilation), "Dilation != 1 not supported for Conv3d"
 
-        # TODO: From here the signed changes:
-        if not self.skip_requant:
-            with torch.no_grad():
-                # NOTE: The add_bias is now outside this computation, and MUST be added
-                # explicitly in the forward pass
-                self._zero_point = (
-                    self.add_bias
-                    + (self.clip_inf * 2**self.shift)
-                    - self.clip_inf
-                    * self.scale
-                    * torch.sum(self.weight, dim=(1, 2, 3)).view(
-                        1, self.out_channels, 1, 1
-                    )
-                )
-                self._zero_point= self._zero_point.to(self.device)
-        else:
-            with torch.no_grad():
-                self._zero_point = self.bias.view(
-                    1, self.out_channels, 1, 1
-                ) - self.clip_inf * torch.sum(self.weight, dim=(1, 2, 3)).view(
-                    1, self.out_channels, 1, 1
-                )
-                self._zero_point= self._zero_point.to(self.device)
-
-        # Padding is now external, for simplicity
-        # Adjust manually the padding to be based upon `self.clip_inf` value
-        if self.padding == "same":
-            raise NotImplementedError("Same padding is not supported yet")
-        if self.padding == "valid":
-            self.pad = nn.Identity()
-        else:
-            # From self.padding to the 4-tuple padding
-            padding = (0, 0, 0, 0)
-            if isinstance(self.padding, int):
-                padding = (self.padding, self.padding, self.padding, self.padding)
-            elif len(self.padding) == 2:
-                # H,W padding to W, H
-                padding = (
-                    self.padding[1],
-                    self.padding[1],
-                    self.padding[0],
-                    self.padding[0],
-                )
-
-
-            if sum(list(padding)) == 0:
-                self.pad = nn.Identity()
-            else:
-                # TODO: This assumes zero padding, but this is not the only possible
-                # padding value.
-                self.pad = nn.ConstantPad2d(padding, self.pad_inf)
-            self.padding = "valid"
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """The forward function of integer conv2d layer.
+        """The forward function of integer conv3d layer.
 
         It performs:
         - Convolution of the input with the integerized `self.weight` tensor.
@@ -224,9 +146,7 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
 
         if not self.skip_requant:  # This should happen on the last layer
             # Convolution
-            # Padding is always done externaly to handle the signed case
-            input = self.pad(input)
-            out = F.conv2d(
+            out = F.conv3d(
                 input,
                 self.weight,
                 None,
@@ -236,25 +156,24 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
                 self.groups,
             )
             # Multiply scale factor, sum bias, shift
-            out = (out * self.scale + self._zero_point) / (2**self.shift)
+            out = (out * self.scale + self.add_bias) / (2**self.shift)
             # Compute floor
             out = torch.floor(out)
             # Compute relu
             out = torch.clip(out, self.clip_inf, self.clip_sup)
         else:
             # Convolution
-            input = self.pad(input)
-            out = F.conv2d(
+            out = F.conv3d(
                 input,
                 self.weight,
-                None,
+                self.bias,
                 self.stride,
                 self.padding,
                 self.dilation,
                 self.groups,
             )
-            # Add bias
-            out += self._zero_point
+            if self.dequantize_output:
+                out = out * self.s_w.view(1, -1, 1, 1, 1) * self.s_x
 
         return out
 
@@ -274,6 +193,18 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
     @property
     def device(self):
         return next(self.parameters()).device
+
+    @property
+    def clip_inf(self):
+        # Define ReLU inferior extreme
+        return torch.tensor(0.0, device=self.device)
+
+    @property
+    def clip_sup(self):
+        # Define ReLU superior extreme
+        return torch.tensor(
+            2 ** cast(int, self.out_quantizer.precision) - 1, device=self.device
+        )
 
     def _integer_approximation(
         self,
@@ -351,3 +282,4 @@ class ONNXConv2d(nn.Conv2d, ONNXModule):
             device=device,
         )
         return scale_t, shift_t
+

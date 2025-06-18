@@ -29,6 +29,7 @@ from unit_test.models import TCResNet14
 from unit_test.models import SimplePitNN
 from unit_test.models import ToyAdd, ToyMultiPath1, ToyMultiPath2, ToyInputConnectedDW
 from unit_test.models import ToyBatchNorm, ToyIllegalBN
+from unit_test.models import CNN3D
 from unit_test.models import DSCNN
 from unit_test.models import TCN_IR
 from unit_test.test_methods.test_pit.utils import compare_prepared, check_target_layers, \
@@ -223,6 +224,20 @@ class TestPITConvert(unittest.TestCase):
             ('fc', True),       # output-connected
         )
         check_frozen_maskers(self, new_nn, frozen_masker_rules)
+
+    def test_autoimport_3d(self):
+        """Test the conversion of a simple 3D CNN with layer autoconversion"""
+        nn_ut = CNN3D()
+        input_shape = (nn_ut.in_channel, nn_ut.patch_size, nn_ut.patch_size)
+        new_nn = PIT(nn_ut, input_shape=input_shape)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        check_target_layers(self, new_nn, exp_tgt=7)
+        check_input_features(self, new_nn, {'conv1': 1,
+                                            'pool1': nn_ut.num_filter,
+                                            'conv2': nn_ut.num_filter,
+                                            'conv3': nn_ut.num_filter_2,
+                                            'conv4': nn_ut.num_filter_2,
+                                            'fc1': nn_ut.features_size})
 
     def test_exclude_types_simple(self):
         nn_ut = ToyMultiPath1()

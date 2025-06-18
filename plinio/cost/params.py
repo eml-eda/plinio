@@ -17,7 +17,7 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 from . import CostSpec
-from .pattern import Conv1dGeneric, Conv2dGeneric, LinearGeneric, \
+from .pattern import Conv1dGeneric, Conv2dGeneric, Conv3dGeneric, LinearGeneric, \
         Conv1dDW, Conv2dDW
 
 
@@ -34,6 +34,14 @@ def _params_conv2d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     cost = cout * (cin * k[0] * k[1] + (1 if spec['_parameters']['bias'] is not None else 0))
+    return cost
+
+
+def _params_conv3d_generic(spec):
+    cin = spec['in_channels']
+    cout = spec['out_channels']
+    k = spec['kernel_size']
+    cost = cout * (cin * k[0] * k[1] * k[2] + (1 if spec['_parameters']['bias'] is not None else 0))
     return cost
 
 
@@ -61,6 +69,7 @@ def _params_linear(spec):
 params = CostSpec(shared=True, default_behavior='zero')
 params[Conv1dGeneric] = _params_conv1d_generic
 params[Conv2dGeneric] = _params_conv2d_generic
+params[Conv3dGeneric] = _params_conv3d_generic
 params[Conv1dDW] = _params_conv1d_dw
 params[Conv2dDW] = _params_conv2d_dw
 params[LinearGeneric] = _params_linear

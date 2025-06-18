@@ -30,6 +30,7 @@ from plinio.methods.mps.nn import (
     MPSLinear,
     MPSConv1d,
     MPSConv2d,
+    MPSConv3d,
     MPSIdentity,
     MPSModule,
     MPSAdd,
@@ -59,6 +60,7 @@ from .quant.quantizers import DummyQuantizer
 mps_layer_map: Dict[Type[nn.Module], Type[MPSModule]] = {
     nn.Conv1d: MPSConv1d,
     nn.Conv2d: MPSConv2d,
+    nn.Conv3d: MPSConv3d,
     nn.Linear: MPSLinear,
 }
 
@@ -276,8 +278,10 @@ def build_shared_mps_qtz_map(
         for n in c:
             # identify a node which can give us the number of features with 100% certainty
             # nodes such as flatten/squeeze etc make this necessary
-            if (n.meta["features_defining"] or n.meta["untouchable"]) and (
-                sq_a is None or sq_w is None
+            if (
+                (n not in get_graph_inputs(mod.graph)) and  # exclude inputs, treated separately later
+                (n.meta["features_defining"] or n.meta["untouchable"]) and
+                (sq_a is None or sq_w is None)
             ):
                 output_connected = any(
                     n in get_graph_outputs(mod.graph) for n in c
@@ -317,6 +321,12 @@ def build_shared_mps_qtz_map(
                     sq_w = MPSPerChannelQtz(
                         w_mps_precision, w_quantizer, w_quantizer_kwargs
                     )
+        # skip the rest if the quantizer has not been set,
+        # this should happen only for the the weekly connected component of the NN input
+        # if it only contains other operations that are functional, e.g., unsqueeze or similar
+        if sq_a is None and sq_w is None:
+            continue
+
         for n in c:
             # if the flag 'disable_shared_quantizers' is set to True, then we can keep one quantizer
             # per connected component, which is the one defined in the previous for loop. Otherwise,
@@ -532,12 +542,16 @@ def fuse_bn_inplace(lin: nn.Module, bn: nn.Module):
     such that A(x) == B(A_old(x))
     """
     # TODO: this is almost a duplicate of PIT. Resolve.
-    assert (
-        isinstance(lin, nn.Conv1d)
-        or isinstance(lin, nn.Conv2d)
-        or isinstance(lin, nn.Linear)
-    )
-    assert isinstance(bn, nn.BatchNorm1d) or isinstance(bn, nn.BatchNorm2d) or isinstance(bn, nn.InstanceNorm1d)
+    assert (isinstance(lin, nn.Conv1d) or
+            isinstance(lin, nn.Conv2d) or
+            isinstance(lin, nn.Conv3d) or
+            isinstance(lin, nn.Linear))
+    assert (isinstance(bn, nn.BatchNorm1d) or
+            isinstance(bn, nn.BatchNorm2d) or
+            isinstance(bn, nn.BatchNorm3d) or
+            isinstance(bn, nn.InstanceNorm1d) or
+            isinstance(bn, nn.InstanceNorm2d) or
+            isinstance(bn, nn.InstanceNorm3d))
     if not bn.track_running_stats:
         raise AttributeError("BatchNorm folding requires track_running_stats = True")
     with torch.no_grad():
@@ -572,6 +586,7 @@ def fuse_mps_modules(mod: fx.GraphModule):
     """
     fuse_consecutive_layers(mod, nn.Conv1d, nn.BatchNorm1d, fuse_bn_inplace)
     fuse_consecutive_layers(mod, nn.Conv2d, nn.BatchNorm2d, fuse_bn_inplace)
+    fuse_consecutive_layers(mod, nn.Conv3d, nn.BatchNorm3d, fuse_bn_inplace)
     fuse_consecutive_layers(mod, nn.Linear, nn.BatchNorm1d, fuse_bn_inplace)
 
     fuse_consecutive_layers(mod, nn.Conv1d, nn.InstanceNorm1d, fuse_bn_inplace)
@@ -649,6 +664,6 @@ def _compare_quantizers(q1: MPSPerLayerQtz, q2: MPSPerLayerQtz) -> bool:
     }
     return (
         q1.quantizer == q2.quantizer
-        and (q1.precision == q2.precision).item()
+        and all(p1 == p2 for p1, p2 in zip(q1.precision, q2.precision))
         and q1_formatted_params == q2_formatted_params
     )

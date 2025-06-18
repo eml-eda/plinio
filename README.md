@@ -36,6 +36,7 @@ At the current state, the following optimization strategies are supported:
 - **[MPS](plinio/methods/mps/README.md)**, a differentiable Mixed-Precision Search algorithm which extends [EdMIPS](https://arxiv.org/abs/2004.05795) to support channel-wise precision optimization and joint pruning and MPS. Moreover, when MPS is applied with a single precision choice, it can be used to implement a standard Quantization-Aware Training (QAT).
 
 - **[ODiMO MPS](plinio/methods/odimo_mps/README.md)**, an implementation of the **One-shot Differentiable Mapping Optimizer (ODiMO)** concept, which transforms the problem of deploying a DNN onto multiple accelerators, supporting incompatible data representations, into a Differentiable MPS. More details in our [paper](https://arxiv.org/abs/2306.05060).
+- **[NM Pruning](plinio/methods/nm_pruning/README.md)**, an implementation of the algorithm proposed in this [paper](https://openreview.net/forum?id=K9bw7vqp_s), training N:M sparse networks from scratch.
 
 In the code snippet above, `Method()` should be replaced with one of the supported optimization methods' names. More information on each optimization can be found in the dedicated pages.
 

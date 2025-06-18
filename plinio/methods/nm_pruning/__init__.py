@@ -17,16 +17,7 @@
 # * Author:  Francesco Daghero <francesco.daghero@polito.it>                             *
 # *----------------------------------------------------------------------------*
 
-from .module import ONNXModule
-from .conv2d import ONNXConv2d
-from .conv3d import ONNXConv3d
-from .linear import ONNXLinear
-from .add import ONNXAdd
+from .nm_pruning import NMPruning
 
-__all__ = [
-    'ONNXModule',
-    'ONNXConv2d',
-    'ONNXConv3d',
-    'ONNXLinear',
-    'ONNXAdd'
-]
+__all__ = ['NMPruning']
+

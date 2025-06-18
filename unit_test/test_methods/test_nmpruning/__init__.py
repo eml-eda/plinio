@@ -14,19 +14,5 @@
 # * See the License for the specific language governing permissions and        *
 # * limitations under the License.                                             *
 # *                                                                            *
-# * Author:  Francesco Daghero <francesco.daghero@polito.it>                             *
+# * Author: Francesco Daghero <francesco.daghero@polito.it>                              *
 # *----------------------------------------------------------------------------*
-
-from .module import ONNXModule
-from .conv2d import ONNXConv2d
-from .conv3d import ONNXConv3d
-from .linear import ONNXLinear
-from .add import ONNXAdd
-
-__all__ = [
-    'ONNXModule',
-    'ONNXConv2d',
-    'ONNXConv3d',
-    'ONNXLinear',
-    'ONNXAdd'
-]

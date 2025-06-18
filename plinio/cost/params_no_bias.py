@@ -22,7 +22,7 @@
 # Please use "params.py" instead.
 
 from . import CostSpec
-from .pattern import Conv1dGeneric, Conv2dGeneric, LinearGeneric, \
+from .pattern import Conv1dGeneric, Conv2dGeneric, Conv3dGeneric, LinearGeneric, \
         Conv1dDW, Conv2dDW
 
 
@@ -39,6 +39,14 @@ def _params_conv2d_generic(spec):
     cout = spec['out_channels']
     k = spec['kernel_size']
     cost = cin * cout * k[0] * k[1]
+    return cost
+
+
+def _params_conv3d_generic(spec):
+    cin = spec['in_channels']
+    cout = spec['out_channels']
+    k = spec['kernel_size']
+    cost = cout * cin * k[0] * k[1] * k[2]
     return cost
 
 
@@ -66,6 +74,7 @@ def _params_linear(spec):
 params_no_bias = CostSpec(shared=True, default_behavior='zero')
 params_no_bias[Conv1dGeneric] = _params_conv1d_generic
 params_no_bias[Conv2dGeneric] = _params_conv2d_generic
+params_no_bias[Conv3dGeneric] = _params_conv3d_generic
 params_no_bias[Conv1dDW] = _params_conv1d_dw
 params_no_bias[Conv2dDW] = _params_conv2d_dw
 params_no_bias[LinearGeneric] = _params_linear

@@ -27,6 +27,7 @@ import plinio.methods.mps.quant.backends.onnx.nn as onnx_nn
 # add new supported layers here:
 onnx_layer_map: Dict[Type[nn.Module], Type[onnx_nn.ONNXModule]] = {
     qnn.QuantConv2d: onnx_nn.ONNXConv2d,
+    qnn.QuantConv3d: onnx_nn.ONNXConv3d,
     qnn.QuantLinear: onnx_nn.ONNXLinear,
     qnn.QuantAdd: onnx_nn.ONNXAdd,
 }

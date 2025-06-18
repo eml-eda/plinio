@@ -18,6 +18,7 @@
 # *----------------------------------------------------------------------------*
 
 from typing import cast
+import copy
 import unittest
 import torch
 import torch.nn as nn
@@ -29,7 +30,7 @@ import plinio.methods.mps.quant.nn as qnn
 from plinio.methods.mps.quant.quantizers import FQWeight, MinMaxWeight, DummyQuantizer, PACTAct
 from unit_test.models import SimpleNN, SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyAdd_2D, \
     SimpleMPSNN, SimpleExportedNN1D, SimpleExportedNN2D, SimpleExportedNN2D_ch, SimpleNN2D_NoBN, \
-    ToyGroupedConv_1D
+    ToyGroupedConv_1D, CNN3D, ExportedCNN3D
 from unit_test.test_methods.test_mps.utils import compare_prepared, \
         check_target_layers, check_shared_quantizers, check_add_quant_prop, \
         check_layers_exclusion, compare_exported
@@ -56,6 +57,16 @@ class TestMPSConvert(unittest.TestCase):
         compare_prepared(self, nn_ut, new_nn.seed)
         # 2 convs, 1 fc, 1 identity for the input
         check_target_layers(self, new_nn, exp_tgt=4)
+
+    def test_autoimport_simple_layer_3d(self):
+        """Test the conversion of a simple sequential model with layer autoconversion
+        with PER_LAYER weight mixed-precision (default) and including 3D convolutions"""
+        nn_ut = CNN3D()
+        input_shape = (nn_ut.in_channel, nn_ut.patch_size, nn_ut.patch_size)
+        new_nn = MPS(nn_ut, input_shape=input_shape)
+        compare_prepared(self, nn_ut, new_nn.seed)
+        # 7 layers + 1 identity for the input
+        check_target_layers(self, new_nn, exp_tgt=8)
 
     def test_autoimport_train_status_neutrality(self):
         """Test that the conversion does not change the training status of the original model"""
@@ -287,6 +298,7 @@ class TestMPSConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN1D()
         compare_exported(self, exported_nn, expected_exported_nn)
 
+<<<<<<< HEAD
     def test_export_initial_groupconv_1d(self):
         """Test the conversion and export of a simple model with group convolutions,
         test that GetItemFeaturesCalculator works with mask all ones"""
@@ -306,6 +318,18 @@ class TestMPSConvert(unittest.TestCase):
         # 4 convs, 1 identity for the input
         check_target_layers(self, new_nn, exp_tgt=5)
         exported_nn = new_nn.export()
+=======
+    def test_export_initial_simple_layer_3d(self):
+        """Test the export of a simple sequential model, just after import
+        with PER_LAYER weight mixed-precision (default)"""
+        nn_ut = CNN3D()
+        input_shape = (nn_ut.in_channel, nn_ut.patch_size, nn_ut.patch_size)
+        new_nn = MPS(nn_ut, input_shape=input_shape,
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(4, 8)))
+        exported_nn = new_nn.export()
+        expected_exported_nn = ExportedCNN3D()
+        compare_exported(self, exported_nn, expected_exported_nn)
+>>>>>>> main
 
     def test_export_initial_simple_channel(self):
         """test the export of a simple sequential model, just after import
