@@ -24,16 +24,17 @@ import torch
 import torch.nn as nn
 from plinio.methods import MPS
 from plinio.methods.mps import get_default_qinfo
-from plinio.methods.mps.nn import MPSConv2d, MPSType, MPSLinear, MPSIdentity
+from plinio.methods.mps.nn import MPSConv2d, MPSType, MPSLinear, MPSIdentity, MPSConv1d
 from plinio.methods.mps.nn.qtz import MPSBaseQtz
 import plinio.methods.mps.quant.nn as qnn
 from plinio.methods.mps.quant.quantizers import FQWeight, MinMaxWeight, DummyQuantizer, PACTAct
 from unit_test.models import SimpleNN, SimpleNN2D, DSCNN, ToyMultiPath1_2D, ToyAdd_2D, \
     SimpleMPSNN, SimpleExportedNN1D, SimpleExportedNN2D, SimpleExportedNN2D_ch, SimpleNN2D_NoBN, \
-    CNN3D, ExportedCNN3D
+    ToyGroupedConv_1D, CNN3D, ExportedCNN3D
 from unit_test.test_methods.test_mps.utils import compare_prepared, \
         check_target_layers, check_shared_quantizers, check_add_quant_prop, \
         check_layers_exclusion, compare_exported
+
 
 
 class TestMPSConvert(unittest.TestCase):
@@ -186,6 +187,25 @@ class TestMPSConvert(unittest.TestCase):
         )
         check_add_quant_prop(self, new_nn, add_quant_prop_rules)
 
+    def test_autoimport_initial_groupconv_1d(self):
+        """Test the conversion and export of a simple model with group convolutions
+        test that GetItemFeaturesCalculator works with mask=None"""
+        nn_ut = ToyGroupedConv_1D()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     qinfo=get_default_qinfo(a_precision=(8,), w_precision=(2, 4, 8)),
+                     w_search_type=MPSType.PER_LAYER )
+        prev_feature_mask = new_nn.seed.conv1.input_features_calculator.input.features_mask
+        self.assertTrue(torch.all(prev_feature_mask==torch.tensor([1.,] * 16)), "conv features mask in MPS PER_LAYER should be all ones")
+        feature_mask = new_nn.seed.conv1.input_features_calculator.features_mask
+        self.assertTrue(
+            torch.all(feature_mask==torch.tensor([1.,] * 8)),"conv features mask in MPS PER_LAYER should be all ones")
+        feature_number = new_nn.seed.conv1.input_features_calculator.features
+        self.assertEqual(feature_number, 8, "Wrong number of input features")
+
+        compare_prepared(self, nn_ut, new_nn.seed)
+        # 4 convs, 1 identity for the input
+        check_target_layers(self, new_nn, exp_tgt=5)
+
     def test_exclude_types_simple_layer(self):
         """Test the conversion of a Toy model while excluding conv2d layers
         with PER_LAYER weight mixed-precision (default)"""
@@ -278,6 +298,27 @@ class TestMPSConvert(unittest.TestCase):
         expected_exported_nn = SimpleExportedNN1D()
         compare_exported(self, exported_nn, expected_exported_nn)
 
+<<<<<<< HEAD
+    def test_export_initial_groupconv_1d(self):
+        """Test the conversion and export of a simple model with group convolutions,
+        test that GetItemFeaturesCalculator works with mask all ones"""
+        nn_ut = ToyGroupedConv_1D()
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     qinfo=get_default_qinfo(a_precision=(2, 4, 8,), w_precision=(2, 4, 8)),
+                     w_search_type=MPSType.PER_LAYER )
+        prev_feature_mask = new_nn.seed.conv1.input_features_calculator.input.features_mask
+        self.assertTrue(torch.all(prev_feature_mask==torch.tensor([1.,] * 16)), "conv features mask in MPS should be all ones")
+        feature_mask = new_nn.seed.conv1.input_features_calculator.features_mask
+        self.assertTrue(
+            torch.all(feature_mask==torch.tensor([1.,] * 8)), "conv features mask in MPS should be all ones")
+        feature_number = new_nn.seed.conv1.input_features_calculator.features
+        self.assertEqual(feature_number, 8, "Wrong number of input features")
+
+        compare_prepared(self, nn_ut, new_nn.seed)
+        # 4 convs, 1 identity for the input
+        check_target_layers(self, new_nn, exp_tgt=5)
+        exported_nn = new_nn.export()
+=======
     def test_export_initial_simple_layer_3d(self):
         """Test the export of a simple sequential model, just after import
         with PER_LAYER weight mixed-precision (default)"""
@@ -288,6 +329,7 @@ class TestMPSConvert(unittest.TestCase):
         exported_nn = new_nn.export()
         expected_exported_nn = ExportedCNN3D()
         compare_exported(self, exported_nn, expected_exported_nn)
+>>>>>>> main
 
     def test_export_initial_simple_channel(self):
         """test the export of a simple sequential model, just after import
@@ -465,6 +507,53 @@ class TestMPSConvert(unittest.TestCase):
                                  "Wrong act qtz clip_val")
                 self.assertEqual(child.w_quantizer.precision, 8, "Wrong weight precision")
 
+    def test_export_with_alpha_groupconv(self):
+        """Test the conversion of a model with grouped convolutions after forcing the
+        alpha values in some layers, check that correct_get_item function is properly adjusting indexes"""
+
+        nn_ut = ToyGroupedConv_1D()
+        self.assertEqual(nn_ut(torch.randn(1,16,2)).shape, (1, 16, 2), "Output shape is not as expected")
+
+        new_nn = MPS(nn_ut, input_shape=nn_ut.input_shape,
+                     qinfo=get_default_qinfo(a_precision=(2, 4, 8,), w_precision=(2, 4, 8)),
+                     w_search_type=MPSType.PER_LAYER )
+
+        conv0 = cast(MPSConv1d, new_nn.seed.conv0)
+        conv0.out_mps_quantizer.alpha = nn.parameter.Parameter(
+            torch.tensor([0.3, 0.8, 0.99], dtype=torch.float))
+        conv0.out_mps_quantizer.qtz_funcs[2].clip_val = nn.parameter.Parameter(
+            torch.tensor([5.], dtype=torch.float))
+        conv0.w_mps_quantizer.alpha = nn.parameter.Parameter(
+            torch.tensor([1.5, 0.2, 1], dtype=torch.float))
+
+        conv1 = cast(MPSConv1d, new_nn.seed.conv1)
+        conv1.out_mps_quantizer.alpha = nn.parameter.Parameter(
+            torch.tensor([0.3, 1.8, 0.99], dtype=torch.float))
+        conv1.out_mps_quantizer.qtz_funcs[1].clip_val = nn.parameter.Parameter(
+            torch.tensor([1.], dtype=torch.float))
+        conv1.w_mps_quantizer.alpha = nn.parameter.Parameter(
+            torch.tensor([1.5, 0.2, 1.9], dtype=torch.float))
+
+        exported_nn = new_nn.export()
+        # Dummy fwd to fill scale-factors values
+        dummy_inp = torch.rand((2,) + nn_ut.input_shape)
+        with torch.no_grad():
+            exported_nn(dummy_inp)
+
+        for name, child in exported_nn.named_children():
+            if name == 'conv0':
+                child = cast(qnn.QuantConv1d, child)
+                self.assertEqual(child.w_quantizer.precision, 2, "Wrong weight precision")
+                self.assertEqual(child.out_quantizer.precision, 8, "Wrong act precision")
+                self.assertEqual(child.out_quantizer.clip_val, 5., "Wrong act qtz clip_val")
+                self.assertEqual(child.w_quantizer.precision, 2, "Wrong weight precision")
+            if name == 'conv1':
+                child = cast(qnn.QuantConv1d, child)
+                self.assertEqual(child.out_quantizer.precision, 4, "Wrong act precision")
+                self.assertEqual(child.out_quantizer.clip_val, 1.,  # type: ignore
+                                 "Wrong act qtz clip_val")
+                self.assertEqual(child.w_quantizer.precision, 8, "Wrong weight precision")
+        
     def test_repeated_precision(self):
         """Check that if the weights or the activation precision used for the model's
         initialization contain duplicates then an exception is raised"""
@@ -601,8 +690,6 @@ class TestMPSConvert(unittest.TestCase):
         self.assertEqual(fc.input_features_calculator.features.item(),
                          conv1.out_features_eff.item() * 10 * 10)
 
-    # TODO: Here we have an error due to FQWeight quantizer which is poorly tested
-    # (and basically never used in the daily isage)
     def test_qinfo_layer(self):
         nn_ut = SimpleNN2D()
         my_qinfo = get_default_qinfo()

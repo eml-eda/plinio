@@ -52,6 +52,16 @@ from .toy_models import (
     ToyResNet_1D,
     ToyResNet_inp_conn,
     ToyResNet_inp_conn_add_out,
+    ToyGroupedConv_1D,
+    ToyGroupedConv_2D,
+    ToyMultiGroupConv_1D,
+    ToyIndexingConv_1D,
+    ToyIndexingMLP_1D,
+    ToyResNet_chconv_1D,
+    ToyResNet_featurespad_1D,
+    ToySupernetGroupedConv_1D,
+    Toy_featuresmean_1D,
+    ToyConcatDepthwiseConv_1D
 )
 from .phd_course_model import TutorialModel, TutorialModel_NoDW
 from .tcn_infrared import TCN_IR
@@ -93,9 +103,19 @@ __all__ = [
     "TutorialModel_NoDW",
     "TCN_IR",
     "ToySequentialFullyConv2dDil",
-    "ToyResNet",
-    "ToyResNet_1D",
     "ToyResNet_inp_conn",
     "ToyResNet_inp_conn_add_out",
+    "ToyResNet",
+    "ToyResNet_1D",
+    "ToyResNet_chconv_1D",
+    "ToyGroupedConv_1D",
+    "ToyGroupedConv_2D",
+    "ToyMultiGroupConv_1D",
+    "ToyIndexingConv_1D",
+    "ToyIndexingMLP_1D",
+    "ToyResNet_featurespad_1D",
+    "ToySupernetGroupedConv_1D",
+    "Toy_featuresmean_1D",
+    "ToyConcatDepthwiseConv_1D"
     "CNN3D",
 ]

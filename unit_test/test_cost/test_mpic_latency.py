@@ -43,7 +43,9 @@ class TestMPICLatency(unittest.TestCase):
         spec['output_shape'] = (1, spec['out_channels'],
                                 random.randint(8, 64),
                                 random.randint(8, 64))
-        spec['w_precision'] = 8
+        spec['w_precision'] = torch.tensor(8)
+        #added in_precision to solve crash
+        spec['in_precision'] = torch.tensor(8)
         original_ch = spec['out_channels']
 
         est_cost_high = mpic_latency[nn.Conv2d, spec](spec)
@@ -80,7 +82,7 @@ class TestMPICLatency(unittest.TestCase):
 
         spec['w_precision'] = original_w_prec
         est_cost_high = mpic_latency[nn.Conv2d, spec](spec)
-        spec['in_precision'] = 2
+        spec['in_precision'] = torch.tensor(2)
         est_cost_low = mpic_latency[nn.Conv2d, spec](spec)
         msg = f"""Wrong scaling of the cost with respect to
                   the activations precision.
@@ -90,7 +92,7 @@ class TestMPICLatency(unittest.TestCase):
 
         spec['groups'] = int(spec['out_channels'])
         spec['w_precision'] = original_w_prec
-        spec['in_precision'] = 8
+        spec['in_precision'] = torch.tensor(8)
         est_cost_high = mpic_latency[nn.Conv2d, spec](spec)
         spec['w_precision'] = spec['w_precision'] // 2
         est_cost_low = mpic_latency[nn.Conv2d, spec](spec)
@@ -102,7 +104,7 @@ class TestMPICLatency(unittest.TestCase):
 
         spec['w_precision'] = original_w_prec
         est_cost_high = mpic_latency[nn.Conv2d, spec](spec)
-        spec['in_precision'] = 2
+        spec['in_precision'] = torch.tensor(2)
         est_cost_low = mpic_latency[nn.Conv2d, spec](spec)
         msg = f"""Wrong scaling of the cost with respect to
                   the activations precision.
@@ -118,8 +120,8 @@ class TestMPICLatency(unittest.TestCase):
         spec['in_features'] = random.randint(1, 20)
         spec['out_features'] = torch.tensor(random.randint(32, 64))
         spec['output_shape'] = (1, spec['out_features'])
-        spec['in_precision'] = 8
-        spec['w_precision'] = 8
+        spec['in_precision'] = torch.tensor(8)
+        spec['w_precision'] = torch.tensor(8)
         original_ch = spec['out_features']
 
         est_cost_high = mpic_latency[nn.Linear, spec](spec)
@@ -142,7 +144,7 @@ class TestMPICLatency(unittest.TestCase):
 
         spec['w_precision'] = original_w_prec
         est_cost_high = mpic_latency[nn.Linear, spec](spec)
-        spec['in_precision'] = 2
+        spec['in_precision'] = torch.tensor(2)
         est_cost_low = mpic_latency[nn.Linear, spec](spec)
         msg = f"""Wrong scaling of the cost with respect to
                   the activations precision.
@@ -159,14 +161,14 @@ class TestMPICLatency(unittest.TestCase):
         spec['in_channels'] = random.randint(1, 20)
         spec['groups'] = 1
         spec['kernel_size'] = (random.randint(1, 5), random.randint(1, 5))
-        spec['in_precision'] = 8
+        spec['in_precision'] = torch.tensor(8)
 
         spec['out_channels'] = torch.tensor(512,
                                             requires_grad=True, dtype=torch.float)
         spec['output_shape'] = (1, spec['out_channels'],
                                 random.randint(8, 64),
                                 random.randint(8, 64))
-        spec['w_precision'] = 8
+        spec['w_precision'] = torch.tensor(8)
         optimizer = torch.optim.SGD([spec['out_channels']], lr=1)
         est_cost = float('inf')
         for _ in range(10):
