@@ -32,6 +32,7 @@ import torch.nn as nn
 from plinio.methods.mps.quant.backends.base import (remove_inp_quantizer, remove_relu,
                                                     get_map,)
 from .annotator import MAUPITIAnnotator
+import os
 
 
 class MAUPITIExporter:
@@ -95,6 +96,10 @@ class MAUPITIExporter:
     @staticmethod
     def dump_features(network: nn.Module,
                       x: torch.Tensor,
+                      protos: torch.Tensor,
+                      proto_counts: torch.Tensor,
+                      samples: torch.Tensor, # a batch of test data
+                      labels: torch.Tensor, # the corresponding values
                       path: Union[Path, str]) -> None:
         """Given a network, export the features associated with a given input.
         To verify the correctness of an ONNX export, DORY requires text files
@@ -107,13 +112,14 @@ class MAUPITIExporter:
             module_name: str
             features: torch.Tensor
 
+
         def export_to_txt(module_name: str, filename: str, path: Path, t: torch.Tensor):
             try:  # for the output, this step is not applicable
                 # PyTorch's `nn.Conv2d` layers output CHW arrays, but DORY expects HWC arrays
                 t = t.squeeze().permute(1, 2, 0)
             except RuntimeError:
                 pass  # I won't permute the features of this module
-
+ 
             filepath = path / f"{filename}.txt"
             with open(str(filepath), 'w') as fp:
                 fp.write(f"# {module_name} (shape {list(t.shape)}),\n")
@@ -156,3 +162,34 @@ class MAUPITIExporter:
                 export_to_txt(module_name, f"out_layer{i-1}", path, f)
         # export_to_txt('output', f"out_layer{len(features)}", path, y)
         export_to_txt('output', 'output', path, y)
+
+        # 4. Set hook to intercept the input features for computing accuracy
+
+        quantized_samples = []
+
+        def hook_fn2(self, in_: torch.Tensor, out_: torch.Tensor):
+            # MAUPITI wants HWC tensors
+            quantized_samples.append(out_)
+
+        for n, m in network.named_modules():
+            if 'input_quantizer' in n:
+                m.register_forward_hook(hook_fn2)
+        
+        # 5. compute the quanzited input through the hook
+
+        _ = network(samples)
+
+        # 6. dump them, and the labels.
+
+        if quantized_samples:
+            os.makedirs(os.path.join(path, "samples"), exist_ok=True)
+            for i in range(len(labels)):
+                sample = quantized_samples[0][i, :, :, :]
+                export_to_txt("sample", f"samples/sample{i}", path, sample)
+            
+            export_to_txt('labels', "labels", path, labels)
+
+        # 7. Dump the prototypes
+
+        export_to_txt('protos', "protos", path, protos)
+        export_to_txt('proto_counts', "proto_counts", path, proto_counts)
