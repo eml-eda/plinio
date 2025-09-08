@@ -47,7 +47,10 @@ class DNAS(nn.Module):
             input_example: Optional[Any] = None,
             input_shape: Optional[Tuple[int, ...]] = None):
         super(DNAS, self).__init__()
-        self._device = next(model.parameters()).device
+        try:
+            self._device = next(model.parameters()).device
+        except StopIteration:  # case of a model without parameters (e.g., an Identity layer)
+            self._device = torch.device("cpu")
         self._cost_specification = cost
         self._input_example = self._resolve_input_example(input_example, input_shape)
         self._cost_fn_map = {}
