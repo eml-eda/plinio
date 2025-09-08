@@ -19,5 +19,6 @@
 
 from .mps import MPS, get_default_qinfo
 from .nn.qtz import MPSType
+from .graph import set_pact_clip_values
 
-__all__ = ['MPS', 'get_default_qinfo', 'MPSType']
+__all__ = ['MPS', 'get_default_qinfo', 'MPSType', 'set_pact_clip_values']

@@ -25,6 +25,7 @@ import torch
 import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
+from torch.utils.data import DataLoader
 
 from plinio.methods.mps.nn import (
     MPSLinear,
@@ -35,6 +36,7 @@ from plinio.methods.mps.nn import (
     MPSModule,
     MPSAdd,
 )
+from plinio.methods.mps.quant.quantizers import PACTAct, PACTActSigned
 from plinio.graph.annotation import (
     add_features_calculator,
     add_node_properties,
@@ -83,6 +85,203 @@ class MPSTracer(fx.Tracer):
                 m, torch.nn.Sequential
             )
 
+def set_pact_clip_values(model: nn.Module,
+                         input_example: Any,
+                         qinfo: Dict[str, Dict[str, Any]],
+                         data_loader: DataLoader,
+                         w_search_type: MPSType = MPSType.PER_LAYER,
+                         disable_shared_quantizers: bool = False,
+                         quantize_output: bool = False,
+                         ) -> Dict[str, Dict[str, Any]]:
+    """Construct the `qinfo` dictionary by collecting the activation ranges of the network
+    with a calibration dataset.
+
+    :param model: the input nn.Module
+    :type model: nn.Module
+    :param input_example: an input with the same shape and type of the seed's input, used
+    for symbolic tracing
+    :type input_example: Any
+    :param qinfo: dict containing desired quantizers for act, weight and bias
+    and their arguments excluding the precision
+    :type qinfo: Dict[str, Dict[str, Any]]
+    :param data_loader: a dataloader for the calibration dataset
+    :type data_loader: torch.utils.DataLoader
+    :param w_search_type: the mixed precision strategy to be used for weigth
+    i.e., `PER_CHANNEL` or `PER_LAYER`. Default is `PER_LAYER`
+    :type w_search_type: MPSType
+    :param disable_shared_quantizers: a boolean to indicate whether to disable the quantizers
+    sharing. It can be useful if precision '0' is in not in the search options.
+    :type disable_shared_quantizers: bool
+    :param quantize_output: a boolean to indicate whether to quantize the output of the network
+    :type quantize_output: bool
+    :return: the default quantization information for the NAS
+    :rtype: Dict[str, Dict[str, Any]]
+    """
+    # Symbolic Tracing
+    tracer = MPSTracer()
+    graph = tracer.trace(model.eval())
+    name = model.__class__.__name__
+    mod = fx.GraphModule(tracer.root, graph, name)
+    if len(get_graph_inputs(mod.graph)) > 1:
+        ShapeProp(mod).propagate(*input_example)
+    else:
+        ShapeProp(mod).propagate(input_example)
+    add_node_properties(mod)
+    fuse_mps_modules(mod)
+    # Dictionary of shared quantizers. Used only in 'autoimport' mode.
+    sq_dict_initial = build_shared_mps_qtz_map(
+        mod, w_search_type, qinfo, disable_shared_quantizers, quantize_output
+    )
+
+    def _collect_activation_ranges(mod: fx.GraphModule,
+                                   sq_dict: Dict[fx.Node, Tuple[MPSPerLayerQtz, Any]],
+                                   dataloader: DataLoader,
+                                   qinfo: Dict[str, Dict[str, Any]]
+                                   ) -> None:
+        """ Collects the activation ranges of all the nodes in the fx.GraphModule
+        :param mod: the input fx.GraphModule
+        :type mod: fx.GraphModule
+        :param sq_dict: the shared quantizers dictionary
+        :type sq_dict: Dict[fx.Node, Tuple[MPSPerLayerQtz, Any]]
+        :param dataloader: a dataloader for the calibration dataset
+        :type dataloader: DataLoader
+        :param qinfo: dict containing desired quantizers for act, weight and bias
+        and their arguments excluding the precision
+        :type qinfo: Dict[str, Dict[str, Any]]
+        """
+        # Reset the clip values of the quantizers, to ensure the activations
+        # statistics will be properly set afterwards
+        for _, v in sq_dict.items():
+            for qt in v[0].qtz_funcs:
+                if isinstance(qt, PACTAct):
+                    qt.clip_val.data = torch.tensor(-torch.inf)
+                elif isinstance(qt, PACTActSigned):
+                    qt.clip_val_inf.data = torch.tensor(torch.inf)
+                    qt.clip_val_sup.data = torch.tensor(-torch.inf)
+
+        # Input nodes could not appear in the shared quantizers dictionary.
+        # If not present, add them with the default input quantizer setting,
+        # as defined in the qinfo dictionary, and initialize the clip values
+        for node in mod.graph.nodes:
+            if (node not in sq_dict) and (node in get_graph_inputs(mod.graph)):
+                # Ignore the weight quantizer information, as it will not be used
+                sq_dict[node] = (
+                    MPSPerLayerQtz(precision=qinfo["input_default"]["search_precision"],
+                                   quantizer=qinfo["input_default"]["quantizer"]),
+                    None
+                )
+                for qt in sq_dict[node][0].qtz_funcs:
+                    if isinstance(qt, PACTAct):
+                        qt.clip_val.data = torch.tensor(-torch.inf)
+                    elif isinstance(qt, PACTActSigned):
+                        qt.clip_val_inf.data = torch.tensor(torch.inf)
+                        qt.clip_val_sup.data = torch.tensor(-torch.inf)
+
+
+
+        # Executor for the GraphModule
+        def run_with_observers(sq_dict, *inputs):
+            env = {}
+            input_iter = iter(inputs)
+
+            for node in mod.graph.nodes:
+                if node.op == "placeholder":
+                    env[node] = next(input_iter)
+                elif node.op == "get_attr":
+                    env[node] = getattr(mod, node.target)
+                elif node.op == "call_module":
+                    submod = dict(mod.named_modules())[node.target]
+                    args = fx.graph.map_arg(node.args, lambda n: env[n])
+                    kwargs = fx.graph.map_arg(node.kwargs, lambda n: env[n])
+                    env[node] = submod(*args, **kwargs)
+                elif node.op == "call_function":
+                    fn = node.target
+                    args = fx.graph.map_arg(node.args, lambda n: env[n])
+                    kwargs = fx.graph.map_arg(node.kwargs, lambda n: env[n])
+                    env[node] = fn(*args, **kwargs)
+                elif node.op == "call_method":
+                    method_name = node.target
+                    args = fx.graph.map_arg(node.args, lambda n: env[n])
+                    kwargs = fx.graph.map_arg(node.kwargs, lambda n: env[n])
+                    self_obj, *rest = args
+                    env[node] = getattr(self_obj, method_name)(*rest, **kwargs)
+                elif node.op == "output":
+                    out = fx.graph.map_arg(node.args[0], lambda n: env[n])
+                    return out
+                else:
+                    raise RuntimeError(f"Unhandled node.op {node.op}")
+
+                if node in sq_dict:
+                    # Update the clip values, setting the maximum value between
+                    # the previous one and the current activation stats
+                    for qt in sq_dict[node][0].qtz_funcs:
+                        if isinstance(qt, PACTAct):
+                            qt.clip_val.data = torch.max(
+                                qt.clip_val.data,
+                                torch.max(env[node])
+                                )
+                        elif isinstance(qt, PACTActSigned):
+                            qt.clip_val_inf.data = torch.min(
+                                qt.clip_val_inf.data,
+                                torch.min(env[node])
+                                )
+                            qt.clip_val_sup.data = torch.max(
+                                qt.clip_val_sup.data,
+                                torch.max(env[node])
+                                )
+
+            # If graph had no explicit 'output' node, return the last node's value
+            last_val = env.get(node, None)
+            return last_val
+
+        # Iterate over the batches of the calibration dataset and compute the activation statistics
+        # to be stored in the `act_ranges`` dictionary
+        mod.eval()
+        with torch.no_grad():
+            for batch in dataloader:
+                if isinstance(batch, (list, tuple)):  # case of (inputs, labels)
+                    x = batch[0]
+                else:
+                    x = batch
+                if isinstance(x, (list, tuple)):  # case of multiple input tensors
+                    xs = [t.to(batch[-1].device) for t in x]
+                    run_with_observers(sq_dict, *xs)
+                else:
+                    run_with_observers(sq_dict, x.to(batch[-1].device))
+        return
+
+    # Run the activations stats collection
+    _collect_activation_ranges(mod, sq_dict_initial, data_loader, qinfo)
+
+    # Iterate over the nodes in the shared quantizers dictionary and extract
+    # the clip values to be used for the construction of the new `qinfo dictionary
+    for node, v in sq_dict_initial.items():
+        if node not in get_graph_inputs(mod.graph):
+            if not node.name in qinfo.keys():
+                qinfo[node.name] = copy.deepcopy(qinfo.get("layer_default", {}))
+            if isinstance(v[0].qtz_funcs[0], PACTAct):
+                qinfo[node.name]["output"]["kwargs"] = {
+                    "init_clip_val": v[0].qtz_funcs[0].clip_val.item()
+                }
+            elif isinstance(v[0].qtz_funcs[0], PACTActSigned):
+                qinfo[node.name]["output"]["kwargs"] = {
+                    "init_clip_val_inf": v[0].qtz_funcs[0].clip_val_inf.item(),
+                    "init_clip_val_sup": v[0].qtz_funcs[0].clip_val_sup.item(),
+                }
+        # Distinguish the case of the input nodes, as they have a different entry
+        # type in the `qinfo` dictionary
+        else:
+            qinfo[node.name] = copy.deepcopy(qinfo.get("input_default", {}))
+            if isinstance(v[0].qtz_funcs[0], PACTAct):
+                qinfo[node.name]["kwargs"] = {
+                    "init_clip_val": v[0].qtz_funcs[0].clip_val.item()
+                }
+            elif isinstance(v[0].qtz_funcs[0], PACTActSigned):
+                qinfo[node.name]["kwargs"] = {
+                    "init_clip_val_inf": v[0].qtz_funcs[0].clip_val_inf.item(),
+                    "init_clip_val_sup": v[0].qtz_funcs[0].clip_val_sup.item(),
+                }
+    return qinfo
 
 def convert(
     model: nn.Module,
@@ -515,7 +714,7 @@ def add_input_quantizer(
                 f"Quantizer for input node {n} must be shared with activations quantizer of "
                 f"nodes {[k for k in sq_dict if (sq_dict[k][0] is sq_dict[n][0])]}, "
                 f"but qinfo dictionary imposes two different types of quantizers {q_a}\nand\n{shared_q_a}\n"
-                "for input nodes ('input_default') and the other nodes ('layer_default')."
+                "for input nodes and the other nodes."
             )
             assert _compare_quantizers(q_a, shared_q_a), msg
             # Overwrite the quantizer with the shared one
