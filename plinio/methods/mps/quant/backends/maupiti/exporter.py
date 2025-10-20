@@ -119,7 +119,7 @@ class MAUPITIExporter:
                 t = t.squeeze().permute(1, 2, 0)
             except RuntimeError:
                 pass  # I won't permute the features of this module
- 
+
             filepath = path / f"{filename}.txt"
             with open(str(filepath), 'w') as fp:
                 fp.write(f"# {module_name} (shape {list(t.shape)}),\n")
@@ -174,7 +174,7 @@ class MAUPITIExporter:
         for n, m in network.named_modules():
             if 'input_quantizer' in n:
                 m.register_forward_hook(hook_fn2)
-        
+
         # 5. compute the quanzited input through the hook
 
         _ = network(samples)
@@ -186,10 +186,15 @@ class MAUPITIExporter:
             for i in range(len(labels)):
                 sample = quantized_samples[0][i, :, :, :]
                 export_to_txt("sample", f"samples/sample{i}", path, sample)
-            
+
             export_to_txt('labels', "labels", path, labels)
 
         # 7. Dump the prototypes
 
         export_to_txt('protos', "protos", path, protos)
+        export_to_txt('norms','norms', path, protos.norm(2, 1))
+        norms = protos.norm(p=2, dim=1, keepdim=True)
+        protos_normalized = torch.where(norms > 0, (protos*2**17 / norms).to(dtype=torch.int32), protos)
+        export_to_txt('dp', 'dp', path, protos_normalized)
         export_to_txt('proto_counts', "proto_counts", path, proto_counts)
+
