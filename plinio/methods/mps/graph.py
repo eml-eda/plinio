@@ -119,6 +119,7 @@ def set_pact_clip_values(model: nn.Module,
     """
     # Symbolic Tracing
     tracer = MPSTracer()
+    model = copy.deepcopy(model)
     graph = tracer.trace(model.eval())
     name = model.__class__.__name__
     mod = fx.GraphModule(tracer.root, graph, name)
@@ -154,10 +155,10 @@ def set_pact_clip_values(model: nn.Module,
         for _, v in sq_dict.items():
             for qt in v[0].qtz_funcs:
                 if isinstance(qt, PACTAct):
-                    qt.clip_val.data = torch.tensor(-torch.inf)
+                    qt.clip_val.data = torch.tensor(-torch.inf).to(qt.clip_val.data.device)
                 elif isinstance(qt, PACTActSigned):
-                    qt.clip_val_inf.data = torch.tensor(torch.inf)
-                    qt.clip_val_sup.data = torch.tensor(-torch.inf)
+                    qt.clip_val_inf.data = torch.tensor(torch.inf).to(qt.clip_val_inf.data.device)
+                    qt.clip_val_sup.data = torch.tensor(-torch.inf).to(qt.clip_val_sup.data.device)
 
         # Input nodes could not appear in the shared quantizers dictionary.
         # If not present, add them with the default input quantizer setting,
@@ -172,10 +173,10 @@ def set_pact_clip_values(model: nn.Module,
                 )
                 for qt in sq_dict[node][0].qtz_funcs:
                     if isinstance(qt, PACTAct):
-                        qt.clip_val.data = torch.tensor(-torch.inf)
+                        qt.clip_val.data = torch.tensor(-torch.inf).to(qt.clip_val.data.device)
                     elif isinstance(qt, PACTActSigned):
-                        qt.clip_val_inf.data = torch.tensor(torch.inf)
-                        qt.clip_val_sup.data = torch.tensor(-torch.inf)
+                        qt.clip_val_inf.data = torch.tensor(torch.inf).to(qt.clip_val_inf.data.device)
+                        qt.clip_val_sup.data = torch.tensor(-torch.inf).to(qt.clip_val_sup.data.device)
 
 
 
