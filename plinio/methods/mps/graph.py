@@ -26,6 +26,7 @@ import torch.nn as nn
 import torch.fx as fx
 from torch.fx.passes.shape_prop import ShapeProp
 from torch.utils.data import DataLoader
+from tdigest import TDigest
 
 from plinio.methods.mps.nn import (
     MPSLinear,
@@ -85,6 +86,7 @@ class MPSTracer(fx.Tracer):
                 m, torch.nn.Sequential
             )
 
+
 def set_pact_clip_values(model: nn.Module,
                          input_example: Any,
                          qinfo: Dict[str, Dict[str, Any]],
@@ -92,6 +94,8 @@ def set_pact_clip_values(model: nn.Module,
                          w_search_type: MPSType = MPSType.PER_LAYER,
                          disable_shared_quantizers: bool = False,
                          quantize_output: bool = False,
+                         use_percentile: bool = False,
+                         percentile: float = 99.0,
                          ) -> Dict[str, Dict[str, Any]]:
     """Construct the `qinfo` dictionary by collecting the activation ranges of the network
     with a calibration dataset.
@@ -114,9 +118,21 @@ def set_pact_clip_values(model: nn.Module,
     :type disable_shared_quantizers: bool
     :param quantize_output: a boolean to indicate whether to quantize the output of the network
     :type quantize_output: bool
+    :param use_percentile: if True, use percentile-based clip value initialization
+    :type use_percentile: bool
+    :param percentile: the percentile value to use for clip value initialization (0-100)
+    :type percentile: float
     :return: the default quantization information for the NAS
     :rtype: Dict[str, Dict[str, Any]]
     """
+    # Validate parameters
+    if use_percentile:
+        if not (0 < percentile < 100):
+            raise ValueError(f"percentile must be in range (0, 100), got {percentile}")
+        percentile_low = 100 - percentile
+    else:
+        percentile_low = None
+
     # Symbolic Tracing
     tracer = MPSTracer()
     model = copy.deepcopy(model)
@@ -137,7 +153,10 @@ def set_pact_clip_values(model: nn.Module,
     def _collect_activation_ranges(mod: fx.GraphModule,
                                    sq_dict: Dict[fx.Node, Tuple[MPSPerLayerQtz, Any]],
                                    dataloader: DataLoader,
-                                   qinfo: Dict[str, Dict[str, Any]]
+                                   qinfo: Dict[str, Dict[str, Any]],
+                                   use_percentile: bool = False,
+                                   percentile: float = 99.0,
+                                   percentile_low: Optional[float] = None
                                    ) -> None:
         """ Collects the activation ranges of all the nodes in the fx.GraphModule
         :param mod: the input fx.GraphModule
@@ -149,6 +168,12 @@ def set_pact_clip_values(model: nn.Module,
         :param qinfo: dict containing desired quantizers for act, weight and bias
         and their arguments excluding the precision
         :type qinfo: Dict[str, Dict[str, Any]]
+        :param use_percentile: if True, use percentile-based calibration with t-digest
+        :type use_percentile: bool
+        :param percentile: upper percentile for clipping
+        :type percentile: float
+        :param percentile_low: lower percentile for signed quantizers
+        :type percentile_low: Optional[float]
         """
         # Reset the clip values of the quantizers, to ensure the activations
         # statistics will be properly set afterwards
@@ -175,10 +200,20 @@ def set_pact_clip_values(model: nn.Module,
                     if isinstance(qt, PACTAct):
                         qt.clip_val.data = torch.tensor(-torch.inf).to(qt.clip_val.data.device)
                     elif isinstance(qt, PACTActSigned):
-                        qt.clip_val_inf.data = torch.tensor(torch.inf).to(qt.clip_val_inf.data.device)
-                        qt.clip_val_sup.data = torch.tensor(-torch.inf).to(qt.clip_val_sup.data.device)
+                        qt.clip_val_inf.data = torch.tensor(
+                            torch.inf).to(qt.clip_val_inf.data.device)
+                        qt.clip_val_sup.data = torch.tensor(
+                            -torch.inf).to(qt.clip_val_sup.data.device)
 
-
+        # Setup TDigest for percentile-based calibration
+        digest_dict = {}
+        if use_percentile:
+            for node, v in sq_dict.items():
+                for qt in v[0].qtz_funcs:
+                    if isinstance(qt, PACTAct):
+                        digest_dict[id(qt)] = TDigest()
+                    elif isinstance(qt, PACTActSigned):
+                        digest_dict[id(qt)] = {'min': TDigest(), 'max': TDigest()}
 
         # Executor for the GraphModule
         def run_with_observers(sq_dict, *inputs):
@@ -213,22 +248,34 @@ def set_pact_clip_values(model: nn.Module,
                     raise RuntimeError(f"Unhandled node.op {node.op}")
 
                 if node in sq_dict:
-                    # Update the clip values, setting the maximum value between
-                    # the previous one and the current activation stats
                     for qt in sq_dict[node][0].qtz_funcs:
-                        if isinstance(qt, PACTAct):
-                            qt.clip_val.data = torch.max(
-                                qt.clip_val.data,
-                                torch.max(env[node])
+                        if use_percentile:
+                            # Percentile-based approach: compute max/min per sample
+                            batch_size = env[node].shape[0]
+                            activations_flat = env[node].view(batch_size, -1)
+                            sample_maxs = activations_flat.max(dim=1).values
+                            sample_mins = activations_flat.min(dim=1).values
+
+                            if isinstance(qt, PACTAct):
+                                digest_dict[id(qt)].batch_update(sample_maxs.cpu().numpy())
+                            elif isinstance(qt, PACTActSigned):
+                                digest_dict[id(qt)]['min'].batch_update(sample_mins.cpu().numpy())
+                                digest_dict[id(qt)]['max'].batch_update(sample_maxs.cpu().numpy())
+                        else:
+                            # Update clip values with absolute max/min
+                            if isinstance(qt, PACTAct):
+                                qt.clip_val.data = torch.max(
+                                    qt.clip_val.data,
+                                    torch.max(env[node])
                                 )
-                        elif isinstance(qt, PACTActSigned):
-                            qt.clip_val_inf.data = torch.min(
-                                qt.clip_val_inf.data,
-                                torch.min(env[node])
+                            elif isinstance(qt, PACTActSigned):
+                                qt.clip_val_inf.data = torch.min(
+                                    qt.clip_val_inf.data,
+                                    torch.min(env[node])
                                 )
-                            qt.clip_val_sup.data = torch.max(
-                                qt.clip_val_sup.data,
-                                torch.max(env[node])
+                                qt.clip_val_sup.data = torch.max(
+                                    qt.clip_val_sup.data,
+                                    torch.max(env[node])
                                 )
 
             # If graph had no explicit 'output' node, return the last node's value
@@ -236,7 +283,7 @@ def set_pact_clip_values(model: nn.Module,
             return last_val
 
         # Iterate over the batches of the calibration dataset and compute the activation statistics
-        # to be stored in the `act_ranges`` dictionary
+        # to be stored in the `act_ranges` dictionary
         mod.eval()
         with torch.no_grad():
             for batch in dataloader:
@@ -249,10 +296,27 @@ def set_pact_clip_values(model: nn.Module,
                     run_with_observers(sq_dict, *xs)
                 else:
                     run_with_observers(sq_dict, x.to(batch[-1].device))
+
+        # Compute percentiles and set clip values
+        if use_percentile:
+            for node, v in sq_dict.items():
+                for qt in v[0].qtz_funcs:
+                    if isinstance(qt, PACTAct):
+                        clip_val = digest_dict[id(qt)].percentile(percentile)
+                        qt.clip_val.data = torch.tensor(clip_val).to(qt.clip_val.data.device)
+                    elif isinstance(qt, PACTActSigned):
+                        clip_inf = digest_dict[id(qt)]['min'].percentile(percentile_low)
+                        clip_sup = digest_dict[id(qt)]['max'].percentile(percentile)
+                        qt.clip_val_inf.data = torch.tensor(
+                            clip_inf).to(qt.clip_val_inf.data.device)
+                        qt.clip_val_sup.data = torch.tensor(
+                            clip_sup).to(qt.clip_val_sup.data.device)
+
         return
 
     # Run the activations stats collection
-    _collect_activation_ranges(mod, sq_dict_initial, data_loader, qinfo)
+    _collect_activation_ranges(mod, sq_dict_initial, data_loader, qinfo,
+                               use_percentile, percentile, percentile_low)
 
     # Iterate over the nodes in the shared quantizers dictionary and extract
     # the clip values to be used for the construction of the new `qinfo dictionary
@@ -283,6 +347,7 @@ def set_pact_clip_values(model: nn.Module,
                     "init_clip_val_sup": v[0].qtz_funcs[0].clip_val_sup.item(),
                 }
     return qinfo
+
 
 def convert(
     model: nn.Module,
@@ -479,7 +544,8 @@ def build_shared_mps_qtz_map(
             # identify a node which can give us the number of features with 100% certainty
             # nodes such as flatten/squeeze etc make this necessary
             if (
-                (n not in get_graph_inputs(mod.graph)) and  # exclude inputs, treated separately later
+                # exclude inputs, treated separately later
+                (n not in get_graph_inputs(mod.graph)) and
                 (n.meta["features_defining"] or n.meta["untouchable"]) and
                 (sq_a is None or sq_w is None)
             ):
