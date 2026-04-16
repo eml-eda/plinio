@@ -45,7 +45,7 @@ class DUCCIO():
         :type final_strengths: Dict[str, Union[torch.Tensor, float]], optional
         """
         self.targets = {k: torch.tensor(v) for k, v in targets.items()}
-        self.final_strengths = {k: torch.tensor(v) for k, v in final_strengths} if final_strengths is not None else None
+        self.final_strengths = {k: torch.tensor(v) for k, v in final_strengths.items()} if final_strengths is not None else None
         self.task_loss = torch.tensor(task_loss) if task_loss is not None else None
         if self.final_strengths is not None and len(self.targets) != len(self.final_strengths):
             raise ValueError("The lengths of targets and final strengths must match")
