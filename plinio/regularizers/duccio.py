@@ -26,7 +26,7 @@ class DUCCIO():
     def __init__(self,
                  targets: Dict[str, Union[torch.Tensor, float]],
                  task_loss: Optional[Union[torch.Tensor, float]] = None,
-                 final_strengths: Optional[Tuple[Union[torch.Tensor, float], ...]] = None):
+                 final_strengths: Optional[Dict[str, Union[torch.Tensor, float]]] = None):
         """An implementation of the DUCCIO regularization method proposed in:
             https://arxiv.org/abs/2206.00302
         The regularization loss term computed by DUCCIO is:
@@ -40,15 +40,14 @@ class DUCCIO():
         final regularization strength value for each cost metric. Defaults to 1e-3.
         :type task_loss: Union[torch.Tensor, float], optional
         :param final_strengths: the final regularization strength values for each cost metric,
-        as a tuple of tensors. If specified, this tuple must have the same number of elements
-        as there are values in targets. If not specified, the final strength values are derived
-        from the task_loss
-        :type final_strengths: Tuple[Union[torch.Tensor, float], ...], optional
+        as a dictionary of tensors. If specified, this dictionary must have the same keys
+        as targets. If not specified, the final strength values are derived from the task_loss
+        :type final_strengths: Dict[str, Union[torch.Tensor, float]], optional
         """
         self.targets = {k: torch.tensor(v) for k, v in targets.items()}
-        self.final_strengths = tuple(torch.tensor(final_strengths) for final_strengths in final_strengths) if final_strengths is not None else None
+        self.final_strengths = {k: torch.tensor(v) for k, v in final_strengths} if final_strengths is not None else None
         self.task_loss = torch.tensor(task_loss) if task_loss is not None else None
-        if self.final_strengths is not None and len(self.targets.values()) != len(self.final_strengths):
+        if self.final_strengths is not None and len(self.targets) != len(self.final_strengths):
             raise ValueError("The lengths of targets and final strengths must match")
         if self.task_loss is None and self.final_strengths is None:
             raise ValueError("Either task_loss or final_strengths must be specified")
@@ -72,10 +71,11 @@ class DUCCIO():
         # initialize final strengths on first call, if not done explicitly at construction
         with torch.no_grad():
             if self.final_strengths is None:
-                self.final_strengths = tuple(torch.maximum(torch.tensor(0.0), self.task_loss / (model.get_cost(n) - t)) for n, t in self.targets.items())
+                self.final_strengths = {k: torch.maximum(torch.tensor(0.0), self.task_loss / (model.get_cost(k) - t)) for k, t in self.targets.items()}
 
         cost = torch.tensor(0.0)
-        for (cost_name, target), strength in zip(self.targets.items(), self.final_strengths):
+        for cost_name, target in self.targets.items():
+            strength = self.final_strengths[cost_name]
             eff_strength = torch.min(strength/100 + epoch * (strength*99/100) / (n_epochs / 2), strength)
             cost = cost + (eff_strength * torch.maximum(torch.tensor(0.0), model.get_cost(cost_name) - target))
         return cost
