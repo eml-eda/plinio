@@ -17,16 +17,16 @@
 # * Author:  Daniele Jahier Pagliari <daniele.jahier@polito.it>                *
 # *----------------------------------------------------------------------------*
 
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, Union
 import torch
 from plinio.methods import DNAS
 
 
 class DUCCIO():
     def __init__(self,
-                 targets: Dict[str, torch.Tensor],
-                 task_loss: Optional[torch.Tensor] = None,
-                 final_strengths: Optional[Tuple[torch.Tensor, ...]] = None):
+                 targets: Dict[str, Union[torch.Tensor, float]],
+                 task_loss: Optional[Union[torch.Tensor, float]] = None,
+                 final_strengths: Optional[Dict[str, Union[torch.Tensor, float]]] = None):
         """An implementation of the DUCCIO regularization method proposed in:
             https://arxiv.org/abs/2206.00302
         The regularization loss term computed by DUCCIO is:
@@ -35,25 +35,24 @@ class DUCCIO():
         :param targets: the target values for each cost metric, specified as a {name: value}
         dictionary, where "name" is the name of a cost metric in the target model, and "value"
         is a scalar tensor
-        :type targets: Dict[str, torch.Tensor]
+        :type targets: Dict[str, Union[torch.Tensor, float]]
         :param task_loss: the task loss value at the beginning of the search, used to compute the
         final regularization strength value for each cost metric. Defaults to 1e-3.
-        :type task_loss: torch.Tensor, optional
+        :type task_loss: Union[torch.Tensor, float], optional
         :param final_strengths: the final regularization strength values for each cost metric,
-        as a tuple of tensors. If specified, this tuple must have the same number of elements
-        as there are values in targets. If not specified, the final strength values are derived
-        from the task_loss
-        :type final_strengths: Optional[Tuple[torch.Tensor,...]], optional
+        as a dictionary of tensors. If specified, this dictionary must have the same keys
+        as targets. If not specified, the final strength values are derived from the task_loss
+        :type final_strengths: Dict[str, Union[torch.Tensor, float]], optional
         """
-        if final_strengths is not None and len(targets.values()) != len(final_strengths):
+        self.targets = {k: torch.tensor(v) for k, v in targets.items()}
+        self.final_strengths = {k: torch.tensor(v) for k, v in final_strengths.items()} if final_strengths is not None else None
+        self.task_loss = torch.tensor(task_loss) if task_loss is not None else None
+        if self.final_strengths is not None and len(self.targets) != len(self.final_strengths):
             raise ValueError("The lengths of targets and final strengths must match")
-        if task_loss is None and final_strengths is None:
+        if self.task_loss is None and self.final_strengths is None:
             raise ValueError("Either task_loss or final_strengths must be specified")
-        if task_loss is not None and final_strengths is not None:
+        if self.task_loss is not None and self.final_strengths is not None:
             raise ValueError("Either task_loss or final_strengths must be None")
-        self.targets = targets
-        self.final_strengths = final_strengths
-        self.task_loss = task_loss
 
     def __call__(self, model: DNAS, epoch: int = 1, n_epochs: int = 1) -> torch.Tensor:
         """Computes the regularization loss term, using the annealing method described in the paper.
@@ -72,10 +71,11 @@ class DUCCIO():
         # initialize final strengths on first call, if not done explicitly at construction
         with torch.no_grad():
             if self.final_strengths is None:
-                self.final_strengths = tuple(torch.maximum(torch.tensor(0.0), self.task_loss / (model.get_cost(n) - t)) for n, t in self.targets.items())
+                self.final_strengths = {k: torch.maximum(torch.tensor(0.0), self.task_loss / (model.get_cost(k) - t)) for k, t in self.targets.items()}
 
         cost = torch.tensor(0.0)
-        for (cost_name, target), strength in zip(self.targets.items(), self.final_strengths):
+        for cost_name, target in self.targets.items():
+            strength = self.final_strengths[cost_name]
             eff_strength = torch.min(strength/100 + epoch * (strength*99/100) / (n_epochs / 2), strength)
             cost = cost + (eff_strength * torch.maximum(torch.tensor(0.0), model.get_cost(cost_name) - target))
         return cost
