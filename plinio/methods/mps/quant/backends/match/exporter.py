@@ -111,15 +111,20 @@ class MATCHExporter:
         def export_to_txt(module_name: str, filename: str, path: Path, t: torch.Tensor):
             try:  # for the output, this step is not applicable
                 # PyTorch's `nn.Conv2d` layers output CHW arrays, but MATCH expects HWC arrays
-                t = t.permute(1, 2, 0)
+                if not isinstance(t, list):
+                    t = t.permute(1, 2, 0)
             except RuntimeError:
                 pass  # I won't permute the features of this module
 
-            filepath = path / f"{filename}.txt"
-            with open(str(filepath), 'w') as fp:
-                fp.write(f"# {module_name} (shape {list(t.shape)}),\n")
-                for c in t.flatten():
-                    fp.write(f"{int(c)},\n")
+            if isinstance(t, list):
+                for i, out in enumerate(t):
+                    export_to_txt(module_name, f"{filename}_out{i}", path, out)
+            else:
+                filepath = path / f"{filename}.txt"
+                with open(str(filepath), 'w') as fp:
+                    fp.write(f"# {module_name} (shape {list(t.shape)}),\n")
+                    for c in t.flatten():
+                        fp.write(f"{int(c)},\n")
 
         if type(path) == str:
             path = Path(path)
